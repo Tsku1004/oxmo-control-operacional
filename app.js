@@ -13,6 +13,10 @@ const USUARIOS = [
 const LOTES_DEFAULT = [];
 const DEFAULT_SECTORES = ["Bodega en transito", "Planta Envase"];
 const CLOUD_CONFIG_KEY = "oxmo:supabase";
+const DEFAULT_CLOUD_CONFIG = {
+  url: "https://obkvneyvgzraxolohmwf.supabase.co",
+  anonKey: "sb_publishable_MYJYPjkMBaSbY_9ujIZRhQ_A5Ta7re0",
+};
 const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes"]);
 const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "" };
 
@@ -72,8 +76,8 @@ function save(key, value) {
   if (SHARED_KEYS.has(key) && cloud.ready && !cloud.applying) cloudSave(key, value);
 }
 function cloudConfig() {
-  try { return JSON.parse(localStorage.getItem(CLOUD_CONFIG_KEY) || "null"); }
-  catch { return null; }
+  try { return JSON.parse(localStorage.getItem(CLOUD_CONFIG_KEY) || "null") || DEFAULT_CLOUD_CONFIG; }
+  catch { return DEFAULT_CLOUD_CONFIG; }
 }
 function saveCloudConfig(cfg) {
   localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(cfg));
