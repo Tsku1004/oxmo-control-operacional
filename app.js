@@ -17,7 +17,7 @@ const DEFAULT_CLOUD_CONFIG = {
   url: "https://obkvneyvgzraxolohmwf.supabase.co",
   anonKey: "sb_publishable_MYJYPjkMBaSbY_9ujIZRhQ_A5Ta7re0",
 };
-const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes"]);
+const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:infodia"]);
 const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "" };
 
 const DEFAULT_SILOS = Array.from({ length: 8 }, (_, i) => ({
@@ -36,6 +36,8 @@ const state = {
   sectores: load("oxmo:sectores", DEFAULT_SECTORES),
   silosBase: loadSilos(),
   comunes: load("oxmo:comunes", []),
+  siloNiveles: load("oxmo:siloNiveles", {}),
+  infodia: load("oxmo:infodia", null),
   etiquetaFiltro: "Todos",
   etiquetaSel: [],
   reporteHTML: "",
@@ -91,6 +93,8 @@ function sharedFallback(key) {
   if (key === "oxmo:sectores") return DEFAULT_SECTORES;
   if (key === "oxmo:silos") return DEFAULT_SILOS;
   if (key === "oxmo:comunes") return [];
+  if (key === "oxmo:siloNiveles") return {};
+  if (key === "oxmo:infodia") return null;
   return null;
 }
 async function cloudSave(key, value) {
@@ -114,6 +118,8 @@ function applyCloudValue(key, value) {
   if (key === "oxmo:sectores") state.sectores = value || DEFAULT_SECTORES;
   if (key === "oxmo:silos") state.silosBase = value || DEFAULT_SILOS;
   if (key === "oxmo:comunes") state.comunes = value || [];
+  if (key === "oxmo:siloNiveles") state.siloNiveles = value || {};
+  if (key === "oxmo:infodia") state.infodia = value || null;
   cloud.applying = false;
 }
 async function initCloud() {
@@ -220,15 +226,18 @@ function ponderarSilo(base) {
   const comunes = comunesPorSilo(base.id);
   const masa = comunes.reduce((a, c) => a + Number(c.masa || 0), 0);
   const weighted = key => masa ? comunes.reduce((a, c) => a + Number(c[key] || 0) * Number(c.masa || 0), 0) / masa : 0;
+  const nivelImportado = state.siloNiveles?.[base.id] || null;
+  const masaOperacional = nivelImportado ? Number(nivelImportado.masa || 0) : masa;
   const silo = {
     ...base,
-    masa,
-    nivel: base.cap ? Math.min(100, (masa / base.cap) * 100) : 0,
+    masa: masaOperacional,
+    nivel: nivelImportado ? Number(nivelImportado.nivel || 0) : (base.cap ? Math.min(100, (masa / base.cap) * 100) : 0),
     cu: weighted("cu"),
     mo: weighted("mo"),
     s: weighted("s"),
     muestras: comunes.length,
     ultimo: comunes.at(-1),
+    nivelImportado,
   };
   return {...silo, ...clasificar(silo)};
 }
@@ -352,6 +361,9 @@ function shellHTML() {
           ["etiquetas","🏷️ Etiquetas"],["reportes","📋 Reportes"],["alertas","🚨 Alertas"]
         ].map(([id, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
       </nav>
+      <div class="filters" style="margin-bottom:12px">
+        <button class="pill ${state.tab === "infodia" ? "active" : ""}" data-tab="infodia">Importar Infodia</button>
+      </div>
       <section id="tabView">${tabHTML()}</section>
     </main>
     <footer class="footer">
@@ -389,6 +401,7 @@ function tabHTML() {
   if (state.tab === "quimica") return quimicaHTML();
   if (state.tab === "mezclas") return mezclasHTML();
   if (state.tab === "registro") return registroHTML();
+  if (state.tab === "infodia") return infodiaHTML();
   if (state.tab === "etiquetas") return etiquetasHTML();
   if (state.tab === "reportes") return reportesHTML();
   return alertasHTML();
@@ -398,6 +411,7 @@ function bindTab() {
   if (state.tab === "silos") bindSilos();
   if (state.tab === "registro") bindRegistro();
   if (state.tab === "mezclas") bindMezclas();
+  if (state.tab === "infodia") bindInfodia();
   if (state.tab === "etiquetas") bindEtiquetas();
   if (state.tab === "reportes") bindReportes();
   if (state.tab === "quimica") bindQuimica();
@@ -678,6 +692,16 @@ function mini(label, value, color) {
 }
 function bindMezclas() {
   document.querySelectorAll("[data-range]").forEach(el => el.addEventListener("input", () => { state.mix[el.dataset.range] = Number(el.value); render(); }));
+  document.querySelectorAll("[data-range-input]").forEach(el => {
+    const update = () => {
+      const value = Number(el.value);
+      if (Number.isNaN(value)) return;
+      state.mix[el.dataset.rangeInput] = value;
+      render();
+    };
+    el.addEventListener("change", update);
+    el.addEventListener("keydown", e => { if (e.key === "Enter") update(); });
+  });
   document.querySelectorAll("[data-mix-sector]").forEach(btn => btn.addEventListener("click", () => { state.mix.sector = btn.dataset.mixSector; render(); }));
   document.querySelectorAll("[data-mix-lot]").forEach(tile => tile.addEventListener("click", () => {
     const id = tile.dataset.mixLot;
@@ -1447,10 +1471,240 @@ function bindReportePrint() {
   if (print) print.addEventListener("click", () => window.print());
 }
 
+function infodiaHTML() {
+  const info = state.infodia;
+  const totals = info?.totals || {};
+  return `<div class="box">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
+      <div>
+        <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Importar Infodia</div>
+        <div style="color:var(--txt);font-size:18px;font-weight:900">Produccion y silos desde archivo diario</div>
+        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:760px;line-height:1.45">Sube el archivo .xlsb del infodia. OXMO leera las hojas por fecha, importara lotes envasados, calculara produccion diaria, movimiento de silos por nivel inicial/final y dejara los silos 4 al 11 con el ultimo nivel operacional.</div>
+      </div>
+      <label class="btn" for="infodiaFile" style="cursor:pointer">SUBIR INFODIA</label>
+      <input id="infodiaFile" type="file" accept=".xlsb,.xlsx,.xls" style="display:none" />
+    </div>
+    ${info ? `<div class="notice">Ultima importacion: ${info.fileName} - ${info.importedAt}. Dias leidos: ${info.days.length}. Lotes importados/actualizados: ${totals.lotes || 0}.</div>` : `<div class="notice" style="border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Aun no hay infodia importado.</div>`}
+    ${info ? infodiaResumenHTML(info) : ""}
+  </div>`;
+}
+
+function infodiaResumenHTML(info) {
+  const days = [...info.days].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const last = days.at(-1);
+  const totals = info.totals || {};
+  return `<div>
+    <div class="grid-cards" style="margin-bottom:14px">
+      ${miniReport("Produccion envasada", kgToTon(totals.produccionKg || 0), C.green)}
+      ${miniReport("Lotes envasados", totals.lotes || 0, C.blueLight)}
+      ${miniReport("Fino Mo", kgToTon(totals.kgMo || 0), C.cyan)}
+      ${miniReport("Llenado silos", `${(totals.llenadoT || 0).toFixed(2)} t`, C.copper)}
+      ${miniReport("Descarga silos", `${(totals.descargaT || 0).toFixed(2)} t`, C.yellow)}
+      ${miniReport("Ultimo dia", last?.fecha || "-", C.txt2)}
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Fecha</th><th>Lotes</th><th>Envasado</th><th>KgMo</th><th>Llenado silos</th><th>Descarga silos</th><th>Balance neto silos</th></tr></thead>
+        <tbody>${days.map(d => `<tr>
+          <td>${d.fecha}</td>
+          <td>${d.lotes.length}</td>
+          <td>${kgToTon(d.produccionKg)}</td>
+          <td>${kgToTon(d.kgMo)}</td>
+          <td>${d.llenadoT.toFixed(2)} t</td>
+          <td>${d.descargaT.toFixed(2)} t</td>
+          <td>${d.netoT.toFixed(2)} t</td>
+        </tr>`).join("")}</tbody>
+      </table>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="muted-title" style="margin-bottom:10px">Ultimos niveles de silos desde infodia</div>
+      <div class="grid-cards">${Object.entries(state.siloNiveles || {}).map(([id, s]) => `<div class="card">
+        <div class="mono" style="color:var(--blue-light);font-weight:900">${id}</div>
+        <div class="mono" style="color:var(--cyan);font-size:18px;font-weight:900">${Number(s.nivel || 0).toFixed(1)}%</div>
+        <div style="color:var(--txt2);font-size:11px">${Number(s.masa || 0).toFixed(2)} t - ${s.fecha || ""}</div>
+      </div>`).join("")}</div>
+    </div>
+  </div>`;
+}
+
+function bindInfodia() {
+  const file = document.querySelector("#infodiaFile");
+  if (!file) return;
+  file.addEventListener("change", async e => {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+    try {
+      const result = await importarInfodia(selected);
+      aplicarInfodia(result);
+      addHist("Infodia importado", "", `${result.days.length} dias - ${result.totals.lotes} lotes`, C.cyan);
+      render();
+    } catch (err) {
+      console.error(err);
+      alert(`No se pudo importar el infodia: ${err.message || err}`);
+    }
+  });
+}
+
+async function importarInfodia(file) {
+  if (!window.XLSX) throw new Error("No se cargo el lector Excel. Revisa conexion a internet y recarga.");
+  const buffer = await file.arrayBuffer();
+  const wb = XLSX.read(buffer, { type: "array", cellDates: false });
+  const days = wb.SheetNames
+    .filter(name => /\d{2}-\d{2}-\d{4}/.test(name))
+    .map(name => parseInfodiaSheet(name, XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: "" })))
+    .filter(Boolean);
+  const totals = days.reduce((a, d) => ({
+    lotes: a.lotes + d.lotes.length,
+    produccionKg: a.produccionKg + d.produccionKg,
+    kgMo: a.kgMo + d.kgMo,
+    llenadoT: a.llenadoT + d.llenadoT,
+    descargaT: a.descargaT + d.descargaT,
+  }), { lotes: 0, produccionKg: 0, kgMo: 0, llenadoT: 0, descargaT: 0 });
+  return { fileName: file.name, importedAt: new Date().toLocaleString("es-CL"), days, totals };
+}
+
+function parseInfodiaSheet(sheetName, rows) {
+  const fecha = normalizarFechaHoja(sheetName);
+  const loteRows = parseInfodiaLotes(rows, fecha);
+  const silos = parseInfodiaSilos(rows, fecha);
+  if (!loteRows.length && !silos.length) return null;
+  const produccionKg = loteRows.reduce((a, l) => a + l.masa, 0);
+  const kgMo = loteRows.reduce((a, l) => a + Number(l.kgMo || 0), 0);
+  const llenadoT = silos.reduce((a, s) => a + s.llenadoT, 0);
+  const descargaT = silos.reduce((a, s) => a + s.descargaT, 0);
+  return { sheetName, fecha, lotes: loteRows, silos, produccionKg, kgMo, llenadoT, descargaT, netoT: llenadoT - descargaT };
+}
+
+function parseInfodiaLotes(rows, fecha) {
+  const startA = rows.findIndex(r => cellText(r[0]).startsWith("T") && cellText(r[1]).toLowerCase() === "lote");
+  if (startA < 0) return [];
+  const startB = rows.findIndex((r, i) => i > startA && cellText(r[0]).startsWith("T") && cellText(r[1]).toLowerCase() === "lote");
+  const end = rows.findIndex((r, i) => i > startA && r.some(c => cellText(c).includes("PRODUCCION DIA")));
+  const blocks = [
+    { turno: "A", from: startA + 1, to: startB > 0 ? startB : end },
+    { turno: "B", from: startB > 0 ? startB + 1 : end, to: end > 0 ? end : rows.length },
+  ];
+  return blocks.flatMap(block => rows.slice(block.from, block.to).map(r => {
+    const id = cellText(r[1]);
+    const masa = parseNum(r[7]);
+    if (!id || !masa) return null;
+    const tipoEnvase = cellText(r[5]).toUpperCase();
+    return {
+      id,
+      turno: block.turno,
+      envasadora: cellText(r[2]),
+      campana: cellText(r[3]),
+      tipoMaterial: cellText(r[4]).trim(),
+      tipo: tipoEnvase.includes("TB") ? "Tambor" : "Maxisaco",
+      tipoEnvase,
+      cantidad: parseNum(r[6]),
+      masa,
+      kgMo: parseNum(r[8]),
+      desdeAl: cellText(r[9]),
+      pesoUnitario: parseNum(r[10]),
+      sector: "Planta Envase",
+      fecha,
+      estado: "Pendiente",
+      cu: 0,
+      mo: 0,
+      s: 0,
+      obs: `Importado desde infodia. Campana ${cellText(r[3])}. Turno ${block.turno}.`,
+    };
+  }).filter(Boolean));
+}
+
+function parseInfodiaSilos(rows, fecha) {
+  const title = rows.findIndex(r => r.some(c => cellText(c).includes("EXISTENCIA SILOS")));
+  if (title < 0) return [];
+  const out = [];
+  for (let i = title; i < Math.min(rows.length, title + 25); i++) {
+    const r = rows[i];
+    const n = parseInt(cellText(r[1]), 10);
+    if (n < 4 || n > 11) continue;
+    const iniA = parsePct(r[2]);
+    const finA = parsePct(r[3]);
+    const tipoA = cellText(r[4]);
+    const iniB = parsePct(r[5]);
+    const finB = parsePct(r[6]);
+    const base = state.silosBase.find(s => s.id === `Silo ${n}`) || { cap: 50 };
+    const deltaA = ((finA || 0) - (iniA || 0)) * base.cap / 100;
+    const deltaB = ((finB || 0) - (iniB || 0)) * base.cap / 100;
+    const finalNivel = finB || finA || iniB || iniA || 0;
+    out.push({
+      id: `Silo ${n}`,
+      silo: n,
+      fecha,
+      iniA,
+      finA,
+      tipoA,
+      iniB,
+      finB,
+      finalNivel,
+      masa: finalNivel * base.cap / 100,
+      llenadoT: Math.max(0, deltaA) + Math.max(0, deltaB),
+      descargaT: Math.max(0, -deltaA) + Math.max(0, -deltaB),
+      netoT: deltaA + deltaB,
+    });
+  }
+  return out;
+}
+
+function aplicarInfodia(info) {
+  const byId = new Map(state.lotes.map(l => [l.id, l]));
+  for (const lote of info.days.flatMap(d => d.lotes)) {
+    const old = byId.get(lote.id);
+    byId.set(lote.id, old ? { ...old, ...lote, cu: old.cu || lote.cu, mo: old.mo || lote.mo, s: old.s || lote.s, estado: hasAnalysis(old) ? old.estado : lote.estado } : lote);
+  }
+  state.lotes = [...byId.values()];
+  save("oxmo:lotes", state.lotes);
+  const lastBySilo = {};
+  for (const day of [...info.days].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
+    for (const s of day.silos) lastBySilo[s.id] = { nivel: s.finalNivel, masa: s.masa, fecha: day.fecha, fuente: "infodia" };
+  }
+  state.siloNiveles = { ...(state.siloNiveles || {}), ...lastBySilo };
+  save("oxmo:siloNiveles", state.siloNiveles);
+  state.infodia = info;
+  save("oxmo:infodia", info);
+}
+
+function cellText(v) {
+  return String(v ?? "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+}
+
+function parseNum(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const txt = String(v ?? "").trim().replace(/\s/g, "");
+  if (!txt || txt === "-") return 0;
+  if (txt.includes(",")) return Number(txt.replace(/\./g, "").replace(",", ".")) || 0;
+  if (/^\d{1,3}(\.\d{3})+$/.test(txt)) return Number(txt.replace(/\./g, "")) || 0;
+  return Number(txt.replace(/[^0-9.-]/g, "")) || 0;
+}
+
+function parsePct(v) {
+  const n = parseNum(v);
+  return n > 0 && n <= 1 ? n * 100 : n;
+}
+
+function normalizarFechaHoja(name) {
+  const m = name.match(/(\d{2})-(\d{2})-(\d{4})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : name.trim();
+}
+
 function configureCloud() {
   state.cloudPanel = true;
   state.cloudMsg = "";
   render();
+}
+
+function range(label, key, value, min, max, step, unit, color) {
+  const displayValue = key === "masa" ? Number(value).toFixed(0) : Number(value).toFixed(step < 0.1 ? 2 : 1);
+  return `<div class="mix-target" style="--accent:${color}">
+    <div class="mix-target-head">
+      <span>${label}</span>
+      <label><input data-range-input="${key}" type="number" min="${min}" max="${max}" step="${step}" value="${displayValue}" /> ${unit}</label>
+    </div>
+    <input data-range="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" />
+  </div>`;
 }
 
 function cloudPanelHTML() {
