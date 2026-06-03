@@ -19,13 +19,49 @@ const DEFAULT_CLOUD_CONFIG = {
 };
 const PUBLIC_APP_URL = "https://oxmo-control-operacional.vercel.app/";
 const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:siloHistorial", "oxmo:infodia"]);
-const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "", needsLotesCleanup: false };
+const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "", needsLotesCleanup: false, needsSiloCleanup: false };
 
 const DEFAULT_SILOS = Array.from({ length: 8 }, (_, i) => ({
   id: `Silo ${i + 4}`,
   cap: 50,
 }));
 const SILOS = DEFAULT_SILOS.map(s => ({...s, nivel: 0, den: 1, cu: 0, mo: 0, turno: ""}));
+
+const SILO_SIM_WINDOWS = [
+  { start: "2026-04-10", end: "2026-04-20", label: "10 al 20 de abril" },
+  { start: "2026-05-10", end: "2026-05-20", label: "10 al 20 de mayo (prueba por falta de abril en el archivo)" },
+];
+
+const CARTILLA_MANUAL_SIMULADA = [
+  { cantidad: 6, id: "FINO-BRIG-01", nota: "Fino Brig / 6 mx Oxmo", cu: 0.32, mo: 58.4, s: 0.012 },
+  { cantidad: 10, id: "BRIG-TRANS-01", nota: "Brig transito / 6 mx Oxmo", cu: 0.34, mo: 58.1, s: 0.011 },
+  { cantidad: 20, id: "OXMO10050-26", nota: "Oxmo 10050-26", cu: 0.30, mo: 59.0, s: 0.010 },
+  { cantidad: 8, id: "ALTO-AZUFRE-01", nota: "Alto azufre", cu: 0.48, mo: 57.2, s: 0.145 },
+  { cantidad: 20, id: "OXMO805-26", nota: "Oxmo 805-26", cu: 0.42, mo: 57.8, s: 0.014 },
+  { cantidad: 8, id: "SILO10-INV-01", nota: "Oxmo Silo 10", cu: 0.38, mo: 58.5, s: 0.012 },
+  { cantidad: 20, id: "OXMO10046-26", nota: "Oxmo 10046-26", cu: 0.52, mo: 56.2, s: 0.012 },
+  { cantidad: 2, id: "OXMO-CDP-01", nota: "Oxmo CDP", cu: 0.44, mo: 57.6, s: 0.011 },
+  { cantidad: 40, id: "INV-SILO11-13", nota: "Inventario Oxmo Silo 11/13", cu: 0.29, mo: 57.9, s: 0.013 },
+  { cantidad: 21, id: "OXMO-CDP-02", nota: "Oxmo CDP", cu: 0.46, mo: 57.4, s: 0.012 },
+  { cantidad: 20, id: "OXMO10047-26", nota: "Oxmo 10047-26", cu: 0.55, mo: 55.4, s: 0.012 },
+  { cantidad: 18, id: "OXMO-CDP-03", nota: "Oxmo CDP", cu: 0.41, mo: 58.0, s: 0.011 },
+  { cantidad: 20, id: "OSACB81-26", nota: "OSAC B81-26", cu: 0.36, mo: 58.2, s: 0.012 },
+  { cantidad: 37, id: "REC-OXMO-01", nota: "Recuperado Oxmo", tipo: "Tambor", cu: 0.49, mo: 57.1, s: 0.018 },
+  { cantidad: 35, id: "REC-B79-26", nota: "Recuperado B79-26", tipo: "Tambor", cu: 0.50, mo: 57.0, s: 0.019 },
+  { cantidad: 20, id: "OSAC823-26", nota: "OSAC 823-26", cu: 0.31, mo: 58.6, s: 0.011 },
+  { cantidad: 20, id: "OXMO-COLPAS-S10", nota: "Oxmo Colpas Silo 10", cu: 0.35, mo: 58.1, s: 0.012 },
+  { cantidad: 20, id: "OSAC824-26", nota: "OSAC 824-26", cu: 0.28, mo: 58.8, s: 0.011 },
+  { cantidad: 20, id: "OSAC827-26", nota: "OSAC 827-26", cu: 0.43, mo: 57.7, s: 0.012 },
+  { cantidad: 20, id: "OSAC829-26", nota: "OSAC 829-26", cu: 0.53, mo: 55.5, s: 0.012 },
+  { cantidad: 20, id: "OSAC826-26", nota: "OSAC 826-26", cu: 0.37, mo: 58.0, s: 0.012 },
+  { cantidad: 12, id: "OXMO-SILO12-BC", nota: "Oxmo Silo 12 BC", cu: 0.27, mo: 58.4, s: 0.011 },
+  { cantidad: 14, id: "OSAC814-26", nota: "OSAC 814-26", cu: 0.34, mo: 58.2, s: 0.012 },
+  { cantidad: 2, id: "OSAC845-26", nota: "OSAC 845-26", cu: 0.45, mo: 57.6, s: 0.013 },
+  { cantidad: 20, id: "OXMO10050-26-B", nota: "Oxmo 10050-26", cu: 0.30, mo: 59.0, s: 0.010 },
+  { cantidad: 20, id: "OSAC805-26", nota: "OSAC 805-26", cu: 0.40, mo: 57.9, s: 0.012 },
+  { cantidad: 20, id: "OSAC804-26", nota: "OSAC 804-26", cu: 0.39, mo: 58.1, s: 0.012 },
+  { cantidad: 20, id: "OSAC821-26", nota: "OSAC 821-26", cu: 0.33, mo: 58.5, s: 0.011 },
+];
 
 const state = {
   user: load("oxmo:user", null),
@@ -37,7 +73,7 @@ const state = {
   sectores: load("oxmo:sectores", DEFAULT_SECTORES),
   silosBase: loadSilos(),
   comunes: load("oxmo:comunes", []),
-  siloNiveles: load("oxmo:siloNiveles", {}),
+  siloNiveles: cleanSiloNiveles(load("oxmo:siloNiveles", {})),
   siloHistorial: load("oxmo:siloHistorial", []),
   infodia: load("oxmo:infodia", null),
   etiquetaFiltro: "Todos",
@@ -77,6 +113,15 @@ function loadSilos() {
     return structuredClone(DEFAULT_SILOS);
   }
   return saved.map((s, i) => ({ id: s.id || `Silo ${i + 4}`, cap: Number(s.cap || 50) }));
+}
+function isValidSiloId(id) {
+  return /^Silo (4|5|6|7|8|9|10|11)$/.test(String(id || ""));
+}
+function cleanSiloNiveles(niveles) {
+  return Object.fromEntries(Object.entries(niveles || {}).filter(([id]) => isValidSiloId(id)));
+}
+function sortedSiloEntries(niveles = state.siloNiveles) {
+  return Object.entries(cleanSiloNiveles(niveles)).sort((a, b) => parseInt(a[0].replace(/\D/g, ""), 10) - parseInt(b[0].replace(/\D/g, ""), 10));
 }
 function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
@@ -124,13 +169,17 @@ function applyCloudValue(key, value) {
     nextValue = incoming.filter(l => !isInfodiaProductionLote(l));
     if (nextValue.length !== incoming.length) cloud.needsLotesCleanup = true;
   }
+  if (key === "oxmo:siloNiveles") {
+    nextValue = cleanSiloNiveles(value || {});
+    if (Object.keys(nextValue).length !== Object.keys(value || {}).length) cloud.needsSiloCleanup = true;
+  }
   localStorage.setItem(key, JSON.stringify(nextValue));
   if (key === "oxmo:lotes") state.lotes = nextValue || [];
   if (key === "oxmo:hist") state.historial = value || [];
   if (key === "oxmo:sectores") state.sectores = value || DEFAULT_SECTORES;
   if (key === "oxmo:silos") state.silosBase = value || DEFAULT_SILOS;
   if (key === "oxmo:comunes") state.comunes = value || [];
-  if (key === "oxmo:siloNiveles") state.siloNiveles = value || {};
+  if (key === "oxmo:siloNiveles") state.siloNiveles = nextValue || {};
   if (key === "oxmo:siloHistorial") state.siloHistorial = value || [];
   if (key === "oxmo:infodia") state.infodia = value || null;
   cloud.applying = false;
@@ -166,6 +215,10 @@ async function initCloud() {
     if (cloud.needsLotesCleanup) {
       cloud.needsLotesCleanup = false;
       await cloudSave("oxmo:lotes", state.lotes);
+    }
+    if (cloud.needsSiloCleanup) {
+      cloud.needsSiloCleanup = false;
+      await cloudSave("oxmo:siloNiveles", state.siloNiveles);
     }
     render();
   } catch (e) {
@@ -456,6 +509,7 @@ function inventarioHTML() {
   return `
     <div class="filters">
       ${["Todos","Disponible","Bloqueado","Pendiente","Fuera Esp"].map(f => `<button class="pill ${state.filtro === f ? "active" : ""}" data-filter="${f}">${f} (${f === "Todos" ? state.lotes.length : state.lotes.filter(l => l.estado === f).length})</button>`).join("")}
+      <button class="pill" id="manualInventory" style="border-color:#c8753355;color:var(--copper)">Simular cartilla manual</button>
       <button class="pill" id="newLot" style="margin-left:auto;border-color:#00e5a055;color:var(--green)">+ Nuevo lote</button>
     </div>
     <div class="table-wrap">
@@ -495,8 +549,38 @@ function rowHTML(l) {
 function bindInventario() {
   document.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => { state.filtro = btn.dataset.filter; render(); }));
   document.querySelector("#newLot").addEventListener("click", () => { state.editando = null; state.tab = "registro"; render(); });
+  document.querySelector("#manualInventory")?.addEventListener("click", aplicarCartillaManual);
   document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => { state.editando = state.lotes.find(l => l.id === btn.dataset.edit); state.tab = "registro"; render(); }));
   document.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => deleteLot(btn.dataset.del)));
+}
+function cartillaManualLotes() {
+  return CARTILLA_MANUAL_SIMULADA.map(item => {
+    const lote = {
+      id: item.id,
+      tipo: item.tipo || "Maxisaco",
+      masa: Number(item.cantidad || 0) * 1000,
+      sector: "Bodega en transito",
+      fila: 0,
+      cu: Number(item.cu || 0),
+      mo: Number(item.mo || 0),
+      s: Number(item.s || 0),
+      fecha: "01-06-2026",
+      obs: `Cartilla manual simulada: ${item.nota}`,
+      estado: "Disponible",
+    };
+    const c = clasificar(lote);
+    return { ...lote, estado: c.clase === "Fuera Esp" ? "Fuera Esp" : "Disponible" };
+  });
+}
+function aplicarCartillaManual() {
+  if (!confirm("Cargar la cartilla manual simulada? Se reemplazaran solo los registros simulados de cartilla anteriores.")) return;
+  const nuevos = cartillaManualLotes();
+  const ids = new Set(nuevos.map(l => l.id));
+  state.lotes = state.lotes.filter(l => !ids.has(l.id) && !String(l.obs || "").includes("Cartilla manual simulada"));
+  state.lotes = [...state.lotes, ...nuevos];
+  addHist("Cartilla manual simulada", "", `${nuevos.length} registros cargados`, C.copper);
+  persistLotes();
+  render();
 }
 function deleteLot(id) {
   if (!confirm(`¿Eliminar ${id}? Esta acción no se puede deshacer.`)) return;
@@ -1537,6 +1621,7 @@ function infodiaResumenHTML(info) {
   const lastKgMo = last?.kgMo || 0;
   const analisis = info.analisis || [];
   const siloHistorial = info.siloHistorial || [];
+  const siloEntries = sortedSiloEntries();
   return `<div>
     <div class="grid-cards" style="margin-bottom:14px">
       ${miniReport("Produccion ultimo dia", kgToTon(last?.produccionKg || 0), C.green)}
@@ -1547,16 +1632,41 @@ function infodiaResumenHTML(info) {
       ${miniReport("Descarga silos", `${(totals.descargaT || 0).toFixed(2)} t`, C.yellow)}
       ${miniReport("Comunes ACP", String(analisis.length), C.green)}
       ${miniReport("Historial silos", String(siloHistorial.length), C.copper)}
+      ${miniReport("Ventana simulacion", info.simWindow || "-", C.txt2)}
       ${miniReport("Ultimo dia", last?.fecha || "-", C.txt2)}
     </div>
     <div class="notice" style="border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Detalle de dias y lotes queda guardado solo para calculo interno. La simulacion de silos usa los comunes OO300-001 por fecha y queda disponible en Historial Silos.</div>
     <div class="card" style="margin-top:14px">
       <div class="muted-title" style="margin-bottom:10px">Ultimos niveles de silos desde infodia</div>
-      <div class="grid-cards">${Object.entries(state.siloNiveles || {}).map(([id, s]) => `<div class="card">
+      <div class="grid-cards">${siloEntries.map(([id, s]) => `<div class="card">
         <div class="mono" style="color:var(--blue-light);font-weight:900">${id}</div>
         <div class="mono" style="color:var(--cyan);font-size:18px;font-weight:900">${Number(s.nivel || 0).toFixed(1)}%</div>
         <div style="color:var(--txt2);font-size:11px">${Number(s.masa || 0).toFixed(2)} t - ${s.fecha || ""}</div>
       </div>`).join("")}</div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="muted-title" style="margin-bottom:10px">Caracterizacion actual de silos</div>
+      ${siloEntries.some(([, s]) => hasAnalysis(s)) ? `<div class="table-wrap">
+        <table>
+          <thead><tr><th>Silo</th><th>Fecha</th><th>Inicio</th><th>Termino</th><th>Nivel</th><th>Masa</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th>Comunes ACP</th></tr></thead>
+          <tbody>${siloEntries.filter(([, s]) => hasAnalysis(s)).map(([id, s]) => {
+            const cl = clasificar(s);
+            return `<tr>
+              <td class="mono" style="color:var(--blue-light);font-weight:900">${id}</td>
+              <td class="mono">${s.fecha || "-"}</td>
+              <td class="mono">${s.horaInicio || "-"}</td>
+              <td class="mono">${s.horaTermino || "-"}</td>
+              <td class="mono">${Number(s.nivel || 0).toFixed(1)}%</td>
+              <td class="mono">${Number(s.masa || 0).toFixed(2)} t</td>
+              <td class="mono" style="color:var(--cyan)">${Number(s.cu || 0).toFixed(3)}</td>
+              <td class="mono" style="color:var(--green)">${Number(s.mo || 0).toFixed(3)}</td>
+              <td class="mono" style="color:var(--yellow)">${Number(s.s || 0).toFixed(4)}</td>
+              <td><span class="tag" style="background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${cl.clase}</span></td>
+              <td style="font-size:10px;color:var(--txt2)">${(s.comunes || []).join(", ") || "-"}</td>
+            </tr>`;
+          }).join("")}</tbody>
+        </table>
+      </div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">Aun no hay caracterizacion de silos con comunes ACP para la ventana simulada.</div>`}
     </div>
   </div>`;
 }
@@ -1564,6 +1674,7 @@ function infodiaResumenHTML(info) {
 function siloHistorialHTML() {
   const query = String(state.siloHistSearch || "").trim().toLowerCase();
   const hist = [...(state.siloHistorial || [])]
+    .filter(h => isValidSiloId(h.siloId))
     .filter(h => hasAnalysis(h))
     .filter(h => {
       if (!query) return true;
@@ -1579,7 +1690,7 @@ function siloHistorialHTML() {
       <div>
         <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Historial de llenado de silos</div>
         <div style="color:var(--txt);font-size:18px;font-weight:900">Simulacion Infodia + comunes ACP</div>
-        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:820px;line-height:1.45">Caracterizacion historica generada desde las hojas diarias del Infodia y la hoja final de analisis. Los comunes OO300-001 se agrupan por fecha; si hay mas de uno en el dia, se usa promedio y se pondera contra la masa remanente del silo.</div>
+        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:820px;line-height:1.45">Caracterizacion historica generada desde las hojas diarias del Infodia y la hoja final de analisis. El turno dia usa el primer comun OO300-001 de la fecha y el turno noche el segundo, si existe. La quimica se asigna al llenado real detectado por nivel inicial y final.</div>
       </div>
       <button class="btn secondary" data-tab="infodia">Importar nuevo Infodia</button>
     </div>
@@ -1660,6 +1771,7 @@ async function importarInfodia(file) {
     .filter(name => /\d{2}-\d{2}-\d{4}/.test(name))
     .map(name => parseInfodiaSheet(name, XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: "" })))
     .filter(Boolean);
+  const selectedWindow = selectSiloSimulationDays(days);
   const siloHistorial = buildSiloHistorial(days, analisis);
   const totals = days.reduce((a, d) => ({
     lotes: a.lotes + d.lotes.length,
@@ -1668,7 +1780,7 @@ async function importarInfodia(file) {
     llenadoT: a.llenadoT + d.llenadoT,
     descargaT: a.descargaT + d.descargaT,
   }), { lotes: 0, produccionKg: 0, kgMo: 0, llenadoT: 0, descargaT: 0 });
-  return { fileName: file.name, importedAt: new Date().toLocaleString("es-CL"), days, analisis, siloHistorial, totals };
+  return { fileName: file.name, importedAt: new Date().toLocaleString("es-CL"), days, analisis, siloHistorial, simWindow: selectedWindow.label, totals };
 }
 
 function parseAnalisisComunes(wb) {
@@ -1704,9 +1816,7 @@ function buildSiloHistorial(days, analisis) {
     if (!byDate.has(a.fecha)) byDate.set(a.fecha, []);
     byDate.get(a.fecha).push(a);
   }
-  const targetDays = days.some(d => d.fecha >= "2026-05-01" && d.fecha <= "2026-05-16")
-    ? days.filter(d => d.fecha >= "2026-05-01" && d.fecha <= "2026-05-16")
-    : days;
+  const targetDays = selectSiloSimulationDays(days).days;
   const out = [];
   for (const day of targetDays.sort((a, b) => a.fecha.localeCompare(b.fecha))) {
     const comunesDia = byDate.get(day.fecha) || [];
@@ -1858,6 +1968,15 @@ function parseInfodiaSilos(rows, fecha) {
   return out;
 }
 
+function selectSiloSimulationDays(days) {
+  const sorted = [...(days || [])].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  for (const w of SILO_SIM_WINDOWS) {
+    const selected = sorted.filter(d => d.fecha >= w.start && d.fecha <= w.end);
+    if (selected.length) return { days: selected, label: w.label };
+  }
+  return { days: sorted, label: "todas las fechas disponibles" };
+}
+
 function aplicarInfodia(info) {
   state.lotes = state.lotes.filter(l => !isInfodiaProductionLote(l));
   save("oxmo:lotes", state.lotes);
@@ -1867,6 +1986,7 @@ function aplicarInfodia(info) {
   save("oxmo:siloHistorial", state.siloHistorial);
   for (const day of [...(info.days || [])].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
     for (const s of day.silos || []) {
+      if (!isValidSiloId(s.id)) continue;
       lastLevelBySilo[s.id] = {
         nivel: Number(s.finalNivel || 0),
         masa: Number(s.masa || 0),
@@ -1879,6 +1999,7 @@ function aplicarInfodia(info) {
     }
   }
   for (const h of [...state.siloHistorial].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
+    if (!isValidSiloId(h.siloId)) continue;
     if (!hasAnalysis(h)) continue;
     lastAnalysisBySilo[h.siloId] = {
       fecha: h.fecha,
@@ -1894,9 +2015,10 @@ function aplicarInfodia(info) {
   }
   const merged = {};
   for (const id of new Set([...Object.keys(lastLevelBySilo), ...Object.keys(lastAnalysisBySilo)])) {
+    if (!isValidSiloId(id)) continue;
     merged[id] = { ...(lastLevelBySilo[id] || {}), ...(lastAnalysisBySilo[id] || {}) };
   }
-  state.siloNiveles = { ...(state.siloNiveles || {}), ...merged };
+  state.siloNiveles = cleanSiloNiveles({ ...cleanSiloNiveles(state.siloNiveles), ...merged });
   save("oxmo:siloNiveles", state.siloNiveles);
   state.infodia = info;
   save("oxmo:infodia", info);
