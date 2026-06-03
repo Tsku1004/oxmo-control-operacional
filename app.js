@@ -19,7 +19,7 @@ const DEFAULT_CLOUD_CONFIG = {
 };
 const PUBLIC_APP_URL = "https://oxmo-control-operacional.vercel.app/";
 const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:infodia"]);
-const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "" };
+const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "", needsLotesCleanup: false };
 
 const DEFAULT_SILOS = Array.from({ length: 8 }, (_, i) => ({
   id: `Silo ${i + 4}`,
@@ -64,7 +64,9 @@ function loadLotes() {
     save("oxmo:lotes", []);
     return [];
   }
-  return lotes;
+  const cleaned = lotes.filter(l => !isInfodiaProductionLote(l));
+  if (cleaned.length !== lotes.length) save("oxmo:lotes", cleaned);
+  return cleaned;
 }
 function loadSilos() {
   const saved = load("oxmo:silos", DEFAULT_SILOS);
@@ -113,8 +115,14 @@ async function cloudSave(key, value) {
 }
 function applyCloudValue(key, value) {
   cloud.applying = true;
-  localStorage.setItem(key, JSON.stringify(value));
-  if (key === "oxmo:lotes") state.lotes = value || [];
+  let nextValue = value;
+  if (key === "oxmo:lotes") {
+    const incoming = Array.isArray(value) ? value : [];
+    nextValue = incoming.filter(l => !isInfodiaProductionLote(l));
+    if (nextValue.length !== incoming.length) cloud.needsLotesCleanup = true;
+  }
+  localStorage.setItem(key, JSON.stringify(nextValue));
+  if (key === "oxmo:lotes") state.lotes = nextValue || [];
   if (key === "oxmo:hist") state.historial = value || [];
   if (key === "oxmo:sectores") state.sectores = value || DEFAULT_SECTORES;
   if (key === "oxmo:silos") state.silosBase = value || DEFAULT_SILOS;
@@ -151,6 +159,10 @@ async function initCloud() {
       .subscribe();
     cloud.ready = true;
     cloud.status = "tiempo real";
+    if (cloud.needsLotesCleanup) {
+      cloud.needsLotesCleanup = false;
+      await cloudSave("oxmo:lotes", state.lotes);
+    }
     render();
   } catch (e) {
     cloud.ready = false;
@@ -203,6 +215,12 @@ function saveSectores() {
 }
 function hasAnalysis(l) {
   return Number(l.cu) > 0 || Number(l.mo) > 0 || Number(l.s) > 0;
+}
+function isInfodiaProductionLote(l) {
+  const id = String(l?.id || "").toUpperCase();
+  const obs = String(l?.obs || "").toUpperCase();
+  const sector = String(l?.sector || "").toUpperCase();
+  return obs.includes("IMPORTADO DESDE INFODIA") || (id.startsWith("OXM") && sector.includes("PLANTA ENVASE") && !hasAnalysis(l));
 }
 function clasificar(l) {
   if (!hasAnalysis(l)) return { clase: "Pendiente", color: C.yellow };
@@ -328,6 +346,7 @@ function shellHTML() {
   const masaRet = state.lotes.filter(l => l.estado !== "Disponible").reduce((a, l) => a + l.masa, 0);
   const cuPool = disp.filter(l => l.cu > 0);
   const cuProm = cuPool.length ? cuPool.reduce((a, l) => a + l.cu, 0) / cuPool.length : 0;
+  const finoMoKg = disp.filter(l => Number(l.mo) > 0).reduce((a, l) => a + (Number(l.masa || 0) * Number(l.mo || 0) / 100), 0);
   const pend = state.lotes.filter(l => l.estado === "Pendiente");
   const fuera = state.lotes.filter(l => l.estado === "Fuera Esp");
   return `
@@ -357,6 +376,7 @@ function shellHTML() {
       <section class="kpis">
         ${kpi("Masa Disponible", masaDisp / 1000, "t", `${disp.length} lotes`, C.green, "📦", 2)}
         ${kpi("Masa Retenida", masaRet / 1000, "t", `${state.lotes.length - disp.length} lotes`, C.red, "🔒", 2)}
+        ${kpi("Fino Mo", finoMoKg / 1000, "t", "Masa x %Mo", C.copper, "◆", 2)}
         ${kpi("Cu Promedio", cuProm, "%", "Lotes analizados", C.cyan, "⚗️", 2)}
         ${kpi("Total Lotes", state.lotes.length, "", "Todos los sectores", C.blue, "🗂️", 0)}
         ${kpi("Sin Análisis", pend.length, "", "Pendientes lab", C.yellow, "🔬", 0)}
@@ -785,12 +805,14 @@ function printLabels() {
 function reportesHTML() {
   const disp = state.lotes.filter(l => l.estado === "Disponible");
   const masa = disp.reduce((a,l) => a + l.masa, 0);
+  const finoMo = disp.filter(l => Number(l.mo) > 0).reduce((a, l) => a + (Number(l.masa || 0) * Number(l.mo || 0) / 100), 0);
   const cu = average(disp.filter(l => l.cu).map(l => l.cu));
   const mo = average(disp.filter(l => l.mo).map(l => l.mo));
   return `<div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px;flex-wrap:wrap"><div class="muted-title">Reporte SGI — ${hoy()}</div><button class="btn" id="printReport">GENERAR PDF</button></div>
     <div class="grid-cards">
       ${miniReport("Masa disponible", kgToTon(masa), C.green)}
+      ${miniReport("Fino Mo", kgToTon(finoMo), C.copper)}
       ${miniReport("Lotes disponibles", disp.length, C.green)}
       ${miniReport("Cu% promedio", `${cu.toFixed(2)}%`, C.cyan)}
       ${miniReport("Mo% promedio", `${mo.toFixed(3)}%`, C.blueLight)}
@@ -1369,6 +1391,7 @@ function bindReportes() {
     const fechaArchivo = new Date().toISOString().slice(0, 10);
     const titulo = `reporte_${fechaArchivo}`;
     const totalMasa = state.lotes.reduce((a, l) => a + l.masa, 0);
+    const totalFinoMo = state.lotes.filter(l => Number(l.mo) > 0).reduce((a, l) => a + (Number(l.masa || 0) * Number(l.mo || 0) / 100), 0);
     const rows = state.lotes.map(l => {
       const cl = clasificar(l);
       return `<tr>
@@ -1414,7 +1437,7 @@ function bindReportes() {
     h1 { font-size: 20px; letter-spacing: .8px; margin: 0 0 4px; }
     .sub { font-size: 11px; color: #b9dfff; letter-spacing: 1.4px; }
     .date { padding: 14px 18px; text-align: right; background: #0002; min-width: 150px; font-size: 11px; }
-    .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+    .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 10px; }
     .k { border: 1px solid #d7e2ee; border-top: 4px solid #1e6fd9; border-radius: 8px; padding: 8px 10px; background: #f7fbff; }
     .k b { display: block; color: #0f3a6e; font-size: 15px; }
     .k span { font-size: 9px; color: #60728a; text-transform: uppercase; letter-spacing: .6px; }
@@ -1448,6 +1471,7 @@ function bindReportes() {
     <section class="summary">
       <div class="k"><span>Total lotes</span><b>${state.lotes.length}</b></div>
       <div class="k" style="border-top-color:#00e5a0"><span>Masa total</span><b>${(totalMasa / 1000).toFixed(2)} t</b></div>
+      <div class="k" style="border-top-color:#00d4ff"><span>Fino Mo</span><b>${(totalFinoMo / 1000).toFixed(2)} t</b></div>
       <div class="k" style="border-top-color:#c87533"><span>Alto cobre</span><b>${state.lotes.filter(l => clasificar(l).clase === "Alto Cobre").length}</b></div>
       <div class="k" style="border-top-color:#ff4560"><span>Fuera esp.</span><b>${state.lotes.filter(l => clasificar(l).clase === "Fuera Esp").length}</b></div>
     </section>
@@ -1485,12 +1509,12 @@ function infodiaHTML() {
       <div>
         <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Importar Infodia</div>
         <div style="color:var(--txt);font-size:18px;font-weight:900">Produccion y silos desde archivo diario</div>
-        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:760px;line-height:1.45">Sube el archivo .xlsb del infodia. OXMO leera las hojas por fecha, importara lotes envasados, calculara produccion diaria, movimiento de silos por nivel inicial/final y dejara los silos 4 al 11 con el ultimo nivel operacional.</div>
+        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:760px;line-height:1.45">Sube el archivo .xlsb del infodia. OXMO leera las hojas por fecha para calcular produccion diaria, fino Mo y movimiento de silos. Los lotes producidos del archivo quedan ocultos y no se agregan al inventario circulante.</div>
       </div>
       <label class="btn" for="infodiaFile" style="cursor:pointer">SUBIR INFODIA</label>
       <input id="infodiaFile" type="file" accept=".xlsb,.xlsx,.xls" style="display:none" />
     </div>
-    ${info ? `<div class="notice">Ultima importacion: ${info.fileName} - ${info.importedAt}. Dias leidos: ${info.days.length}. Lotes importados/actualizados: ${totals.lotes || 0}.</div>` : `<div class="notice" style="border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Aun no hay infodia importado.</div>`}
+    ${info ? `<div class="notice">Ultima importacion: ${info.fileName} - ${info.importedAt}. Dias leidos: ${info.days.length}. Registros de produccion procesados: ${totals.lotes || 0} (ocultos en inventario).</div>` : `<div class="notice" style="border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Aun no hay infodia importado.</div>`}
     ${info ? infodiaResumenHTML(info) : ""}
   </div>`;
 }
@@ -1499,29 +1523,18 @@ function infodiaResumenHTML(info) {
   const days = [...info.days].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const last = days.at(-1);
   const totals = info.totals || {};
+  const lastKgMo = last?.kgMo || 0;
   return `<div>
     <div class="grid-cards" style="margin-bottom:14px">
-      ${miniReport("Produccion envasada", kgToTon(totals.produccionKg || 0), C.green)}
-      ${miniReport("Lotes envasados", totals.lotes || 0, C.blueLight)}
-      ${miniReport("Fino Mo", kgToTon(totals.kgMo || 0), C.cyan)}
+      ${miniReport("Produccion ultimo dia", kgToTon(last?.produccionKg || 0), C.green)}
+      ${miniReport("Fino Mo ultimo dia", kgToTon(lastKgMo), C.copper)}
+      ${miniReport("Produccion acumulada", kgToTon(totals.produccionKg || 0), C.blueLight)}
+      ${miniReport("Fino Mo acumulado", kgToTon(totals.kgMo || 0), C.cyan)}
       ${miniReport("Llenado silos", `${(totals.llenadoT || 0).toFixed(2)} t`, C.copper)}
       ${miniReport("Descarga silos", `${(totals.descargaT || 0).toFixed(2)} t`, C.yellow)}
       ${miniReport("Ultimo dia", last?.fecha || "-", C.txt2)}
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Fecha</th><th>Lotes</th><th>Envasado</th><th>KgMo</th><th>Llenado silos</th><th>Descarga silos</th><th>Balance neto silos</th></tr></thead>
-        <tbody>${days.map(d => `<tr>
-          <td>${d.fecha}</td>
-          <td>${d.lotes.length}</td>
-          <td>${kgToTon(d.produccionKg)}</td>
-          <td>${kgToTon(d.kgMo)}</td>
-          <td>${d.llenadoT.toFixed(2)} t</td>
-          <td>${d.descargaT.toFixed(2)} t</td>
-          <td>${d.netoT.toFixed(2)} t</td>
-        </tr>`).join("")}</tbody>
-      </table>
-    </div>
+    <div class="notice" style="border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Detalle de dias y lotes queda guardado solo para calculo interno. No se muestra ni se agrega al inventario circulante.</div>
     <div class="card" style="margin-top:14px">
       <div class="muted-title" style="margin-bottom:10px">Ultimos niveles de silos desde infodia</div>
       <div class="grid-cards">${Object.entries(state.siloNiveles || {}).map(([id, s]) => `<div class="card">
@@ -1542,7 +1555,7 @@ function bindInfodia() {
     try {
       const result = await importarInfodia(selected);
       aplicarInfodia(result);
-      addHist("Infodia importado", "", `${result.days.length} dias - ${result.totals.lotes} lotes`, C.cyan);
+      addHist("Infodia importado", "", `${result.days.length} dias - produccion oculta en inventario`, C.cyan);
       render();
     } catch (err) {
       console.error(err);
@@ -1656,12 +1669,7 @@ function parseInfodiaSilos(rows, fecha) {
 }
 
 function aplicarInfodia(info) {
-  const byId = new Map(state.lotes.map(l => [l.id, l]));
-  for (const lote of info.days.flatMap(d => d.lotes)) {
-    const old = byId.get(lote.id);
-    byId.set(lote.id, old ? { ...old, ...lote, cu: old.cu || lote.cu, mo: old.mo || lote.mo, s: old.s || lote.s, estado: hasAnalysis(old) ? old.estado : lote.estado } : lote);
-  }
-  state.lotes = [...byId.values()];
+  state.lotes = state.lotes.filter(l => !isInfodiaProductionLote(l));
   save("oxmo:lotes", state.lotes);
   const lastBySilo = {};
   for (const day of [...info.days].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
@@ -1935,7 +1943,7 @@ function printLabels() {
           </div>
           <img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${qrData}" alt="QR ${esc(l.id)}" />
         </main>
-        <footer>Zebra ZT230 - Etiqueta 100 x 150 mm - 300 dpi</footer>
+        <footer>Zebra ZT230 - Etiqueta 100 x 150 mm - 203 dpi</footer>
       </div>
     </section>`;
   }).join("");
