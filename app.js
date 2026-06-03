@@ -82,6 +82,7 @@ const state = {
   cloudPanel: false,
   cloudMsg: "",
   siloHistSearch: "",
+  acpSearch: "",
   mixMsg: "",
   mix: { cu: 0.5, mo: 57, s: 0.1, masa: 20000, sel: [], sector: "Todos" },
 };
@@ -440,8 +441,9 @@ function shellHTML() {
       </section>
       <nav class="tabs">
         ${[
-          ["inventario","Inventario"],["silos","Silos"],["quimica","Química"],["mezclas","Mezclas"],
-          ["siloHistorial","Historial Silos"],["etiquetas","Etiquetas"],["reportes","Reportes"],["alertas","Alertas"]
+          ["inventario","Inventario"],["silos","Silos"],["quimica","Química"],["lotesOxmo","Lotes OXMO/BQA"],
+          ["comunesTurno","Comunes de turno"],["mezclas","Mezclas"],["siloHistorial","Historial Silos"],
+          ["etiquetas","Etiquetas"],["reportes","Reportes"],["alertas","Alertas"]
         ].map(([id, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
       </nav>
       <div class="filters" style="margin-bottom:12px">
@@ -482,6 +484,8 @@ function tabHTML() {
   if (state.tab === "inventario") return inventarioHTML();
   if (state.tab === "silos") return silosHTML();
   if (state.tab === "quimica") return quimicaHTML();
+  if (state.tab === "lotesOxmo") return lotesOxmoHTML();
+  if (state.tab === "comunesTurno") return comunesTurnoHTML();
   if (state.tab === "mezclas") return mezclasHTML();
   if (state.tab === "registro") return registroHTML();
   if (state.tab === "infodia") return infodiaHTML();
@@ -497,6 +501,7 @@ function bindTab() {
   if (state.tab === "mezclas") bindMezclas();
   if (state.tab === "infodia") bindInfodia();
   if (state.tab === "siloHistorial") bindSiloHistorial();
+  if (state.tab === "lotesOxmo" || state.tab === "comunesTurno") bindAnalisisACP();
   if (state.tab === "etiquetas") bindEtiquetas();
   if (state.tab === "reportes") bindReportes();
   if (state.tab === "quimica") bindQuimica();
@@ -742,6 +747,100 @@ function bindQuimica() {
     state.tab = "registro";
     render();
   }));
+}
+
+function lotesOxmoHTML() {
+  const items = (state.infodia?.analisisLotes || [])
+    .filter(a => /^(OXMO|OXBR)\d+-\d{2}$/.test(a.codigo))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.codigo.localeCompare(b.codigo));
+  const oxmo = items.filter(a => a.tipoAnalisis === "lote_oxmo");
+  const briquetas = items.filter(a => a.tipoAnalisis === "briqueta");
+  return analisisACPHTML({
+    titulo: "Resultado de lotes OXMO - BQA",
+    subtitulo: "Listado de analisis ACP para lotes OXMO y briquetas OXBR. Estos datos son cartilla de laboratorio, no inventario fisico.",
+    items,
+    kpis: [
+      ["Lotes OXMO", oxmo.length, C.blueLight],
+      ["Briquetas OXBR", briquetas.length, C.copper],
+      ["Con analisis", items.filter(hasAnalysis).length, C.green],
+      ["Fuera espec.", items.filter(x => clasificar(x).clase === "Fuera Esp").length, C.red],
+    ],
+    empty: "No hay analisis OXMO/OXBR cargados. Sube el Infodia con la hoja ACP.",
+  });
+}
+
+function comunesTurnoHTML() {
+  const items = (state.infodia?.analisis || [])
+    .filter(a => /^OO300-001-\d+-\d{2}$/.test(a.codigo))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.codigo.localeCompare(b.codigo));
+  const may1to16 = items.filter(a => a.fecha >= "2026-05-01" && a.fecha <= "2026-05-16");
+  return analisisACPHTML({
+    titulo: "Comunes de turno OO300-001",
+    subtitulo: "Listado auditable de comunes de turno leidos desde ACP. Estos valores alimentan la caracterizacion historica de silos.",
+    items,
+    kpis: [
+      ["Comunes totales", items.length, C.green],
+      ["01-05 al 16-05", may1to16.length, C.cyan],
+      ["Cu promedio", items.length ? `${average(items.map(x => x.cu)).toFixed(3)}%` : "-", C.blueLight],
+      ["Mo promedio", items.length ? `${average(items.map(x => x.mo)).toFixed(3)}%` : "-", C.copper],
+    ],
+    empty: "No hay comunes OO300-001 cargados. Sube el Infodia con la hoja ACP.",
+  });
+}
+
+function analisisACPHTML({ titulo, subtitulo, items, kpis, empty }) {
+  const q = String(state.acpSearch || "").trim().toLowerCase();
+  const filtered = q
+    ? items.filter(a => [a.codigo, a.fecha, a.producto, a.tipoAnalisis, a.clase].join(" ").toLowerCase().includes(q))
+    : items;
+  return `<div class="box">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
+      <div>
+        <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Cartilla ACP</div>
+        <div style="color:var(--txt);font-size:18px;font-weight:900">${titulo}</div>
+        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:860px;line-height:1.45">${subtitulo}</div>
+      </div>
+      <button class="btn secondary" data-tab="infodia">Importar Infodia</button>
+    </div>
+    <div class="grid-cards" style="margin-bottom:14px">
+      ${kpis.map(([label, value, color]) => miniReport(label, value, color)).join("")}
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="field" style="margin:0">
+        <label>Buscar en cartilla</label>
+        <input id="acpSearch" value="${state.acpSearch || ""}" placeholder="Ej: OXMO8635-26, OXBR1305-26, OO300-001-06149-26, 2026-05-16">
+      </div>
+    </div>
+    ${filtered.length ? `<div class="table-wrap">
+      <table>
+        <thead><tr><th>ID lote</th><th>Tipo</th><th>Producto</th><th>Fecha analisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th>Fuente</th></tr></thead>
+        <tbody>${filtered.map(a => {
+          const c = clasificar(a);
+          return `<tr>
+            <td class="mono" style="color:var(--blue-light);font-weight:900">${a.codigo}</td>
+            <td>${a.tipoAnalisis === "briqueta" ? "Briqueta" : a.tipoAnalisis === "comun_turno" ? "Comun turno" : "Lote OXMO"}</td>
+            <td style="color:var(--txt2)">${a.producto || "-"}</td>
+            <td class="mono">${a.fecha || "-"}</td>
+            <td class="mono" style="color:${a.cu >= 0.51 ? C.copper : C.green}">${Number(a.cu || 0).toFixed(3)}</td>
+            <td class="mono" style="color:${a.mo >= moMinimo(a.cu) ? C.green : C.red}">${Number(a.mo || 0).toFixed(3)}</td>
+            <td class="mono" style="color:${a.s < 0.1 ? C.green : C.red}">${Number(a.s || 0).toFixed(4)}</td>
+            <td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span></td>
+            <td style="color:var(--txt3);font-size:10px">${a.fuente || "-"}</td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">${empty}</div>`}
+  </div>`;
+}
+
+function bindAnalisisACP() {
+  const input = document.querySelector("#acpSearch");
+  if (!input) return;
+  input.addEventListener("input", e => {
+    state.acpSearch = e.target.value;
+    render();
+    setTimeout(() => document.querySelector("#acpSearch")?.focus(), 0);
+  });
 }
 
 function mezclasHTML() {
@@ -1766,7 +1865,9 @@ async function importarInfodia(file) {
   if (!window.XLSX) throw new Error("No se cargo el lector Excel. Revisa conexion a internet y recarga.");
   const buffer = await file.arrayBuffer();
   const wb = XLSX.read(buffer, { type: "array", cellDates: false });
-  const analisis = parseAnalisisComunes(wb);
+  const analisisACP = parseAnalisisACP(wb);
+  const analisis = analisisACP.filter(a => a.tipoAnalisis === "comun_turno");
+  const analisisLotes = analisisACP.filter(a => a.tipoAnalisis === "lote_oxmo" || a.tipoAnalisis === "briqueta");
   const days = wb.SheetNames
     .filter(name => /\d{2}-\d{2}-\d{4}/.test(name))
     .map(name => parseInfodiaSheet(name, XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: "" })))
@@ -1780,34 +1881,45 @@ async function importarInfodia(file) {
     llenadoT: a.llenadoT + d.llenadoT,
     descargaT: a.descargaT + d.descargaT,
   }), { lotes: 0, produccionKg: 0, kgMo: 0, llenadoT: 0, descargaT: 0 });
-  return { fileName: file.name, importedAt: new Date().toLocaleString("es-CL"), days, analisis, siloHistorial, simWindow: selectedWindow.label, totals };
+  return { fileName: file.name, importedAt: new Date().toLocaleString("es-CL"), days, analisis, analisisLotes, analisisACP, siloHistorial, simWindow: selectedWindow.label, totals };
 }
 
-function parseAnalisisComunes(wb) {
+function parseAnalisisACP(wb) {
   const sheetName = wb.SheetNames.find(n => /hoja1|anal|acp|lab|quim/i.test(n)) || wb.SheetNames.at(-1);
   const ws = wb.Sheets[sheetName];
   if (!ws) return [];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
   if (!rows.length) return [];
-  const header = rows[0].map(x => cellText(x));
-  const idx = name => header.findIndex(h => h === cellText(name));
-  const loteIdx = idx("Nro Lote");
+  const headerRow = rows.findIndex(r => r.some(c => cellText(c).includes("NRO LOTE")));
+  const header = (rows[headerRow >= 0 ? headerRow : 0] || []).map(x => cellText(x));
+  const idxExact = name => header.findIndex(h => h === cellText(name));
+  const idxIncludes = (...tokens) => header.findIndex(h => tokens.every(t => h.includes(cellText(t))));
+  const loteIdx = idxIncludes("NRO", "LOTE");
   const fechaIdx = header.findIndex(h => h.includes("FECHA") && h.includes("ANALISIS"));
-  const cuIdx = idx("Cu");
-  const moIdx = idx("Mo");
-  const sIdx = idx("S");
+  const productoIdx = idxExact("PRODUCTO");
+  const cuIdx = idxExact("Cu");
+  const moIdx = idxExact("Mo");
+  const sIdx = idxExact("S");
   if (loteIdx < 0 || fechaIdx < 0 || cuIdx < 0 || moIdx < 0 || sIdx < 0) return [];
-  return rows.slice(1).map(r => {
+  return rows.slice((headerRow >= 0 ? headerRow : 0) + 1).map(r => {
     const codigo = String(r[loteIdx] || "").trim().toUpperCase();
-    if (!/^OO300-001-\d+-26$/.test(codigo)) return null;
+    const tipoAnalisis = tipoAnalisisACP(codigo);
+    if (!tipoAnalisis) return null;
     const fecha = normalizarFechaAnalisis(r[fechaIdx]);
     const cu = parseNum(r[cuIdx]);
     const mo = parseNum(r[moIdx]);
     const s = parseNum(r[sIdx]);
-    if (!fecha || !cu || !mo) return null;
-    const comun = { codigo, fecha, cu, mo, s, fuente: sheetName };
+    if (!fecha || !Number.isFinite(cu) || !Number.isFinite(mo)) return null;
+    const comun = { codigo, tipoAnalisis, producto: productoIdx >= 0 ? String(r[productoIdx] || "").trim() : "", fecha, cu, mo, s, fuente: sheetName };
     return { ...comun, ...clasificar(comun) };
   }).filter(Boolean);
+}
+
+function tipoAnalisisACP(codigo) {
+  if (/^OO300-001-\d+-\d{2}$/.test(codigo)) return "comun_turno";
+  if (/^OXMO\d+-\d{2}$/.test(codigo)) return "lote_oxmo";
+  if (/^OXBR\d+-\d{2}$/.test(codigo)) return "briqueta";
+  return "";
 }
 
 function buildSiloHistorial(days, analisis) {
