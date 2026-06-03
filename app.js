@@ -1557,6 +1557,7 @@ function infodiaResumenHTML(info) {
 function siloHistorialHTML() {
   const hist = [...(state.siloHistorial || [])].sort((a, b) => a.fecha.localeCompare(b.fecha) || String(a.siloId).localeCompare(String(b.siloId)));
   const totalLlenado = hist.reduce((a, h) => a + Number(h.masaLlenado || 0), 0);
+  const totalDescarga = hist.reduce((a, h) => a + Number(h.masaDescarga || 0), 0);
   const conAnalisis = hist.filter(h => hasAnalysis(h)).length;
   const ultimo = hist.at(-1);
   return `<div class="box">
@@ -1569,20 +1570,24 @@ function siloHistorialHTML() {
       <button class="btn secondary" data-tab="infodia">Importar nuevo Infodia</button>
     </div>
     <div class="grid-cards" style="margin-bottom:14px">
-      ${miniReport("Eventos llenado", String(hist.length), C.blueLight)}
+      ${miniReport("Eventos historicos", String(hist.length), C.blueLight)}
       ${miniReport("Masa llenada", `${totalLlenado.toFixed(2)} t`, C.green)}
+      ${miniReport("Masa descargada", `${totalDescarga.toFixed(2)} t`, C.yellow)}
       ${miniReport("Con analisis", String(conAnalisis), C.cyan)}
       ${miniReport("Ultimo evento", ultimo?.fecha || "-", C.copper)}
     </div>
     ${hist.length ? `<div class="table-wrap">
       <table>
-        <thead><tr><th>Fecha</th><th>Silo</th><th>Llenado</th><th>Nivel final</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th>Comunes ACP</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Silo</th><th>Movimiento</th><th>Llenado</th><th>Descarga</th><th>Masa final</th><th>Nivel final</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th>Comunes ACP</th></tr></thead>
         <tbody>${hist.map(h => {
           const cl = hasAnalysis(h) ? clasificar(h) : { clase: "Pendiente", color: C.yellow };
           return `<tr>
             <td class="mono" style="color:var(--txt2)">${h.fecha}</td>
             <td class="mono" style="color:var(--blue-light);font-weight:900">${h.siloId}</td>
+            <td><span class="tag" style="background:${h.movimiento === "Llenado" ? C.green : h.movimiento === "Descarga" ? C.yellow : C.blue}22;color:${h.movimiento === "Llenado" ? C.green : h.movimiento === "Descarga" ? C.yellow : C.blue};border-color:#ffffff22">${h.movimiento || "Nivel"}</span></td>
             <td class="mono">${Number(h.masaLlenado || 0).toFixed(2)} t</td>
+            <td class="mono">${Number(h.masaDescarga || 0).toFixed(2)} t</td>
+            <td class="mono">${Number(h.masaFinal || 0).toFixed(2)} t</td>
             <td class="mono">${Number(h.nivelFinal || 0).toFixed(1)}%</td>
             <td class="mono" style="color:${hasAnalysis(h) ? C.cyan : C.txt3}">${hasAnalysis(h) ? Number(h.cu).toFixed(3) : "-"}</td>
             <td class="mono" style="color:${hasAnalysis(h) ? C.green : C.txt3}">${hasAnalysis(h) ? Number(h.mo).toFixed(3) : "-"}</td>
@@ -1671,21 +1676,42 @@ function buildSiloHistorial(days, analisis) {
     ? days.filter(d => d.fecha >= "2026-05-01" && d.fecha <= "2026-05-16")
     : days;
   const out = [];
+  const siloState = new Map();
   for (const day of targetDays.sort((a, b) => a.fecha.localeCompare(b.fecha))) {
     const comunes = byDate.get(day.fecha) || [];
     const promedio = promedioAnalisis(comunes);
     for (const s of day.silos) {
-      if (Number(s.llenadoT || 0) <= 0) continue;
+      const prev = siloState.get(s.id) || { masa: 0, cu: 0, mo: 0, s: 0 };
+      const llenado = Number(s.llenadoT || 0);
+      const descarga = Number(s.descargaT || 0);
+      const masaFinal = Number(s.masa || 0);
+      const masaDespuesDescarga = Math.max(0, prev.masa - descarga);
+      const tieneComun = comunes.length > 0 && hasAnalysis(promedio);
+      const nuevaMasa = llenado > 0 && tieneComun ? llenado : 0;
+      const totalPonderado = masaDespuesDescarga + nuevaMasa;
+      const caracter = totalPonderado > 0 ? {
+        cu: Number((((prev.cu || 0) * masaDespuesDescarga + (promedio.cu || 0) * nuevaMasa) / totalPonderado).toFixed(3)),
+        mo: Number((((prev.mo || 0) * masaDespuesDescarga + (promedio.mo || 0) * nuevaMasa) / totalPonderado).toFixed(3)),
+        s: Number((((prev.s || 0) * masaDespuesDescarga + (promedio.s || 0) * nuevaMasa) / totalPonderado).toFixed(4)),
+      } : { cu: 0, mo: 0, s: 0 };
+      siloState.set(s.id, { masa: masaFinal, ...caracter });
+      const movimiento = llenado > 0 ? "Llenado" : descarga > 0 ? "Descarga" : "Nivel";
       const rec = {
         fecha: day.fecha,
         siloId: s.id,
         silo: s.silo,
-        masaLlenado: Number(s.llenadoT || 0),
+        movimiento,
+        masaLlenado: llenado,
+        masaDescarga: descarga,
+        masaFinal,
         nivelFinal: Number(s.finalNivel || 0),
         comunes: comunes.map(c => c.codigo),
-        cu: promedio.cu,
-        mo: promedio.mo,
-        s: promedio.s,
+        comunCu: promedio.cu,
+        comunMo: promedio.mo,
+        comunS: promedio.s,
+        cu: caracter.cu,
+        mo: caracter.mo,
+        s: caracter.s,
       };
       out.push({ ...rec, ...clasificar(rec) });
     }
