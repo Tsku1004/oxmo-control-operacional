@@ -1,4 +1,4 @@
-const C = {
+﻿const C = {
   blue: "#1E6FD9", blueLight: "#3A8EF5", cyan: "#00D4FF",
   green: "#00E5A0", copper: "#C87533", yellow: "#FFB800", red: "#FF4560",
   txt2: "#6A8FAF", txt3: "#2D4A6A"
@@ -45,6 +45,7 @@ const state = {
   reporteHTML: "",
   cloudPanel: false,
   cloudMsg: "",
+  siloHistSearch: "",
   mixMsg: "",
   mix: { cu: 0.5, mo: 57, s: 0.1, masa: 20000, sel: [], sector: "Todos" },
 };
@@ -182,7 +183,7 @@ async function configureCloud() {
   const anonKey = prompt("Anon public key de Supabase", current.anonKey || "");
   if (anonKey === null) return;
   if (!url.trim() || !anonKey.trim()) {
-    if (confirm("¿Desactivar sincronización en la nube y usar solo este dispositivo?")) {
+    if (confirm("Â¿Desactivar sincronizaciÃ³n en la nube y usar solo este dispositivo?")) {
       clearCloudConfig();
       cloud.ready = false;
       cloud.status = "local";
@@ -196,7 +197,7 @@ async function configureCloud() {
   await initCloud();
   if (cloud.ready) {
     await Promise.all([...SHARED_KEYS].map(key => cloudSave(key, load(key, sharedFallback(key)))));
-    alert("Nube configurada. Los datos se sincronizarán en tiempo real.");
+    alert("Nube configurada. Los datos se sincronizarÃ¡n en tiempo real.");
   } else {
     alert("No se pudo conectar. Revisa la URL, la anon key y la tabla oxmo_state.");
   }
@@ -308,13 +309,13 @@ function loginHTML() {
             <div class="brand-sub">CONTROL OPERACIONAL</div>
           </div>
         </div>
-        <div style="text-align:center;color:var(--txt3);font-size:11px;letter-spacing:3px;margin-bottom:34px">ENVASE · TRAZABILIDAD · INVENTARIO</div>
+        <div style="text-align:center;color:var(--txt3);font-size:11px;letter-spacing:3px;margin-bottom:34px">ENVASE Â· TRAZABILIDAD Â· INVENTARIO</div>
         <div class="box">
-          <div class="muted-title" style="text-align:center;margin-bottom:24px">Iniciar sesión</div>
+          <div class="muted-title" style="text-align:center;margin-bottom:24px">Iniciar sesiÃ³n</div>
           <div id="loginError"></div>
           <div class="field"><label>Usuario</label><input id="loginUser" placeholder="admin / operador / supervisor" autocomplete="username"></div>
-          <div class="field"><label>Contraseña</label><input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
-          <button class="btn" id="loginBtn" style="width:100%">INGRESAR →</button>
+          <div class="field"><label>ContraseÃ±a</label><input id="loginPass" type="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" autocomplete="current-password"></div>
+          <button class="btn" id="loginBtn" style="width:100%">INGRESAR â†’</button>
           <div class="hint">
             <div style="letter-spacing:2px;margin-bottom:6px">CREDENCIALES DE PRUEBA</div>
             ${USUARIOS.map(x => `<div>${x.u} / ${x.p} <span style="opacity:.65">(${x.rol})</span></div>`).join("")}
@@ -330,7 +331,7 @@ function bindLogin() {
     const p = document.querySelector("#loginPass").value;
     const found = USUARIOS.find(x => x.u === u && x.p === p);
     if (!found) {
-      document.querySelector("#loginError").innerHTML = `<div class="error">Usuario o contraseña incorrectos</div>`;
+      document.querySelector("#loginError").innerHTML = `<div class="error">Usuario o contraseÃ±a incorrectos</div>`;
       return;
     }
     state.user = found;
@@ -358,7 +359,7 @@ function shellHTML() {
         <div class="brand-mark" style="height:38px"></div>
         <div>
           <div style="font-weight:900;letter-spacing:3px">CONTROL OPERACIONAL</div>
-          <div class="brand-sub">OXMO · ENVASE · TRAZABILIDAD</div>
+          <div class="brand-sub">OXMO Â· ENVASE Â· TRAZABILIDAD</div>
         </div>
       </div>
       <div class="top-actions">
@@ -374,20 +375,20 @@ function shellHTML() {
         <button class="btn danger" id="logoutBtn">SALIR</button>
       </div>
     </header>
-    <div class="status">${fuera.length ? `⚠ ${fuera.length} lote(s) fuera de especificación` : "Estado normal"} · Masa disponible: ${kgToTon(masaDisp)} · ${pend.length} pendientes análisis · Lotes totales: ${state.lotes.length}</div>
+    <div class="status">${fuera.length ? `âš  ${fuera.length} lote(s) fuera de especificaciÃ³n` : "Estado normal"} Â· Masa disponible: ${kgToTon(masaDisp)} Â· ${pend.length} pendientes anÃ¡lisis Â· Lotes totales: ${state.lotes.length}</div>
     <main class="main">
       <section class="kpis">
-        ${kpi("Masa Disponible", masaDisp / 1000, "t", `${disp.length} lotes`, C.green, "📦", 2)}
-        ${kpi("Masa Retenida", masaRet / 1000, "t", `${state.lotes.length - disp.length} lotes`, C.red, "🔒", 2)}
-        ${kpi("Fino Mo", finoMoKg / 1000, "t", "Masa x %Mo", C.copper, "◆", 2)}
-        ${kpi("Cu Promedio", cuProm, "%", "Lotes analizados", C.cyan, "⚗️", 2)}
-        ${kpi("Total Lotes", state.lotes.length, "", "Todos los sectores", C.blue, "🗂️", 0)}
-        ${kpi("Sin Análisis", pend.length, "", "Pendientes lab", C.yellow, "🔬", 0)}
+        ${kpi("Masa Disponible", masaDisp / 1000, "t", `${disp.length} lotes`, C.green, "ðŸ“¦", 2)}
+        ${kpi("Masa Retenida", masaRet / 1000, "t", `${state.lotes.length - disp.length} lotes`, C.red, "ðŸ”’", 2)}
+        ${kpi("Fino Mo", finoMoKg / 1000, "t", "Masa x %Mo", C.copper, "â—†", 2)}
+        ${kpi("Cu Promedio", cuProm, "%", "Lotes analizados", C.cyan, "âš—ï¸", 2)}
+        ${kpi("Total Lotes", state.lotes.length, "", "Todos los sectores", C.blue, "ðŸ—‚ï¸", 0)}
+        ${kpi("Sin AnÃ¡lisis", pend.length, "", "Pendientes lab", C.yellow, "ðŸ”¬", 0)}
       </section>
       <nav class="tabs">
         ${[
-          ["inventario","📦 Inventario"],["silos","🏭 Silos"],["quimica","⚗️ Química"],["mezclas","⚡ Mezclas"],
-          ["siloHistorial","🧾 Historial Silos"],["etiquetas","🏷️ Etiquetas"],["reportes","📋 Reportes"],["alertas","🚨 Alertas"]
+          ["inventario","ðŸ“¦ Inventario"],["silos","ðŸ­ Silos"],["quimica","âš—ï¸ QuÃ­mica"],["mezclas","âš¡ Mezclas"],
+          ["siloHistorial","ðŸ§¾ Historial Silos"],["etiquetas","ðŸ·ï¸ Etiquetas"],["reportes","ðŸ“‹ Reportes"],["alertas","ðŸš¨ Alertas"]
         ].map(([id, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
       </nav>
       <div class="filters" style="margin-bottom:12px">
@@ -396,15 +397,15 @@ function shellHTML() {
       <section id="tabView">${tabHTML()}</section>
     </main>
     <footer class="footer">
-      <span>OXMO CONTROL v1.1 · ${state.user.nombre} (${state.user.rol}) · ${state.historial.length} eventos</span>
-      <span>DATOS PERSISTENTES · SGI COMPATIBLE</span>
+      <span>OXMO CONTROL v1.1 Â· ${state.user.nombre} (${state.user.rol}) Â· ${state.historial.length} eventos</span>
+      <span>DATOS PERSISTENTES Â· SGI COMPATIBLE</span>
     </footer>
     ${state.cloudPanel ? cloudPanelHTML() : ""}
   `;
 }
 function kpi(label, value, unit, sub, color, icon, dec = 0) {
   const shown = typeof value === "number" ? value.toFixed(dec) : value;
-  return `<div class="kpi" style="--accent:${color}"><div class="icon">${icon}</div><div class="kpi-label">${label}</div><div class="kpi-value">${shown}</div><div class="kpi-sub">${unit} · ${sub}</div></div>`;
+  return `<div class="kpi" style="--accent:${color}"><div class="icon">${icon}</div><div class="kpi-label">${label}</div><div class="kpi-value">${shown}</div><div class="kpi-sub">${unit} Â· ${sub}</div></div>`;
 }
 function bindShell() {
   document.querySelector("#logoutBtn").addEventListener("click", () => {
@@ -442,6 +443,7 @@ function bindTab() {
   if (state.tab === "registro") bindRegistro();
   if (state.tab === "mezclas") bindMezclas();
   if (state.tab === "infodia") bindInfodia();
+  if (state.tab === "siloHistorial") bindSiloHistorial();
   if (state.tab === "etiquetas") bindEtiquetas();
   if (state.tab === "reportes") bindReportes();
   if (state.tab === "quimica") bindQuimica();
@@ -469,7 +471,7 @@ function inventarioHTML() {
       </div>
       <div class="card">
         <div class="muted-title" style="margin-bottom:10px">Estados</div>
-        ${["Disponible","Bloqueado","Pendiente","Fuera Esp"].map(e => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a2e4a33"><span style="color:${eColor(e)}">● ${e}</span><span class="mono" style="font-weight:800">${state.lotes.filter(l => l.estado === e).length}</span></div>`).join("")}
+        ${["Disponible","Bloqueado","Pendiente","Fuera Esp"].map(e => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a2e4a33"><span style="color:${eColor(e)}">â— ${e}</span><span class="mono" style="font-weight:800">${state.lotes.filter(l => l.estado === e).length}</span></div>`).join("")}
       </div>
     </div>
   `;
@@ -481,13 +483,13 @@ function rowHTML(l) {
     <td style="color:var(--txt2)">${l.tipo}</td>
     <td class="mono">${kgToTon(l.masa, 3)}</td>
     <td><span class="tag" style="color:var(--blue-light);background:#0f3a6e">${l.sector}</span></td>
-    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.cu >= 0.51 ? C.copper : C.green}">${hasAnalysis(l) ? l.cu : "—"}</td>
-    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.mo >= moMinimo(l.cu) ? C.green : C.red}">${hasAnalysis(l) ? l.mo : "—"}</td>
-    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.s < 0.1 ? C.green : C.red}">${hasAnalysis(l) ? l.s : "—"}</td>
+    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.cu >= 0.51 ? C.copper : C.green}">${hasAnalysis(l) ? l.cu : "â€”"}</td>
+    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.mo >= moMinimo(l.cu) ? C.green : C.red}">${hasAnalysis(l) ? l.mo : "â€”"}</td>
+    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.s < 0.1 ? C.green : C.red}">${hasAnalysis(l) ? l.s : "â€”"}</td>
     <td><span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${clase}</span></td>
-    <td style="color:${eColor(l.estado)}">● ${l.estado}</td>
+    <td style="color:${eColor(l.estado)}">â— ${l.estado}</td>
     <td class="mono" style="color:var(--txt3);font-size:10px">${l.fecha}</td>
-    <td><div class="mini-actions"><button class="icon-btn" data-edit="${l.id}">✏️</button><button class="icon-btn" data-del="${l.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">🗑</button></div></td>
+    <td><div class="mini-actions"><button class="icon-btn" data-edit="${l.id}">âœï¸</button><button class="icon-btn" data-del="${l.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">ðŸ—‘</button></div></td>
   </tr>`;
 }
 function bindInventario() {
@@ -497,7 +499,7 @@ function bindInventario() {
   document.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => deleteLot(btn.dataset.del)));
 }
 function deleteLot(id) {
-  if (!confirm(`¿Eliminar ${id}? Esta acción no se puede deshacer.`)) return;
+  if (!confirm(`Â¿Eliminar ${id}? Esta acciÃ³n no se puede deshacer.`)) return;
   state.lotes = state.lotes.filter(l => l.id !== id);
   addHist("Lote eliminado", id, "", C.red);
   persistLotes();
@@ -506,7 +508,7 @@ function deleteLot(id) {
 
 function registroHTML() {
   const l = state.editando || {tipo:"Maxisaco",masa:"",sector:DEFAULT_SECTORES[0],fila:0,cu:"",mo:"",s:"",obs:"",estado:"Disponible"};
-  const sectorOptions = [...allSectores(), "Añadir sector..."];
+  const sectorOptions = [...allSectores(), "AÃ±adir sector..."];
   return `
     <div class="grid-2">
       <div class="box" style="border-top:3px solid ${state.editando ? C.cyan : C.blue}">
@@ -524,7 +526,7 @@ function registroHTML() {
             ${inputField("fila","Fila",l.fila,"number")}
           </div>
           <div style="border-top:1px solid var(--line);padding-top:12px;margin-top:12px">
-            <div class="muted-title" style="color:var(--cyan);margin-bottom:8px">Análisis químico</div>
+            <div class="muted-title" style="color:var(--cyan);margin-bottom:8px">AnÃ¡lisis quÃ­mico</div>
             <div class="chem-grid">
               ${inputField("cu","Cu %",l.cu || "","number","0.49","0.01")}
               ${inputField("mo","Mo %",l.mo || "","number","57.5","0.01")}
@@ -537,16 +539,16 @@ function registroHTML() {
         </form>
       </div>
       <div class="card list">
-        <div class="muted-title" style="margin-bottom:12px">Lotes registrados — ${state.lotes.length} total</div>
+        <div class="muted-title" style="margin-bottom:12px">Lotes registrados â€” ${state.lotes.length} total</div>
         ${[...state.lotes].reverse().map(x => {
           const c = clasificar(x);
           return `<div class="lot-row" style="--accent:${c.color}">
             <div>
-              <div class="mono" style="color:var(--blue-light);font-weight:800">${x.id} <span style="color:var(--txt3);font-size:10px">· ${x.tipo} · ${x.sector}</span></div>
-              <div style="color:var(--txt2);font-size:10px;margin-top:2px">${kgToTon(x.masa, 3)} · ${x.fecha}</div>
-              <div style="margin-top:3px"><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span> <span style="color:${eColor(x.estado)};font-size:10px">● ${x.estado}</span></div>
+              <div class="mono" style="color:var(--blue-light);font-weight:800">${x.id} <span style="color:var(--txt3);font-size:10px">Â· ${x.tipo} Â· ${x.sector}</span></div>
+              <div style="color:var(--txt2);font-size:10px;margin-top:2px">${kgToTon(x.masa, 3)} Â· ${x.fecha}</div>
+              <div style="margin-top:3px"><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span> <span style="color:${eColor(x.estado)};font-size:10px">â— ${x.estado}</span></div>
             </div>
-            <div class="mini-actions"><button class="icon-btn" data-copy="${x.id}">📋</button><button class="icon-btn" data-del="${x.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">🗑</button></div>
+            <div class="mini-actions"><button class="icon-btn" data-copy="${x.id}">ðŸ“‹</button><button class="icon-btn" data-del="${x.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">ðŸ—‘</button></div>
           </div>`;
         }).join("")}
       </div>
@@ -563,20 +565,20 @@ function bindRegistro() {
   const form = document.querySelector("#lotForm");
   if (document.querySelector("#cancelEdit")) document.querySelector("#cancelEdit").addEventListener("click", () => { state.editando = null; render(); });
   const toggleNewSector = () => {
-    document.querySelector("#newSectorField").style.display = form.elements.sector.value === "Añadir sector..." ? "block" : "none";
+    document.querySelector("#newSectorField").style.display = form.elements.sector.value === "AÃ±adir sector..." ? "block" : "none";
   };
   toggleNewSector();
   form.elements.sector.addEventListener("change", () => {
     toggleNewSector();
-    if (form.elements.sector.value === "Añadir sector...") form.elements.nuevoSector.focus();
+    if (form.elements.sector.value === "AÃ±adir sector...") form.elements.nuevoSector.focus();
   });
   form.addEventListener("submit", e => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(form).entries());
     const masa = Number(data.masa);
-    if (!masa || masa <= 0) { alert("Masa inválida"); return; }
+    if (!masa || masa <= 0) { alert("Masa invÃ¡lida"); return; }
     let sector = data.sector;
-    if (sector === "Añadir sector...") {
+    if (sector === "AÃ±adir sector...") {
       sector = (data.nuevoSector || "").trim();
       if (!sector) { alert("Ingresa el nombre del nuevo sector"); return; }
       state.sectores = [...new Set([...state.sectores, sector])];
@@ -628,7 +630,7 @@ function silosHTML() {
         <div class="mono" style="position:absolute;inset:0;display:grid;place-items:center;font-weight:900">${s.nivel}%</div>
       </div>
       <div class="mono" style="text-align:center;color:${color};font-weight:900">${((s.nivel/100)*s.cap*s.den).toFixed(1)} t</div>
-      <div style="text-align:center;color:var(--txt2);font-size:11px">Cu: ${s.cu}% · Mo: ${s.mo}% · Turno ${s.turno}</div>
+      <div style="text-align:center;color:var(--txt2);font-size:11px">Cu: ${s.cu}% Â· Mo: ${s.mo}% Â· Turno ${s.turno}</div>
     </div>`;
   }).join("")}</div>`;
 }
@@ -636,19 +638,19 @@ function silosHTML() {
 function quimicaHTML() {
   return `<div class="grid-cards">${state.lotes.map(l => {
     const c = clasificar(l);
-    if (!hasAnalysis(l)) return `<div class="card" style="border-left:4px solid ${C.yellow}"><div style="display:flex;justify-content:space-between"><b class="mono" style="color:var(--blue-light)">${l.id}</b><span class="tag" style="color:${C.yellow};background:${C.yellow}22">Pendiente</span></div><div style="text-align:center;color:${C.yellow};padding:18px 0">Sin análisis</div><button class="btn secondary" data-chem="${l.id}" style="width:100%">Ingresar análisis</button></div>`;
+    if (!hasAnalysis(l)) return `<div class="card" style="border-left:4px solid ${C.yellow}"><div style="display:flex;justify-content:space-between"><b class="mono" style="color:var(--blue-light)">${l.id}</b><span class="tag" style="color:${C.yellow};background:${C.yellow}22">Pendiente</span></div><div style="text-align:center;color:${C.yellow};padding:18px 0">Sin anÃ¡lisis</div><button class="btn secondary" data-chem="${l.id}" style="width:100%">Ingresar anÃ¡lisis</button></div>`;
     return `<div class="card" style="border-left:4px solid ${c.color}">
       <div style="display:flex;justify-content:space-between;margin-bottom:10px"><b class="mono" style="color:var(--blue-light)">${l.id}</b><span class="tag" style="color:${c.color};background:${c.color}22;border-color:${c.color}44">${c.clase}</span></div>
       ${chemBar("Cu", l.cu, l.cu >= 0.51, 3)}
       ${chemBar("Mo", l.mo, l.mo >= moMinimo(l.cu), 70)}
       ${chemBar("S", l.s, l.s < 0.1, 1)}
-      <div style="margin-top:8px;color:var(--txt2);font-size:10px">${l.sector} · ${l.masa}kg · ${l.fecha}</div>
+      <div style="margin-top:8px;color:var(--txt2);font-size:10px">${l.sector} Â· ${l.masa}kg Â· ${l.fecha}</div>
     </div>`;
   }).join("")}</div>`;
 }
 function chemBar(label, value, ok, max) {
   const color = ok ? C.green : C.red;
-  return `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between"><span style="color:var(--txt2);font-size:11px">${label}</span><span class="mono" style="color:${color};font-weight:800;font-size:11px">${value.toFixed(2)}% ${ok ? "✓" : "✗"}</span></div><div class="bar" style="--accent:${color}"><span style="--w:${Math.min((value/max)*100, 100)}%"></span></div></div>`;
+  return `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between"><span style="color:var(--txt2);font-size:11px">${label}</span><span class="mono" style="color:${color};font-weight:800;font-size:11px">${value.toFixed(2)}% ${ok ? "âœ“" : "âœ—"}</span></div><div class="bar" style="--accent:${color}"><span style="--w:${Math.min((value/max)*100, 100)}%"></span></div></div>`;
 }
 function bindQuimica() {
   document.querySelectorAll("[data-chem]").forEach(btn => btn.addEventListener("click", () => {
@@ -673,15 +675,15 @@ function mezclasHTML() {
     <div class="box">
       <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Objetivo</div>
       ${range("Cu objetivo", "cu", m.cu, 0, 2, .01, "%", C.green)}
-      ${range("Mo mínimo", "mo", m.mo, 50, 65, .1, "%", C.blueLight)}
-      ${range("S máximo", "s", m.s, 0, .5, .01, "%", C.yellow)}
+      ${range("Mo mÃ­nimo", "mo", m.mo, 50, 65, .1, "%", C.blueLight)}
+      ${range("S mÃ¡ximo", "s", m.s, 0, .5, .01, "%", C.yellow)}
       ${range("Masa objetivo", "masa", m.masa, 500, 8000, 100, "kg", C.cyan)}
       <button class="btn" id="autoMix" style="width:100%;margin-top:8px">AUTO-SELECCIONAR</button>
       <button class="btn secondary" id="clearMix" style="width:100%;margin-top:6px">Limpiar</button>
       <div class="filters" style="margin-top:12px">${["Todos", ...allSectores()].map(s => `<button class="pill ${m.sector === s ? "active" : ""}" data-mix-sector="${s}">${s}</button>`).join("")}</div>
     </div>
     <div class="box">
-      <div style="display:flex;justify-content:space-between;margin-bottom:12px"><div class="muted-title" style="color:var(--cyan)">Loza de materiales</div><div style="color:var(--txt3);font-size:10px">${m.sel.length} selec. · ${kgToTon(masa)}</div></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px"><div class="muted-title" style="color:var(--cyan)">Loza de materiales</div><div style="color:var(--txt3);font-size:10px">${m.sel.length} selec. Â· ${kgToTon(masa)}</div></div>
       <div class="yard">${allSectores().map(sec => {
         const ls = shown.filter(l => l.sector === sec);
         if (!ls.length) return "";
@@ -696,7 +698,7 @@ function mezclasHTML() {
     <div class="box">
       <div style="text-align:center;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:12px">
         <div class="muted-title">Resultado</div>
-        <div class="mono" style="font-size:34px;font-weight:900;color:${score === 4 ? C.green : score >= 2 ? C.yellow : C.red}">${score === 4 ? "OK" : score === 0 ? "—" : `${score}/4`}</div>
+        <div class="mono" style="font-size:34px;font-weight:900;color:${score === 4 ? C.green : score >= 2 ? C.yellow : C.red}">${score === 4 ? "OK" : score === 0 ? "â€”" : `${score}/4`}</div>
       </div>
       ${chemResult("Cu", cu, m.cu, checks[0], 2)}
       ${chemResult("Mo", mo, m.mo, checks[1], 70)}
@@ -715,7 +717,7 @@ function range(label, key, value, min, max, step, unit, color) {
 }
 function chemResult(label, value, target, ok, max) {
   const color = ok ? C.green : value ? C.red : C.txt3;
-  return `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between"><span style="color:var(--txt2);font-size:11px">${label}</span><span class="mono" style="color:${color};font-size:11px;font-weight:900">${value ? `${value.toFixed(2)}% ${ok ? "✓" : "✗"}` : "—"}</span></div><div class="bar" style="--accent:${color}"><span style="--w:${Math.min((value/max)*100,100)}%"></span></div><div style="text-align:center;color:var(--txt3);font-size:8px">meta: ${target}%</div></div>`;
+  return `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between"><span style="color:var(--txt2);font-size:11px">${label}</span><span class="mono" style="color:${color};font-size:11px;font-weight:900">${value ? `${value.toFixed(2)}% ${ok ? "âœ“" : "âœ—"}` : "â€”"}</span></div><div class="bar" style="--accent:${color}"><span style="--w:${Math.min((value/max)*100,100)}%"></span></div><div style="text-align:center;color:var(--txt3);font-size:8px">meta: ${target}%</div></div>`;
 }
 function mini(label, value, color) {
   return `<div style="background:#0f3a6e66;border-radius:5px;padding:7px"><div style="color:var(--txt3);font-size:8px">${label}</div><div class="mono" style="color:${color};font-weight:900;font-size:12px">${value}</div></div>`;
@@ -773,9 +775,9 @@ function etiquetasHTML() {
     <div class="grid-cards">${lotes.map(l => {
       const c = clasificar(l), selected = state.etiquetaSel.includes(l.id);
       return `<div class="card" data-etq="${l.id}" style="border:2px solid ${selected ? c.color : "var(--line)"};box-shadow:${selected ? `0 0 16px ${c.color}33` : "none"};text-align:center;cursor:pointer">
-        <div style="font-size:42px;color:${c.color}">▦</div>
+        <div style="font-size:42px;color:${c.color}">â–¦</div>
         <div class="mono" style="color:var(--blue-light);font-weight:900">${l.id}</div>
-        <div style="color:var(--txt2);font-size:10px">${l.tipo} · ${l.sector}</div>
+        <div style="color:var(--txt2);font-size:10px">${l.tipo} Â· ${l.sector}</div>
         <div class="mono" style="margin-top:2px">${l.masa} kg</div>
         <div class="tag" style="margin-top:8px;background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</div>
       </div>`;
@@ -799,7 +801,7 @@ function bindEtiquetas() {
 function printLabels() {
   const items = state.etiquetaSel.map(id => state.lotes.find(l => l.id === id)).filter(Boolean).map(l => {
     const c = clasificar(l);
-    return `<div style="display:inline-block;margin:6px;padding:14px;border:2px solid #333;border-radius:6px;font-family:monospace;width:170px;text-align:center;page-break-inside:avoid"><div style="font-size:8px;letter-spacing:2px;color:#666">OXMO CONTROL</div><h3>${l.id}</h3><div style="font-size:54px">▦</div><div>${l.tipo}</div><b>${l.masa} kg</b><div>${l.sector} · Fila ${l.fila}</div><div style="margin-top:6px">${c.clase.toUpperCase()}</div><small>${l.fecha}</small></div>`;
+    return `<div style="display:inline-block;margin:6px;padding:14px;border:2px solid #333;border-radius:6px;font-family:monospace;width:170px;text-align:center;page-break-inside:avoid"><div style="font-size:8px;letter-spacing:2px;color:#666">OXMO CONTROL</div><h3>${l.id}</h3><div style="font-size:54px">â–¦</div><div>${l.tipo}</div><b>${l.masa} kg</b><div>${l.sector} Â· Fila ${l.fila}</div><div style="margin-top:6px">${c.clase.toUpperCase()}</div><small>${l.fecha}</small></div>`;
   }).join("");
   const w = window.open("", "_blank");
   w.document.write(`<html><head><title>Etiquetas OXMO</title></head><body>${items}<script>window.onload=()=>window.print()<\/script></body></html>`);
@@ -813,14 +815,14 @@ function reportesHTML() {
   const cu = average(disp.filter(l => l.cu).map(l => l.cu));
   const mo = average(disp.filter(l => l.mo).map(l => l.mo));
   return `<div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px;flex-wrap:wrap"><div class="muted-title">Reporte SGI — ${hoy()}</div><button class="btn" id="printReport">GENERAR PDF</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px;flex-wrap:wrap"><div class="muted-title">Reporte SGI â€” ${hoy()}</div><button class="btn" id="printReport">GENERAR PDF</button></div>
     <div class="grid-cards">
       ${miniReport("Masa disponible", kgToTon(masa), C.green)}
       ${miniReport("Fino Mo", kgToTon(finoMo), C.copper)}
       ${miniReport("Lotes disponibles", disp.length, C.green)}
       ${miniReport("Cu% promedio", `${cu.toFixed(2)}%`, C.cyan)}
       ${miniReport("Mo% promedio", `${mo.toFixed(3)}%`, C.blueLight)}
-      ${miniReport("Sin análisis", state.lotes.filter(l => l.estado === "Pendiente").length, C.yellow)}
+      ${miniReport("Sin anÃ¡lisis", state.lotes.filter(l => l.estado === "Pendiente").length, C.yellow)}
       ${miniReport("Fuera spec", state.lotes.filter(l => l.estado === "Fuera Esp").length, C.red)}
     </div>
     <div class="card" style="margin-top:14px;max-height:300px;overflow:auto"><div class="muted-title" style="margin-bottom:10px">Historial de movimientos (${state.historial.length} eventos)</div>${[...state.historial].reverse().map(h => `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid #1a2e4a33;font-size:11px"><span class="mono" style="min-width:42px;color:var(--txt3)">${h.tiempo}</span><span style="color:${h.color || C.txt2}">${h.accion}</span><span class="mono" style="color:var(--blue-light)">${h.loteId || ""}</span><span style="color:var(--txt3)">${h.detalle || ""}</span></div>`).join("")}</div>
@@ -832,9 +834,9 @@ function miniReport(label, value, color) {
 }
 function bindReportes() {
   document.querySelector("#printReport").addEventListener("click", () => {
-    const rows = state.lotes.map(l => `<tr><td>${l.id}</td><td>${l.tipo}</td><td>${l.masa}</td><td>${l.sector}</td><td>${hasAnalysis(l) ? l.cu : "—"}</td><td>${hasAnalysis(l) ? l.mo : "—"}</td><td>${hasAnalysis(l) ? l.s : "—"}</td><td>${clasificar(l).clase}</td><td>${l.estado}</td><td>${l.fecha}</td></tr>`).join("");
+    const rows = state.lotes.map(l => `<tr><td>${l.id}</td><td>${l.tipo}</td><td>${l.masa}</td><td>${l.sector}</td><td>${hasAnalysis(l) ? l.cu : "â€”"}</td><td>${hasAnalysis(l) ? l.mo : "â€”"}</td><td>${hasAnalysis(l) ? l.s : "â€”"}</td><td>${clasificar(l).clase}</td><td>${l.estado}</td><td>${l.fecha}</td></tr>`).join("");
     const w = window.open("", "_blank");
-    w.document.write(`<html><head><title>Reporte OXMO</title><style>body{font-family:Arial;font-size:12px;margin:20px}table{width:100%;border-collapse:collapse}th{background:#003366;color:white}td,th{padding:5px;border-bottom:1px solid #ddd}</style></head><body><h1>REPORTE OPERACIONAL SGI</h1><p>Control Operacional OXMO · ${new Date().toLocaleString("es-CL")}</p><table><tr><th>ID</th><th>Tipo</th><th>Masa</th><th>Sector</th><th>Cu</th><th>Mo</th><th>S</th><th>Clasif.</th><th>Estado</th><th>Fecha</th></tr>${rows}</table><script>window.onload=()=>window.print()<\/script></body></html>`);
+    w.document.write(`<html><head><title>Reporte OXMO</title><style>body{font-family:Arial;font-size:12px;margin:20px}table{width:100%;border-collapse:collapse}th{background:#003366;color:white}td,th{padding:5px;border-bottom:1px solid #ddd}</style></head><body><h1>REPORTE OPERACIONAL SGI</h1><p>Control Operacional OXMO Â· ${new Date().toLocaleString("es-CL")}</p><table><tr><th>ID</th><th>Tipo</th><th>Masa</th><th>Sector</th><th>Cu</th><th>Mo</th><th>S</th><th>Clasif.</th><th>Estado</th><th>Fecha</th></tr>${rows}</table><script>window.onload=()=>window.print()<\/script></body></html>`);
     w.document.close();
   });
 }
@@ -842,10 +844,10 @@ function bindReportes() {
 function alertasHTML() {
   const disp = state.lotes.filter(l => l.estado === "Disponible");
   const alerts = [
-    ...state.lotes.filter(l => l.estado === "Fuera Esp").map(l => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`${l.id} FUERA DE ESPECIFICACIÓN`,detalle:`Mo:${l.mo}% Cu:${l.cu}% S:${l.s}% · ${l.sector}`})),
-    ...SILOS.filter(s => s.nivel > 85).map(s => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`Silo ${s.id} al ${s.nivel}%`,detalle:`Masa est: ${((s.nivel/100)*s.cap*s.den).toFixed(1)}t · Programar despacho`})),
-    ...state.lotes.filter(l => l.estado === "Pendiente").map(l => ({nivel:"AVISO",color:C.yellow,icon:"⚠️",msg:`${l.id} sin análisis`,detalle:`${l.tipo} · ${l.masa}kg · ${l.sector} · ${l.fecha}`})),
-    {nivel:"INFO",color:C.green,icon:"ℹ️",msg:"Sistema activo",detalle:`${state.lotes.length} lotes · ${disp.length} disponibles · ${new Date().toLocaleTimeString("es-CL")}`}
+    ...state.lotes.filter(l => l.estado === "Fuera Esp").map(l => ({nivel:"CRÃTICO",color:C.red,icon:"ðŸš¨",msg:`${l.id} FUERA DE ESPECIFICACIÃ“N`,detalle:`Mo:${l.mo}% Cu:${l.cu}% S:${l.s}% Â· ${l.sector}`})),
+    ...SILOS.filter(s => s.nivel > 85).map(s => ({nivel:"CRÃTICO",color:C.red,icon:"ðŸš¨",msg:`Silo ${s.id} al ${s.nivel}%`,detalle:`Masa est: ${((s.nivel/100)*s.cap*s.den).toFixed(1)}t Â· Programar despacho`})),
+    ...state.lotes.filter(l => l.estado === "Pendiente").map(l => ({nivel:"AVISO",color:C.yellow,icon:"âš ï¸",msg:`${l.id} sin anÃ¡lisis`,detalle:`${l.tipo} Â· ${l.masa}kg Â· ${l.sector} Â· ${l.fecha}`})),
+    {nivel:"INFO",color:C.green,icon:"â„¹ï¸",msg:"Sistema activo",detalle:`${state.lotes.length} lotes Â· ${disp.length} disponibles Â· ${new Date().toLocaleTimeString("es-CL")}`}
   ];
   return `<div style="display:flex;flex-direction:column;gap:8px">${alerts.map(a => `<div class="card" style="border-left:4px solid ${a.color};display:flex;gap:12px"><span style="font-size:20px">${a.icon}</span><div><div><span class="tag" style="background:${a.color}22;color:${a.color};border-color:${a.color}44">${a.nivel}</span> <b style="font-size:12px">${a.msg}</b></div><div style="color:var(--txt2);font-size:11px;margin-top:4px">${a.detalle}</div></div></div>`).join("")}</div>`;
 }
@@ -855,6 +857,7 @@ function silosHTML() {
   return `<div style="display:grid;grid-template-columns:minmax(320px,1fr) 360px;gap:14px">
     <div class="grid-cards">${silos.map(s => {
       const color = s.muestras ? s.color : C.txt3;
+      const source = s.nivelImportado?.fuente === "infodia" ? `Infodia/ACP ${s.nivelImportado.fecha || ""}` : s.muestras ? "Manual" : "Sin datos";
       return `<div class="card" style="border-top:3px solid ${color}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div class="muted-title" style="color:var(--cyan);font-weight:800">${s.id}</div>
@@ -865,22 +868,25 @@ function silosHTML() {
           <div class="mono" style="position:absolute;inset:0;display:grid;place-items:center;font-weight:900">${s.nivel.toFixed(0)}%</div>
         </div>
         <div class="mono" style="text-align:center;color:${color};font-weight:900">${s.masa.toFixed(1)} / ${s.cap} t</div>
-        <div style="text-align:center;color:var(--txt2);font-size:11px;margin-top:3px">Cu: ${s.muestras ? s.cu.toFixed(2) : "-"}% · Mo: ${s.muestras ? s.mo.toFixed(2) : "-"}% · S: ${s.muestras ? s.s.toFixed(2) : "-"}%</div>
+        <div style="text-align:center;color:var(--txt2);font-size:11px;margin-top:3px">Cu: ${s.muestras ? s.cu.toFixed(2) : "-"}% Â· Mo: ${s.muestras ? s.mo.toFixed(2) : "-"}% Â· S: ${s.muestras ? s.s.toFixed(2) : "-"}%</div>
+        <div style="text-align:center;color:var(--txt3);font-size:9px;margin-top:4px">${source}</div>
+        <div style="text-align:center;color:var(--txt3);font-size:9px;margin-top:4px">${source}</div>
         <div style="display:flex;justify-content:center;gap:6px;margin-top:8px">
-          <button class="icon-btn" data-silo-fill="${s.id}">Ingresar común</button>
+          <button class="icon-btn" data-silo-fill="${s.id}">Ajuste manual</button>
           <button class="icon-btn" data-silo-clear="${s.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Vaciar</button>
         </div>
       </div>`;
     }).join("")}</div>
     <div class="box">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Ingreso común de turno</div>
+      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Ingreso manual de respaldo</div>
+      <div class="notice" style="margin-bottom:12px;border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">La carga normal se actualiza al subir Infodia con comunes OO300-001. Usa este formulario solo para corregir o cargar un comun puntual.</div>
       <form id="comunForm">
         <div class="form-grid">
           ${selectField("siloId","Silo",state.silosBase[0]?.id || "S-01",state.silosBase.map(s => s.id))}
-          ${selectField("turno","Turno","Día",["Día","Noche"])}
+          ${selectField("turno","Turno","DÃ­a",["DÃ­a","Noche"])}
           ${inputField("fecha","Fecha",hoy(),"text")}
           ${selectField("tramo","Tramo","00-02",["00-02","02-04","04-06","06-08","08-10","10-12","12-14","14-16","16-18","18-20","20-22","22-24"])}
-          ${inputField("masa","Masa común (t)","8.33","number","8.33","0.01")}
+          ${inputField("masa","Masa comÃºn (t)","8.33","number","8.33","0.01")}
           <div></div>
         </div>
         <div style="border-top:1px solid var(--line);padding-top:12px;margin-top:8px">
@@ -890,14 +896,14 @@ function silosHTML() {
             ${inputField("s","S %","","number","0.08","0.01")}
           </div>
         </div>
-        <button class="btn" style="width:100%;margin-top:10px">GUARDAR COMÚN</button>
+        <button class="btn" style="width:100%;margin-top:10px">GUARDAR COMÃšN</button>
       </form>
       <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
-        <div class="muted-title" style="margin-bottom:10px">Comunes ingresados — ${state.comunes.length}</div>
+        <div class="muted-title" style="margin-bottom:10px">Comunes ingresados â€” ${state.comunes.length}</div>
         <div style="max-height:330px;overflow:auto">${[...state.comunes].reverse().map(c => {
           const cl = clasificar(c);
           return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #1a2e4a33">
-            <div><div class="mono" style="color:var(--blue-light);font-weight:800">${c.siloId} · ${c.tramo} · ${c.turno}</div><div style="color:var(--txt2);font-size:10px">${c.fecha} · ${c.masa}t · Cu ${c.cu}% · Mo ${c.mo}% · S ${c.s}%</div></div>
+            <div><div class="mono" style="color:var(--blue-light);font-weight:800">${c.siloId} Â· ${c.tramo} Â· ${c.turno}</div><div style="color:var(--txt2);font-size:10px">${c.fecha} Â· ${c.masa}t Â· Cu ${c.cu}% Â· Mo ${c.mo}% Â· S ${c.s}%</div></div>
             <div style="display:flex;gap:5px;align-items:center"><span class="tag" style="background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${cl.clase}</span><button class="icon-btn" data-comun-del="${c.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">x</button></div>
           </div>`;
         }).join("") || `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px 0">Sin comunes registrados</div>`}</div>
@@ -914,7 +920,7 @@ function bindSilos() {
   }));
   document.querySelectorAll("[data-silo-clear]").forEach(btn => btn.addEventListener("click", () => {
     const siloId = btn.dataset.siloClear;
-    if (!confirm(`¿Vaciar comunes de ${siloId}?`)) return;
+    if (!confirm(`Â¿Vaciar comunes de ${siloId}?`)) return;
     state.comunes = state.comunes.filter(c => c.siloId !== siloId);
     save("oxmo:comunes", state.comunes);
     addHist("Silo vaciado", siloId, "Comunes eliminados", C.red);
@@ -933,7 +939,7 @@ function bindSilos() {
     const mo = Number(data.mo);
     const s = Number(data.s);
     if (!masa || masa <= 0 || Number.isNaN(cu) || Number.isNaN(mo) || Number.isNaN(s)) {
-      alert("Ingresa masa y análisis químico válidos");
+      alert("Ingresa masa y anÃ¡lisis quÃ­mico vÃ¡lidos");
       return;
     }
     const comun = {
@@ -949,7 +955,7 @@ function bindSilos() {
     };
     state.comunes.push(comun);
     save("oxmo:comunes", state.comunes);
-    addHist("Común de turno ingresado", comun.siloId, `${comun.masa}t ${comun.tramo}`, clasificar(comun).color);
+    addHist("ComÃºn de turno ingresado", comun.siloId, `${comun.masa}t ${comun.tramo}`, clasificar(comun).color);
     render();
   });
 }
@@ -957,11 +963,11 @@ function bindSilos() {
 function alertasHTML() {
   const disp = state.lotes.filter(l => l.estado === "Disponible");
   const alerts = [
-    ...state.lotes.filter(l => l.estado === "Fuera Esp").map(l => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`${l.id} FUERA DE ESPECIFICACIÓN`,detalle:`Mo:${l.mo}% Cu:${l.cu}% S:${l.s}% · ${l.sector}`})),
-    ...silosPonderados().filter(s => s.nivel > 85).map(s => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`Silo ${s.id} al ${s.nivel.toFixed(0)}%`,detalle:`Masa est: ${s.masa.toFixed(1)}t · Programar despacho`})),
-    ...silosPonderados().filter(s => s.muestras && s.clase === "Fuera Esp").map(s => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`Silo ${s.id} fuera de especificación`,detalle:`Cu:${s.cu.toFixed(2)}% Mo:${s.mo.toFixed(2)}% S:${s.s.toFixed(2)}%`})),
-    ...state.lotes.filter(l => l.estado === "Pendiente").map(l => ({nivel:"AVISO",color:C.yellow,icon:"⚠️",msg:`${l.id} sin análisis`,detalle:`${l.tipo} · ${l.masa}kg · ${l.sector} · ${l.fecha}`})),
-    {nivel:"INFO",color:C.green,icon:"ℹ️",msg:"Sistema activo",detalle:`${state.lotes.length} lotes · ${disp.length} disponibles · ${new Date().toLocaleTimeString("es-CL")}`}
+    ...state.lotes.filter(l => l.estado === "Fuera Esp").map(l => ({nivel:"CRÃTICO",color:C.red,icon:"ðŸš¨",msg:`${l.id} FUERA DE ESPECIFICACIÃ“N`,detalle:`Mo:${l.mo}% Cu:${l.cu}% S:${l.s}% Â· ${l.sector}`})),
+    ...silosPonderados().filter(s => s.nivel > 85).map(s => ({nivel:"CRÃTICO",color:C.red,icon:"ðŸš¨",msg:`Silo ${s.id} al ${s.nivel.toFixed(0)}%`,detalle:`Masa est: ${s.masa.toFixed(1)}t Â· Programar despacho`})),
+    ...silosPonderados().filter(s => s.muestras && s.clase === "Fuera Esp").map(s => ({nivel:"CRÃTICO",color:C.red,icon:"ðŸš¨",msg:`Silo ${s.id} fuera de especificaciÃ³n`,detalle:`Cu:${s.cu.toFixed(2)}% Mo:${s.mo.toFixed(2)}% S:${s.s.toFixed(2)}%`})),
+    ...state.lotes.filter(l => l.estado === "Pendiente").map(l => ({nivel:"AVISO",color:C.yellow,icon:"âš ï¸",msg:`${l.id} sin anÃ¡lisis`,detalle:`${l.tipo} Â· ${l.masa}kg Â· ${l.sector} Â· ${l.fecha}`})),
+    {nivel:"INFO",color:C.green,icon:"â„¹ï¸",msg:"Sistema activo",detalle:`${state.lotes.length} lotes Â· ${disp.length} disponibles Â· ${new Date().toLocaleTimeString("es-CL")}`}
   ];
   return `<div style="display:flex;flex-direction:column;gap:8px">${alerts.map(a => `<div class="card" style="border-left:4px solid ${a.color};display:flex;gap:12px"><span style="font-size:20px">${a.icon}</span><div><div><span class="tag" style="background:${a.color}22;color:${a.color};border-color:${a.color}44">${a.nivel}</span> <b style="font-size:12px">${a.msg}</b></div><div style="color:var(--txt2);font-size:11px;margin-top:4px">${a.detalle}</div></div></div>`).join("")}</div>`;
 }
@@ -1032,13 +1038,13 @@ function mezclasHTML() {
   const opciones = generarOpcionesMezcla();
   return `<div style="display:grid;grid-template-columns:280px 1fr;gap:12px">
     <div class="box">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Objetivo lote producción</div>
+      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Objetivo lote producciÃ³n</div>
       ${mini("Masa lote", "20.00 t", C.cyan)}
-      ${mini("S máximo", "< 0.10%", C.yellow)}
+      ${mini("S mÃ¡ximo", "< 0.10%", C.yellow)}
       ${mini("Mo alto cobre", ">= 55%", C.copper)}
       ${mini("Mo bajo cobre", "> 57%", C.green)}
       <button class="btn" id="autoMix" style="width:100%;margin-top:10px">BUSCAR OPCIONES</button>
-      <button class="btn secondary" id="clearMix" style="width:100%;margin-top:6px">Limpiar selección</button>
+      <button class="btn secondary" id="clearMix" style="width:100%;margin-top:6px">Limpiar selecciÃ³n</button>
       <div class="filters" style="margin-top:12px">${["Todos", ...allSectores()].map(s => `<button class="pill ${state.mix.sector === s ? "active" : ""}" data-mix-sector="${s}">${s}</button>`).join("")}</div>
     </div>
     <div>
@@ -1049,16 +1055,16 @@ function mezclasHTML() {
           const selected = state.mix.sel.includes(l.id);
           return `<div class="card" data-mix-lot="${l.id}" style="cursor:pointer;border:2px solid ${selected ? c.color : "var(--line)"}">
             <div style="display:flex;justify-content:space-between;gap:8px"><b class="mono" style="color:var(--blue-light)">${l.id}</b><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span></div>
-            <div style="color:var(--txt2);font-size:10px;margin-top:6px">${l.tipo} · ${l.sector} · ${(l.masa/1000).toFixed(2)}t</div>
-            <div class="mono" style="font-size:11px;margin-top:4px">Cu ${l.cu}% · Mo ${l.mo}% · S ${l.s}%</div>
+            <div style="color:var(--txt2);font-size:10px;margin-top:6px">${l.tipo} Â· ${l.sector} Â· ${(l.masa/1000).toFixed(2)}t</div>
+            <div class="mono" style="font-size:11px;margin-top:4px">Cu ${l.cu}% Â· Mo ${l.mo}% Â· S ${l.s}%</div>
           </div>`;
-        }).join("") || `<div style="color:var(--txt3);font-size:11px">No hay materiales con análisis.</div>`}</div>
+        }).join("") || `<div style="color:var(--txt3);font-size:11px">No hay materiales con anÃ¡lisis.</div>`}</div>
       </div>
       <div class="box">
         <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Opciones de mezcla 20 t</div>
-        ${opciones.length ? opciones.map((op, idx) => mezclaOpcionHTML(op, idx)).join("") : `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px">No hay combinaciones que cumplan con los materiales actuales. Registra más lotes o análisis.</div>`}
+        ${opciones.length ? opciones.map((op, idx) => mezclaOpcionHTML(op, idx)).join("") : `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px">No hay combinaciones que cumplan con los materiales actuales. Registra mÃ¡s lotes o anÃ¡lisis.</div>`}
       </div>
-      ${manualMix ? `<div class="box" style="margin-top:12px;border-top:3px solid ${manualMix.color}"><div class="muted-title" style="color:var(--cyan);margin-bottom:10px">Cálculo selección manual</div>${mezclaDetalleHTML({items:manualItems, mix:manualMix})}</div>` : ""}
+      ${manualMix ? `<div class="box" style="margin-top:12px;border-top:3px solid ${manualMix.color}"><div class="muted-title" style="color:var(--cyan);margin-bottom:10px">CÃ¡lculo selecciÃ³n manual</div>${mezclaDetalleHTML({items:manualItems, mix:manualMix})}</div>` : ""}
     </div>
   </div>`;
 }
@@ -1066,7 +1072,7 @@ function mezclasHTML() {
 function mezclaOpcionHTML(op, idx) {
   return `<div class="card" style="border-left:4px solid ${op.mix.color};margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div><b style="color:${op.mix.color}">Opción ${idx + 1} · ${op.mix.clase}</b><div style="color:var(--txt2);font-size:10px">Consume fuera de especificación: ${(op.fueraKg/1000).toFixed(2)} t</div></div>
+      <div><b style="color:${op.mix.color}">OpciÃ³n ${idx + 1} Â· ${op.mix.clase}</b><div style="color:var(--txt2);font-size:10px">Consume fuera de especificaciÃ³n: ${(op.fueraKg/1000).toFixed(2)} t</div></div>
       <div class="mono" style="font-weight:900;color:${op.mix.ok ? C.green : C.red}">${op.mix.ok ? "CUMPLE" : "NO CUMPLE"}</div>
     </div>
     ${mezclaDetalleHTML(op)}
@@ -1077,12 +1083,12 @@ function mezclaDetalleHTML(op) {
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:10px">
     ${op.items.map(x => `<div style="background:#0f3a6e55;border-radius:5px;padding:8px">
       <div class="mono" style="color:var(--blue-light);font-weight:800">${x.lote.id}</div>
-      <div style="color:var(--txt2);font-size:10px">${(x.kg/1000).toFixed(2)} t · ${(x.kg / x.lote.masa).toFixed(2)} ${unidadNombre(x.lote)}</div>
+      <div style="color:var(--txt2);font-size:10px">${(x.kg/1000).toFixed(2)} t Â· ${(x.kg / x.lote.masa).toFixed(2)} ${unidadNombre(x.lote)}</div>
       <div style="color:var(--txt3);font-size:9px">Stock lote: ${(x.lote.masa/1000).toFixed(2)} t</div>
     </div>`).join("")}
     <div style="background:#0f3a6e55;border-radius:5px;padding:8px">
       <div style="color:var(--txt3);font-size:9px">Resultado</div>
-      <div class="mono" style="color:${op.mix.color};font-weight:900">Cu ${op.mix.cu.toFixed(3)}% · Mo ${op.mix.mo.toFixed(3)}% · S ${op.mix.s.toFixed(3)}%</div>
+      <div class="mono" style="color:${op.mix.color};font-weight:900">Cu ${op.mix.cu.toFixed(3)}% Â· Mo ${op.mix.mo.toFixed(3)}% Â· S ${op.mix.s.toFixed(3)}%</div>
     </div>
   </div>
   <pre style="white-space:pre-wrap;background:#040a14;border:1px solid var(--line);border-radius:6px;padding:10px;color:var(--txt2);font-size:10px;margin:10px 0 0">${formulaMezcla(op.items, op.mix)}</pre>`;
@@ -1104,6 +1110,7 @@ function silosHTML() {
   return `<div style="display:grid;grid-template-columns:minmax(320px,1fr) 360px;gap:14px">
     <div class="grid-cards">${silos.map(s => {
       const color = s.muestras ? s.color : C.txt3;
+      const source = s.nivelImportado?.fuente === "infodia" ? `Infodia/ACP ${s.nivelImportado.fecha || ""}` : s.muestras ? "Manual" : "Sin datos";
       return `<div class="card" style="border-top:3px solid ${color}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div class="muted-title" style="color:var(--cyan);font-weight:800">${s.id}</div>
@@ -1114,33 +1121,35 @@ function silosHTML() {
           <div class="mono" style="position:absolute;inset:0;display:grid;place-items:center;font-weight:900">${s.nivel.toFixed(0)}%</div>
         </div>
         <div class="mono" style="text-align:center;color:${color};font-weight:900">${s.masa.toFixed(1)} / ${s.cap} t</div>
-        <div style="text-align:center;color:var(--txt2);font-size:11px;margin-top:3px">Cu: ${s.muestras ? s.cu.toFixed(2) : "-"}% · Mo: ${s.muestras ? s.mo.toFixed(2) : "-"}% · S: ${s.muestras ? s.s.toFixed(2) : "-"}%</div>
+        <div style="text-align:center;color:var(--txt3);font-size:9px;margin-top:4px">${source}</div>
+        <div style="text-align:center;color:var(--txt2);font-size:11px;margin-top:3px">Cu: ${s.muestras ? s.cu.toFixed(2) : "-"}% Â· Mo: ${s.muestras ? s.mo.toFixed(2) : "-"}% Â· S: ${s.muestras ? s.s.toFixed(2) : "-"}%</div>
         <div style="display:flex;justify-content:center;gap:6px;margin-top:8px">
-          <button class="icon-btn" data-silo-fill="${s.id}">Ingresar común</button>
+          <button class="icon-btn" data-silo-fill="${s.id}">Ajuste manual</button>
           <button class="icon-btn" data-silo-clear="${s.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Vaciar</button>
         </div>
       </div>`;
     }).join("")}</div>
     <div class="box">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Ingreso común de turno</div>
+      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Ingreso manual de respaldo</div>
+      <div class="notice" style="margin-bottom:12px;border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">La carga normal se actualiza al subir Infodia con comunes OO300-001. Usa este formulario solo para corregir o cargar un comun puntual.</div>
       <form id="comunForm">
         <div class="form-grid">
           ${selectField("siloId","Silo",state.silosBase[0]?.id || "Silo 4",state.silosBase.map(s => s.id))}
-          ${selectField("turno","Turno","Día",["Día","Noche"])}
+          ${selectField("turno","Turno","DÃ­a",["DÃ­a","Noche"])}
           ${inputField("fecha","Fecha",hoy(),"text")}
-          ${inputField("masa","Masa común (t)","50","number","50","0.01")}
+          ${inputField("masa","Masa comÃºn (t)","50","number","50","0.01")}
           ${inputField("cu","Cu %","","number","0.49","0.01")}
           ${inputField("mo","Mo %","","number","57.5","0.01")}
           ${inputField("s","S %","","number","0.08","0.01")}
         </div>
-        <button class="btn" style="width:100%;margin-top:10px">GUARDAR COMÚN</button>
+        <button class="btn" style="width:100%;margin-top:10px">GUARDAR COMÃšN</button>
       </form>
       <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
-        <div class="muted-title" style="margin-bottom:10px">Comunes ingresados — ${state.comunes.length}</div>
+        <div class="muted-title" style="margin-bottom:10px">Comunes ingresados â€” ${state.comunes.length}</div>
         <div style="max-height:330px;overflow:auto">${[...state.comunes].reverse().map(c => {
           const cl = clasificar(c);
           return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #1a2e4a33">
-            <div><div class="mono" style="color:var(--blue-light);font-weight:800">${c.siloId} · ${c.turno}</div><div style="color:var(--txt2);font-size:10px">${c.fecha} · ${c.masa}t · Cu ${c.cu}% · Mo ${c.mo}% · S ${c.s}%</div></div>
+            <div><div class="mono" style="color:var(--blue-light);font-weight:800">${c.siloId} Â· ${c.turno}</div><div style="color:var(--txt2);font-size:10px">${c.fecha} Â· ${c.masa}t Â· Cu ${c.cu}% Â· Mo ${c.mo}% Â· S ${c.s}%</div></div>
             <div style="display:flex;gap:5px;align-items:center"><span class="tag" style="background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${cl.clase}</span><button class="icon-btn" data-comun-del="${c.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">x</button></div>
           </div>`;
         }).join("") || `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px 0">Sin comunes registrados</div>`}</div>
@@ -1157,7 +1166,7 @@ function bindSilos() {
   }));
   document.querySelectorAll("[data-silo-clear]").forEach(btn => btn.addEventListener("click", () => {
     const siloId = btn.dataset.siloClear;
-    if (!confirm(`¿Vaciar comunes de ${siloId}?`)) return;
+    if (!confirm(`Â¿Vaciar comunes de ${siloId}?`)) return;
     state.comunes = state.comunes.filter(c => c.siloId !== siloId);
     save("oxmo:comunes", state.comunes);
     addHist("Silo vaciado", siloId, "Comunes eliminados", C.red);
@@ -1173,13 +1182,13 @@ function bindSilos() {
     const data = Object.fromEntries(new FormData(form).entries());
     const masa = Number(data.masa), cu = Number(data.cu), mo = Number(data.mo), s = Number(data.s);
     if (!masa || masa <= 0 || Number.isNaN(cu) || Number.isNaN(mo) || Number.isNaN(s)) {
-      alert("Ingresa masa y análisis químico válidos");
+      alert("Ingresa masa y anÃ¡lisis quÃ­mico vÃ¡lidos");
       return;
     }
     const comun = { id:`C-${Date.now()}`, siloId:data.siloId, turno:data.turno, fecha:data.fecha || hoy(), masa:Number(masa.toFixed(2)), cu:Number(cu.toFixed(2)), mo:Number(mo.toFixed(2)), s:Number(s.toFixed(2)) };
     state.comunes.push(comun);
     save("oxmo:comunes", state.comunes);
-    addHist("Común de turno ingresado", comun.siloId, `${comun.masa}t ${comun.turno}`, clasificar(comun).color);
+    addHist("ComÃºn de turno ingresado", comun.siloId, `${comun.masa}t ${comun.turno}`, clasificar(comun).color);
     render();
   });
 }
@@ -1218,7 +1227,7 @@ function bindReportes() {
       .badge{display:inline-block;border:1px solid;border-radius:999px;padding:2px 7px;font-weight:bold;font-size:9px;white-space:nowrap}
       .small{font-size:9px;color:#687789;margin-top:8px}
       @media print{html,body,.sheet{width:277mm;min-height:190mm}.sheet{page-break-after:auto}}
-    </style></head><body><main class="sheet"><div class="header"><div class="brand"><h1>REPORTE INVENTARIO DE CIRCULANTES</h1><div class="sub">OXMO · CONTROL OPERACIONAL</div></div><div class="date"><b>Fecha reporte</b><br>${new Date().toLocaleString("es-CL")}</div></div><section class="summary"><div class="k"><span>Total lotes</span><b>${state.lotes.length}</b></div><div class="k" style="border-top-color:#00e5a0"><span>Masa total</span><b>${(state.lotes.reduce((a,l)=>a+l.masa,0)/1000).toFixed(2)} t</b></div><div class="k" style="border-top-color:#c87533"><span>Alto cobre</span><b>${state.lotes.filter(l=>clasificar(l).clase==="Alto Cobre").length}</b></div><div class="k" style="border-top-color:#ff4560"><span>Fuera esp.</span><b>${state.lotes.filter(l=>clasificar(l).clase==="Fuera Esp").length}</b></div></section><table><tr><th>ID</th><th>Tipo</th><th>Masa kg</th><th>Sector</th><th>Cu %</th><th>Mo %</th><th>S %</th><th>Clasificación</th><th>Estado</th><th>Fecha</th></tr>${rows}</table><div class="small">Reporte generado desde inventario de circulantes. No incluye silos.</div></main></body></html>`;
+    </style></head><body><main class="sheet"><div class="header"><div class="brand"><h1>REPORTE INVENTARIO DE CIRCULANTES</h1><div class="sub">OXMO Â· CONTROL OPERACIONAL</div></div><div class="date"><b>Fecha reporte</b><br>${new Date().toLocaleString("es-CL")}</div></div><section class="summary"><div class="k"><span>Total lotes</span><b>${state.lotes.length}</b></div><div class="k" style="border-top-color:#00e5a0"><span>Masa total</span><b>${(state.lotes.reduce((a,l)=>a+l.masa,0)/1000).toFixed(2)} t</b></div><div class="k" style="border-top-color:#c87533"><span>Alto cobre</span><b>${state.lotes.filter(l=>clasificar(l).clase==="Alto Cobre").length}</b></div><div class="k" style="border-top-color:#ff4560"><span>Fuera esp.</span><b>${state.lotes.filter(l=>clasificar(l).clase==="Fuera Esp").length}</b></div></section><table><tr><th>ID</th><th>Tipo</th><th>Masa kg</th><th>Sector</th><th>Cu %</th><th>Mo %</th><th>S %</th><th>ClasificaciÃ³n</th><th>Estado</th><th>Fecha</th></tr>${rows}</table><div class="small">Reporte generado desde inventario de circulantes. No incluye silos.</div></main></body></html>`;
     const frame = document.createElement("iframe");
     frame.style.position = "fixed";
     frame.style.left = "-1200px";
@@ -1246,11 +1255,11 @@ function bindReportes() {
 function alertasHTML() {
   const disp = state.lotes.filter(l => l.estado === "Disponible");
   const alerts = [
-    ...state.lotes.filter(l => l.estado === "Fuera Esp").map(l => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`${l.id} FUERA DE ESPECIFICACIÓN`,detalle:`Mo:${l.mo}% Cu:${l.cu}% S:${l.s}% · ${l.sector}`})),
-    ...silosPonderados().filter(s => s.nivel > 85).map(s => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`Silo ${s.id} al ${s.nivel.toFixed(0)}%`,detalle:`Masa est: ${s.masa.toFixed(1)}t · Programar despacho`})),
-    ...silosPonderados().filter(s => s.muestras && s.clase === "Fuera Esp").map(s => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`Silo ${s.id} fuera de especificación`,detalle:`Cu:${s.cu.toFixed(2)}% Mo:${s.mo.toFixed(2)}% S:${s.s.toFixed(2)}%`})),
-    ...state.lotes.filter(l => l.estado === "Pendiente").map(l => ({nivel:"AVISO",color:C.yellow,icon:"⚠️",msg:`${l.id} sin análisis`,detalle:`${l.tipo} · ${l.masa}kg · ${l.sector} · ${l.fecha}`})),
-    {nivel:"INFO",color:C.green,icon:"ℹ️",msg:"Sistema activo",detalle:`${state.lotes.length} lotes · ${disp.length} disponibles · ${new Date().toLocaleTimeString("es-CL")}`}
+    ...state.lotes.filter(l => l.estado === "Fuera Esp").map(l => ({nivel:"CRÃTICO",color:C.red,icon:"ðŸš¨",msg:`${l.id} FUERA DE ESPECIFICACIÃ“N`,detalle:`Mo:${l.mo}% Cu:${l.cu}% S:${l.s}% Â· ${l.sector}`})),
+    ...silosPonderados().filter(s => s.nivel > 85).map(s => ({nivel:"CRÃTICO",color:C.red,icon:"ðŸš¨",msg:`Silo ${s.id} al ${s.nivel.toFixed(0)}%`,detalle:`Masa est: ${s.masa.toFixed(1)}t Â· Programar despacho`})),
+    ...silosPonderados().filter(s => s.muestras && s.clase === "Fuera Esp").map(s => ({nivel:"CRÃTICO",color:C.red,icon:"ðŸš¨",msg:`Silo ${s.id} fuera de especificaciÃ³n`,detalle:`Cu:${s.cu.toFixed(2)}% Mo:${s.mo.toFixed(2)}% S:${s.s.toFixed(2)}%`})),
+    ...state.lotes.filter(l => l.estado === "Pendiente").map(l => ({nivel:"AVISO",color:C.yellow,icon:"âš ï¸",msg:`${l.id} sin anÃ¡lisis`,detalle:`${l.tipo} Â· ${l.masa}kg Â· ${l.sector} Â· ${l.fecha}`})),
+    {nivel:"INFO",color:C.green,icon:"â„¹ï¸",msg:"Sistema activo",detalle:`${state.lotes.length} lotes Â· ${disp.length} disponibles Â· ${new Date().toLocaleTimeString("es-CL")}`}
   ];
   return `<div style="display:flex;flex-direction:column;gap:8px">${alerts.map(a => `<div class="card" style="border-left:4px solid ${a.color};display:flex;gap:12px"><span style="font-size:20px">${a.icon}</span><div><div><span class="tag" style="background:${a.color}22;color:${a.color};border-color:${a.color}44">${a.nivel}</span> <b style="font-size:12px">${a.msg}</b></div><div style="color:var(--txt2);font-size:11px;margin-top:4px">${a.detalle}</div></div></div>`).join("")}</div>`;
 }
@@ -1309,10 +1318,10 @@ function mezclasHTML() {
       <div class="box">
         <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Objetivo</div>
         ${range("Cu objetivo", "cu", state.mix.cu, 0, 2, 0.01, "%", C.copper)}
-        ${range("Mo mínimo", "mo", state.mix.mo, 45, 65, 0.1, "%", C.green)}
-        ${range("S máximo", "s", state.mix.s, 0, 0.5, 0.01, "%", C.yellow)}
+        ${range("Mo mÃ­nimo", "mo", state.mix.mo, 45, 65, 0.1, "%", C.green)}
+        ${range("S mÃ¡ximo", "s", state.mix.s, 0, 0.5, 0.01, "%", C.yellow)}
         ${range("Masa lote", "masa", state.mix.masa, 5000, 30000, 1000, "kg", C.cyan)}
-        <button class="btn" id="autoMix" style="width:100%;margin-top:8px">BUSCAR MEJOR COMBINACIÓN</button>
+        <button class="btn" id="autoMix" style="width:100%;margin-top:8px">BUSCAR MEJOR COMBINACIÃ“N</button>
         <button class="btn secondary" id="clearMix" style="width:100%;margin-top:6px">Usar todos los materiales</button>
         <button class="btn secondary" id="resetMix" style="width:100%;margin-top:6px;border-color:#ff456055;color:var(--red)">Borrar opciones y reiniciar</button>
         ${state.mixMsg ? `<div class="notice" style="margin:10px 0 0;text-align:center;animation:mixPulse 1.2s ease">${state.mixMsg}</div>` : ""}
@@ -1327,19 +1336,19 @@ function mezclasHTML() {
         <div class="muted-title" style="color:var(--cyan)">Materiales</div>
         <div style="color:var(--txt3);font-size:10px">${state.mix.sel.length ? `${state.mix.sel.length} seleccionados` : "usando todos"}</div>
       </div>
-      <div class="grid-cards">${materiales.map(l => {
+      <div class="mix-material-grid">${materiales.map(l => {
         const c = clasificar(l);
         const selected = state.mix.sel.includes(l.id);
         return `<div class="card" data-mix-lot="${l.id}" style="cursor:pointer;border:2px solid ${selected ? c.color : "var(--line)"}">
           <div style="display:flex;justify-content:space-between;gap:8px"><b class="mono" style="color:var(--blue-light)">${l.id}</b><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span></div>
-          <div style="color:var(--txt2);font-size:10px;margin-top:6px">${l.tipo} · ${l.sector} · ${(l.masa/1000).toFixed(2)}t</div>
-          <div class="mono" style="font-size:11px;margin-top:4px">Cu ${l.cu}% · Mo ${l.mo}% · S ${l.s}%</div>
+          <div style="color:var(--txt2);font-size:10px;margin-top:6px">${l.tipo} Â· ${l.sector} Â· ${(l.masa/1000).toFixed(2)}t</div>
+          <div class="mono" style="font-size:11px;margin-top:4px">Cu ${l.cu}% Â· Mo ${l.mo}% Â· S ${l.s}%</div>
         </div>`;
-      }).join("") || `<div style="color:var(--txt3);font-size:11px">No hay materiales con análisis para mezclar.</div>`}</div>
+      }).join("") || `<div style="color:var(--txt3);font-size:11px">No hay materiales con anÃ¡lisis para mezclar.</div>`}</div>
     </div>
     <div class="box">
       <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Mejores opciones</div>
-      ${opciones.length ? opciones.map((op, idx) => mezclaOpcionHTML(op, idx)).join("") : `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px">No hay combinaciones posibles con el stock actual.</div>`}
+      <div class="mix-options">${opciones.length ? opciones.map((op, idx) => mezclaOpcionHTML(op, idx)).join("") : `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px">No hay combinaciones posibles con el stock actual.</div>`}</div>
     </div>
   </div>`;
 }
@@ -1348,7 +1357,7 @@ function mezclaOpcionHTML(op, idx) {
   const estado = op.mix.ok ? "CUMPLE" : "MEJOR APROX.";
   return `<div class="card" style="border-left:4px solid ${op.mix.color};margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div><b style="color:${op.mix.color}">Opción ${idx + 1} · ${op.mix.clase}</b><div style="color:var(--txt2);font-size:10px">Fuera de especificación usado: ${(op.fueraKg/1000).toFixed(2)} t</div></div>
+      <div><b style="color:${op.mix.color}">OpciÃ³n ${idx + 1} Â· ${op.mix.clase}</b><div style="color:var(--txt2);font-size:10px">Fuera de especificaciÃ³n usado: ${(op.fueraKg/1000).toFixed(2)} t</div></div>
       <div class="mono" style="font-weight:900;color:${op.mix.ok ? C.green : C.yellow}">${estado}</div>
     </div>
     ${mezclaDetalleHTML(op)}
@@ -1359,11 +1368,11 @@ function mezclaDetalleHTML(op) {
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:10px">
     ${op.items.map(x => `<div style="background:#0f3a6e55;border-radius:5px;padding:8px">
       <div class="mono" style="color:var(--blue-light);font-weight:800">${x.lote.id}</div>
-      <div style="color:var(--txt2);font-size:10px">${(x.kg/1000).toFixed(0)} sacos · ${(x.kg/1000).toFixed(2)} t</div>
+      <div style="color:var(--txt2);font-size:10px">${(x.kg/1000).toFixed(0)} sacos Â· ${(x.kg/1000).toFixed(2)} t</div>
     </div>`).join("")}
     <div style="background:#0f3a6e55;border-radius:5px;padding:8px">
       <div style="color:var(--txt3);font-size:9px">Resultado</div>
-      <div class="mono" style="color:${op.mix.color};font-weight:900">Cu ${op.mix.cu.toFixed(3)}% · Mo ${op.mix.mo.toFixed(3)}% · S ${op.mix.s.toFixed(3)}%</div>
+      <div class="mono" style="color:${op.mix.color};font-weight:900">Cu ${op.mix.cu.toFixed(3)}% Â· Mo ${op.mix.mo.toFixed(3)}% Â· S ${op.mix.s.toFixed(3)}%</div>
     </div>
   </div>
   <pre style="white-space:pre-wrap;background:#040a14;border:1px solid var(--line);border-radius:6px;padding:10px;color:var(--txt2);font-size:10px;margin:10px 0 0">${formulaMezcla(op.items, op.mix)}</pre>`;
@@ -1469,7 +1478,7 @@ function bindReportes() {
   </div>
   <main>
     <div class="header">
-      <div class="brand"><h1>REPORTE INVENTARIO DE CIRCULANTES</h1><div class="sub">OXMO · CONTROL OPERACIONAL</div></div>
+      <div class="brand"><h1>REPORTE INVENTARIO DE CIRCULANTES</h1><div class="sub">OXMO Â· CONTROL OPERACIONAL</div></div>
       <div class="date"><b>Fecha reporte</b><br>${new Date().toLocaleString("es-CL")}</div>
     </div>
     <section class="summary">
@@ -1480,7 +1489,7 @@ function bindReportes() {
       <div class="k" style="border-top-color:#ff4560"><span>Fuera esp.</span><b>${state.lotes.filter(l => clasificar(l).clase === "Fuera Esp").length}</b></div>
     </section>
     <table>
-      <tr><th>ID</th><th>Tipo</th><th>Masa kg</th><th>Sector</th><th>Cu %</th><th>Mo %</th><th>S %</th><th>Clasificación</th><th>Estado</th><th>Fecha</th></tr>
+      <tr><th>ID</th><th>Tipo</th><th>Masa kg</th><th>Sector</th><th>Cu %</th><th>Mo %</th><th>S %</th><th>ClasificaciÃ³n</th><th>Estado</th><th>Fecha</th></tr>
       ${rows}
     </table>
     <div class="small">Reporte generado desde inventario de circulantes. No incluye silos.</div>
@@ -1513,7 +1522,7 @@ function infodiaHTML() {
       <div>
         <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Importar Infodia</div>
         <div style="color:var(--txt);font-size:18px;font-weight:900">Produccion y silos desde archivo diario</div>
-        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:760px;line-height:1.45">Sube el archivo .xlsb del infodia. OXMO leera las hojas por fecha para calcular produccion diaria, fino Mo y movimiento de silos. Los lotes producidos del archivo quedan ocultos y no se agregan al inventario circulante.</div>
+        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:760px;line-height:1.45">Sube diariamente el archivo .xlsb del Infodia. OXMO calcula produccion, fino Mo, niveles de silo y caracterizacion automatica con los comunes OO300-001. El ingreso manual queda solo como respaldo para ajustes puntuales.</div>
       </div>
       <label class="btn" for="infodiaFile" style="cursor:pointer">SUBIR INFODIA</label>
       <input id="infodiaFile" type="file" accept=".xlsb,.xlsx,.xls" style="display:none" />
@@ -1555,19 +1564,32 @@ function infodiaResumenHTML(info) {
 }
 
 function siloHistorialHTML() {
-  const hist = [...(state.siloHistorial || [])].sort((a, b) => a.fecha.localeCompare(b.fecha) || String(a.siloId).localeCompare(String(b.siloId)));
+  const query = String(state.siloHistSearch || "").trim().toLowerCase();
+  const hist = [...(state.siloHistorial || [])]
+    .filter(h => hasAnalysis(h))
+    .filter(h => {
+      if (!query) return true;
+      return [h.fecha, h.siloId, h.movimiento, h.clase, ...(h.comunes || [])].join(" ").toLowerCase().includes(query);
+    })
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || String(a.siloId).localeCompare(String(b.siloId)));
   const totalLlenado = hist.reduce((a, h) => a + Number(h.masaLlenado || 0), 0);
   const totalDescarga = hist.reduce((a, h) => a + Number(h.masaDescarga || 0), 0);
   const conAnalisis = hist.filter(h => hasAnalysis(h)).length;
-  const ultimo = hist.at(-1);
+  const ultimo = hist[0];
   return `<div class="box">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
       <div>
         <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Historial de llenado de silos</div>
         <div style="color:var(--txt);font-size:18px;font-weight:900">Simulacion Infodia + comunes ACP</div>
-        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:780px;line-height:1.45">Caracterizacion historica generada desde las hojas diarias del Infodia y la hoja final de analisis. Los comunes OO300-001 se agrupan por fecha; si hay mas de uno en el dia, se usa promedio para caracterizar los silos llenados ese dia.</div>
+        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:820px;line-height:1.45">Caracterizacion historica generada desde las hojas diarias del Infodia y la hoja final de analisis. Los comunes OO300-001 se agrupan por fecha; si hay mas de uno en el dia, se usa promedio y se pondera contra la masa remanente del silo.</div>
       </div>
       <button class="btn secondary" data-tab="infodia">Importar nuevo Infodia</button>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="field" style="margin:0">
+        <label>Buscar en historial</label>
+        <input id="siloHistSearch" value="${state.siloHistSearch || ""}" placeholder="Ej: 2026-05-16, Silo 5, OO300-001-06150-26, Bajo Cobre">
+      </div>
     </div>
     <div class="grid-cards" style="margin-bottom:14px">
       ${miniReport("Eventos historicos", String(hist.length), C.blueLight)}
@@ -1597,8 +1619,18 @@ function siloHistorialHTML() {
           </tr>`;
         }).join("")}</tbody>
       </table>
-    </div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">Aun no hay historial. Importa el Infodia para simular llenado y caracterizacion de silos.</div>`}
+    </div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">No hay eventos caracterizados para ese filtro. Importa el Infodia o cambia la busqueda.</div>`}
   </div>`;
+}
+
+function bindSiloHistorial() {
+  const input = document.querySelector("#siloHistSearch");
+  if (!input) return;
+  input.addEventListener("input", e => {
+    state.siloHistSearch = e.target.value;
+    render();
+    setTimeout(() => document.querySelector("#siloHistSearch")?.focus(), 0);
+  });
 }
 
 function bindInfodia() {
@@ -1713,7 +1745,8 @@ function buildSiloHistorial(days, analisis) {
         mo: caracter.mo,
         s: caracter.s,
       };
-      out.push({ ...rec, ...clasificar(rec) });
+      const finalRec = { ...rec, ...clasificar(rec) };
+      if (tieneComun && llenado > 0 && hasAnalysis(finalRec) && masaFinal > 0) out.push(finalRec);
     }
   }
   return out;
@@ -1786,7 +1819,7 @@ function parseInfodiaSilos(rows, fecha) {
   for (let i = title; i < Math.min(rows.length, title + 25); i++) {
     const r = rows[i];
     const n = parseInt(cellText(r[1]), 10);
-    if (n < 4 || n > 11) continue;
+    if (!Number.isInteger(n) || n < 4 || n > 11) continue;
     const iniA = parsePct(r[2]);
     const finA = parsePct(r[3]);
     const tipoA = cellText(r[4]);
@@ -1821,22 +1854,20 @@ function aplicarInfodia(info) {
   const lastBySilo = {};
   state.siloHistorial = info.siloHistorial || [];
   save("oxmo:siloHistorial", state.siloHistorial);
-  const histBySilo = new Map();
-  for (const h of state.siloHistorial) histBySilo.set(h.siloId, h);
-  for (const day of [...info.days].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
-    for (const s of day.silos) {
-      const h = histBySilo.get(s.id);
-      lastBySilo[s.id] = {
-        nivel: s.finalNivel,
-        masa: s.masa,
-        fecha: day.fecha,
-        fuente: "infodia",
-        cu: h?.cu || 0,
-        mo: h?.mo || 0,
-        s: h?.s || 0,
-        comunes: h?.comunes || [],
-      };
-    }
+  for (const h of [...state.siloHistorial].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
+    if (!hasAnalysis(h)) continue;
+    lastBySilo[h.siloId] = {
+      nivel: h.nivelFinal,
+      masa: h.masaFinal,
+      fecha: h.fecha,
+      fuente: "infodia",
+      cu: h.cu || 0,
+      mo: h.mo || 0,
+      s: h.s || 0,
+      clase: h.clase,
+      movimiento: h.movimiento,
+      comunes: h.comunes || [],
+    };
   }
   state.siloNiveles = { ...(state.siloNiveles || {}), ...lastBySilo };
   save("oxmo:siloNiveles", state.siloNiveles);
