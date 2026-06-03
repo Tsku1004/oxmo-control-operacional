@@ -17,6 +17,7 @@ const DEFAULT_CLOUD_CONFIG = {
   url: "https://obkvneyvgzraxolohmwf.supabase.co",
   anonKey: "sb_publishable_MYJYPjkMBaSbY_9ujIZRhQ_A5Ta7re0",
 };
+const PUBLIC_APP_URL = "https://oxmo-control-operacional.vercel.app/";
 const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:infodia"]);
 const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "" };
 
@@ -256,6 +257,11 @@ function persistLotes() { save("oxmo:lotes", state.lotes); }
 
 function render() {
   const app = document.querySelector("#app");
+  const etiquetaPublica = publicEtiquetaFromUrl();
+  if (etiquetaPublica) {
+    app.innerHTML = etiquetaPublicaHTML(etiquetaPublica);
+    return;
+  }
   if (state.tab === "reportePrint") {
     app.innerHTML = state.reporteHTML;
     bindReportePrint();
@@ -738,7 +744,7 @@ function etiquetasHTML() {
     <div class="filters">
       ${["Todos", ...allSectores()].map(s => `<button class="pill ${state.etiquetaFiltro === s ? "active" : ""}" data-etq-filter="${s}">${s} (${s === "Todos" ? state.lotes.length : state.lotes.filter(l => l.sector === s).length})</button>`).join("")}
       <button class="pill" id="toggleEtq">Seleccionar todo</button>
-      <button class="btn" id="printEtq" ${state.etiquetaSel.length ? "" : "disabled"} style="margin-left:auto">IMPRIMIR ETIQUETAS (${state.etiquetaSel.length})</button>
+      <button class="btn" id="printEtq" ${state.etiquetaSel.length ? "" : "disabled"} style="margin-left:auto">VISTA PREVIA PDF (${state.etiquetaSel.length})</button>
     </div>
     <div class="grid-cards">${lotes.map(l => {
       const c = clasificar(l), selected = state.etiquetaSel.includes(l.id);
@@ -1783,6 +1789,189 @@ function bindCloudPanel() {
       render();
     }
   });
+}
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[ch]));
+}
+
+function encodeEtiquetaQR(data) {
+  return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+}
+
+function decodeEtiquetaQR(token) {
+  try {
+    return JSON.parse(decodeURIComponent(escape(atob(token))));
+  } catch {
+    return null;
+  }
+}
+
+function publicEtiquetaFromUrl() {
+  const qs = new URLSearchParams(location.search);
+  if (qs.get("label") === "1") {
+    return {
+      lote: qs.get("id") || "",
+      material: qs.get("mat") || "",
+      color: qs.get("color") || C.cyan,
+      masa: qs.get("masa") || "",
+      cu: qs.get("cu") || null,
+      mo: qs.get("mo") || null,
+      s: qs.get("s") || null,
+      fecha: qs.get("fecha") || "",
+    };
+  }
+  const token = qs.get("etiqueta");
+  if (token) return decodeEtiquetaQR(token) || { error: "QR de etiqueta incompleto o no valido." };
+  return null;
+}
+
+function etiquetaPublicaHTML(data) {
+  if (data.error || !data.lote) {
+    return `<main class="login" style="padding:24px">
+      <section class="box" style="width:min(420px,100%);border-top:3px solid ${C.red}">
+        <div class="muted-title" style="color:var(--red);margin-bottom:8px">Etiqueta OXMO</div>
+        <div style="color:var(--txt);font-size:18px;font-weight:900;margin-bottom:8px">QR no valido</div>
+        <div style="color:var(--txt2);font-size:12px;line-height:1.45">Genera nuevamente la vista previa de etiqueta desde OXMO y escanea el QR nuevo.</div>
+      </section>
+    </main>`;
+  }
+  const color = data.color || C.cyan;
+  const qrData = encodeURIComponent(location.href);
+  return `<style>
+    html, body { margin: 0; min-height: 100%; background: #eceff3; font-family: Arial, sans-serif; color: #111; }
+    .public-wrap { min-height: 100vh; display: grid; place-items: center; padding: 18px; }
+    .label-page { width: 100mm; height: 150mm; padding: 4mm; background: #fff; box-shadow: 0 12px 34px #0003; overflow: hidden; }
+    .label { width: 92mm; height: 142mm; border: 1mm solid #111; border-radius: 3mm; padding: 4.5mm; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
+    .label * { box-sizing: border-box; }
+    header { display: flex; justify-content: space-between; gap: 4mm; align-items: flex-start; border-bottom: .45mm solid #111; padding-bottom: 2.5mm; }
+    header img { width: 28mm; height: auto; object-fit: contain; }
+    .system { font-size: 9pt; font-weight: 900; letter-spacing: 1.2pt; text-align: right; }
+    .date { font-size: 7pt; color: #555; text-align: right; margin-top: 1mm; }
+    main { flex: 1; display: flex; flex-direction: column; align-items: stretch; padding-top: 3mm; min-height: 0; }
+    .lot-id { font-family: Consolas, monospace; font-size: 24pt; font-weight: 900; text-align: center; line-height: 1; margin-bottom: 2.5mm; }
+    .material { border: .55mm solid ${esc(color)}; color: ${esc(color)}; border-radius: 2mm; padding: 2mm; font-size: 14pt; font-weight: 900; text-align: center; margin-bottom: 3mm; }
+    .chem { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm; margin-bottom: 3mm; }
+    .chem div, .meta div { border: .35mm solid #222; border-radius: 1.5mm; padding: 1.8mm; text-align: center; }
+    .chem b, .meta b { display: block; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
+    .chem span { font-family: Consolas, monospace; font-size: 14pt; font-weight: 900; }
+    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 3mm; }
+    .meta span { font-size: 10pt; font-weight: 800; }
+    .qr { width: 34mm; height: 34mm; align-self: center; image-rendering: pixelated; margin-top: 1mm; flex: 0 0 auto; }
+    footer { border-top: .35mm solid #111; margin-top: auto; padding-top: 1.5mm; font-size: 6pt; text-align: center; color: #555; }
+    @media print { @page { size: 100mm 150mm; margin: 0; } body { background: #fff; } .public-wrap { padding: 0; display: block; } .label-page { box-shadow: none; } }
+  </style>
+  <div class="public-wrap">
+    <section class="label-page">
+      <div class="label">
+        <header>
+          <img src="./molyb-logo.jpg" alt="Molyb" />
+          <div>
+            <div class="system">OXMO CONTROL</div>
+            <div class="date">${esc(data.fecha || hoy())}</div>
+          </div>
+        </header>
+        <main>
+          <div class="lot-id">${esc(data.lote)}</div>
+          <div class="material">${esc(String(data.material || "").toUpperCase())}</div>
+          <div class="chem">
+            <div><b>Cu</b><span>${esc(data.cu != null ? `${data.cu}%` : "-")}</span></div>
+            <div><b>Mo</b><span>${esc(data.mo != null ? `${data.mo}%` : "-")}</span></div>
+            <div><b>S</b><span>${esc(data.s != null ? `${data.s}%` : "-")}</span></div>
+          </div>
+          <div class="meta"><div><b>Masa</b><span>${esc(data.masa || "-")}</span></div></div>
+          <img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${qrData}" alt="QR ${esc(data.lote)}" />
+        </main>
+        <footer>Copia digital etiqueta OXMO - Zebra ZT230 - 100 x 150 mm</footer>
+      </div>
+    </section>
+  </div>`;
+}
+
+function publicDato(label, value) {
+  return `<div class="card" style="padding:10px;text-align:center"><div style="color:var(--txt3);font-size:9px;text-transform:uppercase">${esc(label)}</div><div class="mono" style="font-weight:900;color:var(--txt)">${esc(value)}</div></div>`;
+}
+
+function printLabels() {
+  const items = state.etiquetaSel.map(id => state.lotes.find(l => l.id === id)).filter(Boolean).map(l => {
+    const c = clasificar(l);
+    const labelParams = new URLSearchParams({
+      label: "1",
+      id: l.id,
+      mat: c.clase,
+      color: c.color,
+      masa: kgToTon(l.masa, 2),
+      cu: l.cu ? fmt(l.cu, 2) : "",
+      mo: l.mo ? fmt(l.mo, 2) : "",
+      s: l.s ? fmt(l.s, 3) : "",
+      fecha: l.fecha || "",
+    });
+    const qrUrl = `${PUBLIC_APP_URL}etiqueta.html?${labelParams.toString()}`;
+    const qrData = encodeURIComponent(qrUrl);
+    const chem = hasAnalysis(l)
+      ? `<div class="chem"><div><b>Cu</b><span>${fmt(l.cu, 2)}%</span></div><div><b>Mo</b><span>${fmt(l.mo, 2)}%</span></div><div><b>S</b><span>${fmt(l.s, 3)}%</span></div></div>`
+      : `<div class="pending">SIN ANALISIS</div>`;
+    return `<section class="label-page">
+      <div class="label">
+        <header>
+          <img src="./molyb-logo.jpg" alt="Molyb" />
+          <div>
+            <div class="system">OXMO CONTROL</div>
+            <div class="date">${esc(l.fecha || hoy())}</div>
+          </div>
+        </header>
+        <main>
+          <div class="lot-id">${esc(l.id)}</div>
+          <div class="material" style="border-color:${c.color};color:${c.color}">${esc(c.clase.toUpperCase())}</div>
+          ${chem}
+          <div class="meta">
+            <div><b>Masa</b><span>${kgToTon(l.masa, 2)}</span></div>
+          </div>
+          <img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${qrData}" alt="QR ${esc(l.id)}" />
+        </main>
+        <footer>Zebra ZT230 - Etiqueta 100 x 150 mm - 300 dpi</footer>
+      </div>
+    </section>`;
+  }).join("");
+  const w = window.open("", "_blank");
+  if (!w) {
+    alert("Permite ventanas emergentes para abrir la vista previa de etiquetas.");
+    return;
+  }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas OXMO</title><style>
+    @page { size: 100mm 150mm; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #f3f3f3; font-family: Arial, sans-serif; color: #111; }
+    .label-page { width: 100mm; height: 150mm; page-break-after: always; padding: 4mm; background: #fff; overflow: hidden; }
+    .label { width: 92mm; height: 142mm; border: 1mm solid #111; border-radius: 3mm; padding: 4.5mm; display: flex; flex-direction: column; overflow: hidden; }
+    header { display: flex; justify-content: space-between; gap: 4mm; align-items: flex-start; border-bottom: .45mm solid #111; padding-bottom: 2.5mm; }
+    header img { width: 28mm; height: auto; object-fit: contain; }
+    .system { font-size: 9pt; font-weight: 900; letter-spacing: 1.2pt; text-align: right; }
+    .date { font-size: 7pt; color: #555; text-align: right; margin-top: 1mm; }
+    main { flex: 1; display: flex; flex-direction: column; align-items: stretch; padding-top: 3mm; min-height: 0; }
+    .lot-id { font-family: Consolas, monospace; font-size: 24pt; font-weight: 900; text-align: center; line-height: 1; margin-bottom: 2.5mm; }
+    .material { border: .55mm solid; border-radius: 2mm; padding: 2mm; font-size: 14pt; font-weight: 900; text-align: center; margin-bottom: 3mm; }
+    .chem { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm; margin-bottom: 3mm; }
+    .chem div, .meta div { border: .35mm solid #222; border-radius: 1.5mm; padding: 1.8mm; text-align: center; }
+    .chem b, .meta b { display: block; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
+    .chem span { font-family: Consolas, monospace; font-size: 14pt; font-weight: 900; }
+    .pending { border: .5mm solid #222; padding: 3mm; font-size: 14pt; font-weight: 900; text-align: center; margin-bottom: 3mm; }
+    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 3mm; }
+    .meta span { font-size: 10pt; font-weight: 800; }
+    .qr { width: 34mm; height: 34mm; align-self: center; image-rendering: pixelated; margin-top: 1mm; flex: 0 0 auto; }
+    footer { border-top: .35mm solid #111; margin-top: auto; padding-top: 1.5mm; font-size: 6pt; text-align: center; color: #555; }
+    .no-print { position: fixed; top: 10px; right: 10px; display: flex; gap: 8px; }
+    .no-print button { padding: 8px 12px; font-weight: 800; cursor: pointer; }
+    @media screen { body { display: grid; place-items: start center; gap: 12px; padding: 16px; } .label-page { box-shadow: 0 8px 30px #0003; } }
+    @media print { body { background: #fff; padding: 0; } .no-print { display: none; } .label-page { box-shadow: none; } }
+  </style></head><body><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div>${items}</body></html>`);
+  w.document.close();
 }
 
 render();

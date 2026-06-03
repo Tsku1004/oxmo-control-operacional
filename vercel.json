@@ -3,6 +3,10 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/etiqueta.html",
+      "destination": "/etiqueta.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
