@@ -18,7 +18,7 @@ const DEFAULT_CLOUD_CONFIG = {
   anonKey: "sb_publishable_MYJYPjkMBaSbY_9ujIZRhQ_A5Ta7re0",
 };
 const PUBLIC_APP_URL = "https://oxmo-control-operacional.vercel.app/";
-const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:infodia"]);
+const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:siloHistorial", "oxmo:infodia"]);
 const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "", needsLotesCleanup: false };
 
 const DEFAULT_SILOS = Array.from({ length: 8 }, (_, i) => ({
@@ -38,6 +38,7 @@ const state = {
   silosBase: loadSilos(),
   comunes: load("oxmo:comunes", []),
   siloNiveles: load("oxmo:siloNiveles", {}),
+  siloHistorial: load("oxmo:siloHistorial", []),
   infodia: load("oxmo:infodia", null),
   etiquetaFiltro: "Todos",
   etiquetaSel: [],
@@ -97,6 +98,7 @@ function sharedFallback(key) {
   if (key === "oxmo:silos") return DEFAULT_SILOS;
   if (key === "oxmo:comunes") return [];
   if (key === "oxmo:siloNiveles") return {};
+  if (key === "oxmo:siloHistorial") return [];
   if (key === "oxmo:infodia") return null;
   return null;
 }
@@ -128,6 +130,7 @@ function applyCloudValue(key, value) {
   if (key === "oxmo:silos") state.silosBase = value || DEFAULT_SILOS;
   if (key === "oxmo:comunes") state.comunes = value || [];
   if (key === "oxmo:siloNiveles") state.siloNiveles = value || {};
+  if (key === "oxmo:siloHistorial") state.siloHistorial = value || [];
   if (key === "oxmo:infodia") state.infodia = value || null;
   cloud.applying = false;
 }
@@ -251,10 +254,10 @@ function ponderarSilo(base) {
     ...base,
     masa: masaOperacional,
     nivel: nivelImportado ? Number(nivelImportado.nivel || 0) : (base.cap ? Math.min(100, (masa / base.cap) * 100) : 0),
-    cu: weighted("cu"),
-    mo: weighted("mo"),
-    s: weighted("s"),
-    muestras: comunes.length,
+    cu: nivelImportado?.cu ?? weighted("cu"),
+    mo: nivelImportado?.mo ?? weighted("mo"),
+    s: nivelImportado?.s ?? weighted("s"),
+    muestras: comunes.length || (nivelImportado && hasAnalysis(nivelImportado) ? 1 : 0),
     ultimo: comunes.at(-1),
     nivelImportado,
   };
@@ -384,7 +387,7 @@ function shellHTML() {
       <nav class="tabs">
         ${[
           ["inventario","📦 Inventario"],["silos","🏭 Silos"],["quimica","⚗️ Química"],["mezclas","⚡ Mezclas"],
-          ["etiquetas","🏷️ Etiquetas"],["reportes","📋 Reportes"],["alertas","🚨 Alertas"]
+          ["siloHistorial","🧾 Historial Silos"],["etiquetas","🏷️ Etiquetas"],["reportes","📋 Reportes"],["alertas","🚨 Alertas"]
         ].map(([id, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
       </nav>
       <div class="filters" style="margin-bottom:12px">
@@ -428,6 +431,7 @@ function tabHTML() {
   if (state.tab === "mezclas") return mezclasHTML();
   if (state.tab === "registro") return registroHTML();
   if (state.tab === "infodia") return infodiaHTML();
+  if (state.tab === "siloHistorial") return siloHistorialHTML();
   if (state.tab === "etiquetas") return etiquetasHTML();
   if (state.tab === "reportes") return reportesHTML();
   return alertasHTML();
@@ -1524,6 +1528,8 @@ function infodiaResumenHTML(info) {
   const last = days.at(-1);
   const totals = info.totals || {};
   const lastKgMo = last?.kgMo || 0;
+  const analisis = info.analisis || [];
+  const siloHistorial = info.siloHistorial || [];
   return `<div>
     <div class="grid-cards" style="margin-bottom:14px">
       ${miniReport("Produccion ultimo dia", kgToTon(last?.produccionKg || 0), C.green)}
@@ -1532,9 +1538,11 @@ function infodiaResumenHTML(info) {
       ${miniReport("Fino Mo acumulado", kgToTon(totals.kgMo || 0), C.cyan)}
       ${miniReport("Llenado silos", `${(totals.llenadoT || 0).toFixed(2)} t`, C.copper)}
       ${miniReport("Descarga silos", `${(totals.descargaT || 0).toFixed(2)} t`, C.yellow)}
+      ${miniReport("Comunes ACP", String(analisis.length), C.green)}
+      ${miniReport("Historial silos", String(siloHistorial.length), C.copper)}
       ${miniReport("Ultimo dia", last?.fecha || "-", C.txt2)}
     </div>
-    <div class="notice" style="border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Detalle de dias y lotes queda guardado solo para calculo interno. No se muestra ni se agrega al inventario circulante.</div>
+    <div class="notice" style="border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Detalle de dias y lotes queda guardado solo para calculo interno. La simulacion de silos usa los comunes OO300-001 por fecha y queda disponible en Historial Silos.</div>
     <div class="card" style="margin-top:14px">
       <div class="muted-title" style="margin-bottom:10px">Ultimos niveles de silos desde infodia</div>
       <div class="grid-cards">${Object.entries(state.siloNiveles || {}).map(([id, s]) => `<div class="card">
@@ -1543,6 +1551,48 @@ function infodiaResumenHTML(info) {
         <div style="color:var(--txt2);font-size:11px">${Number(s.masa || 0).toFixed(2)} t - ${s.fecha || ""}</div>
       </div>`).join("")}</div>
     </div>
+  </div>`;
+}
+
+function siloHistorialHTML() {
+  const hist = [...(state.siloHistorial || [])].sort((a, b) => a.fecha.localeCompare(b.fecha) || String(a.siloId).localeCompare(String(b.siloId)));
+  const totalLlenado = hist.reduce((a, h) => a + Number(h.masaLlenado || 0), 0);
+  const conAnalisis = hist.filter(h => hasAnalysis(h)).length;
+  const ultimo = hist.at(-1);
+  return `<div class="box">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
+      <div>
+        <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Historial de llenado de silos</div>
+        <div style="color:var(--txt);font-size:18px;font-weight:900">Simulacion Infodia + comunes ACP</div>
+        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:780px;line-height:1.45">Caracterizacion historica generada desde las hojas diarias del Infodia y la hoja final de analisis. Los comunes OO300-001 se agrupan por fecha; si hay mas de uno en el dia, se usa promedio para caracterizar los silos llenados ese dia.</div>
+      </div>
+      <button class="btn secondary" data-tab="infodia">Importar nuevo Infodia</button>
+    </div>
+    <div class="grid-cards" style="margin-bottom:14px">
+      ${miniReport("Eventos llenado", String(hist.length), C.blueLight)}
+      ${miniReport("Masa llenada", `${totalLlenado.toFixed(2)} t`, C.green)}
+      ${miniReport("Con analisis", String(conAnalisis), C.cyan)}
+      ${miniReport("Ultimo evento", ultimo?.fecha || "-", C.copper)}
+    </div>
+    ${hist.length ? `<div class="table-wrap">
+      <table>
+        <thead><tr><th>Fecha</th><th>Silo</th><th>Llenado</th><th>Nivel final</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th>Comunes ACP</th></tr></thead>
+        <tbody>${hist.map(h => {
+          const cl = hasAnalysis(h) ? clasificar(h) : { clase: "Pendiente", color: C.yellow };
+          return `<tr>
+            <td class="mono" style="color:var(--txt2)">${h.fecha}</td>
+            <td class="mono" style="color:var(--blue-light);font-weight:900">${h.siloId}</td>
+            <td class="mono">${Number(h.masaLlenado || 0).toFixed(2)} t</td>
+            <td class="mono">${Number(h.nivelFinal || 0).toFixed(1)}%</td>
+            <td class="mono" style="color:${hasAnalysis(h) ? C.cyan : C.txt3}">${hasAnalysis(h) ? Number(h.cu).toFixed(3) : "-"}</td>
+            <td class="mono" style="color:${hasAnalysis(h) ? C.green : C.txt3}">${hasAnalysis(h) ? Number(h.mo).toFixed(3) : "-"}</td>
+            <td class="mono" style="color:${hasAnalysis(h) ? C.yellow : C.txt3}">${hasAnalysis(h) ? Number(h.s).toFixed(4) : "-"}</td>
+            <td><span class="tag" style="background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${cl.clase}</span></td>
+            <td style="font-size:10px;color:var(--txt2)">${(h.comunes || []).join(", ") || "Sin comun para la fecha"}</td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">Aun no hay historial. Importa el Infodia para simular llenado y caracterizacion de silos.</div>`}
   </div>`;
 }
 
@@ -1568,10 +1618,12 @@ async function importarInfodia(file) {
   if (!window.XLSX) throw new Error("No se cargo el lector Excel. Revisa conexion a internet y recarga.");
   const buffer = await file.arrayBuffer();
   const wb = XLSX.read(buffer, { type: "array", cellDates: false });
+  const analisis = parseAnalisisComunes(wb);
   const days = wb.SheetNames
     .filter(name => /\d{2}-\d{2}-\d{4}/.test(name))
     .map(name => parseInfodiaSheet(name, XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: "" })))
     .filter(Boolean);
+  const siloHistorial = buildSiloHistorial(days, analisis);
   const totals = days.reduce((a, d) => ({
     lotes: a.lotes + d.lotes.length,
     produccionKg: a.produccionKg + d.produccionKg,
@@ -1579,7 +1631,76 @@ async function importarInfodia(file) {
     llenadoT: a.llenadoT + d.llenadoT,
     descargaT: a.descargaT + d.descargaT,
   }), { lotes: 0, produccionKg: 0, kgMo: 0, llenadoT: 0, descargaT: 0 });
-  return { fileName: file.name, importedAt: new Date().toLocaleString("es-CL"), days, totals };
+  return { fileName: file.name, importedAt: new Date().toLocaleString("es-CL"), days, analisis, siloHistorial, totals };
+}
+
+function parseAnalisisComunes(wb) {
+  const sheetName = wb.SheetNames.find(n => /hoja1|anal|acp|lab|quim/i.test(n)) || wb.SheetNames.at(-1);
+  const ws = wb.Sheets[sheetName];
+  if (!ws) return [];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+  if (!rows.length) return [];
+  const header = rows[0].map(x => cellText(x));
+  const idx = name => header.findIndex(h => h === cellText(name));
+  const loteIdx = idx("Nro Lote");
+  const fechaIdx = header.findIndex(h => h.includes("FECHA") && h.includes("ANALISIS"));
+  const cuIdx = idx("Cu");
+  const moIdx = idx("Mo");
+  const sIdx = idx("S");
+  if (loteIdx < 0 || fechaIdx < 0 || cuIdx < 0 || moIdx < 0 || sIdx < 0) return [];
+  return rows.slice(1).map(r => {
+    const codigo = String(r[loteIdx] || "").trim().toUpperCase();
+    if (!/^OO300-001-\d+-26$/.test(codigo)) return null;
+    const fecha = normalizarFechaAnalisis(r[fechaIdx]);
+    const cu = parseNum(r[cuIdx]);
+    const mo = parseNum(r[moIdx]);
+    const s = parseNum(r[sIdx]);
+    if (!fecha || !cu || !mo) return null;
+    const comun = { codigo, fecha, cu, mo, s, fuente: sheetName };
+    return { ...comun, ...clasificar(comun) };
+  }).filter(Boolean);
+}
+
+function buildSiloHistorial(days, analisis) {
+  const byDate = new Map();
+  for (const a of analisis) {
+    if (!byDate.has(a.fecha)) byDate.set(a.fecha, []);
+    byDate.get(a.fecha).push(a);
+  }
+  const targetDays = days.some(d => d.fecha >= "2026-05-01" && d.fecha <= "2026-05-16")
+    ? days.filter(d => d.fecha >= "2026-05-01" && d.fecha <= "2026-05-16")
+    : days;
+  const out = [];
+  for (const day of targetDays.sort((a, b) => a.fecha.localeCompare(b.fecha))) {
+    const comunes = byDate.get(day.fecha) || [];
+    const promedio = promedioAnalisis(comunes);
+    for (const s of day.silos) {
+      if (Number(s.llenadoT || 0) <= 0) continue;
+      const rec = {
+        fecha: day.fecha,
+        siloId: s.id,
+        silo: s.silo,
+        masaLlenado: Number(s.llenadoT || 0),
+        nivelFinal: Number(s.finalNivel || 0),
+        comunes: comunes.map(c => c.codigo),
+        cu: promedio.cu,
+        mo: promedio.mo,
+        s: promedio.s,
+      };
+      out.push({ ...rec, ...clasificar(rec) });
+    }
+  }
+  return out;
+}
+
+function promedioAnalisis(items) {
+  if (!items.length) return { cu: 0, mo: 0, s: 0 };
+  const avg = key => items.reduce((a, x) => a + Number(x[key] || 0), 0) / items.length;
+  return {
+    cu: Number(avg("cu").toFixed(3)),
+    mo: Number(avg("mo").toFixed(3)),
+    s: Number(avg("s").toFixed(4)),
+  };
 }
 
 function parseInfodiaSheet(sheetName, rows) {
@@ -1672,8 +1793,24 @@ function aplicarInfodia(info) {
   state.lotes = state.lotes.filter(l => !isInfodiaProductionLote(l));
   save("oxmo:lotes", state.lotes);
   const lastBySilo = {};
+  state.siloHistorial = info.siloHistorial || [];
+  save("oxmo:siloHistorial", state.siloHistorial);
+  const histBySilo = new Map();
+  for (const h of state.siloHistorial) histBySilo.set(h.siloId, h);
   for (const day of [...info.days].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
-    for (const s of day.silos) lastBySilo[s.id] = { nivel: s.finalNivel, masa: s.masa, fecha: day.fecha, fuente: "infodia" };
+    for (const s of day.silos) {
+      const h = histBySilo.get(s.id);
+      lastBySilo[s.id] = {
+        nivel: s.finalNivel,
+        masa: s.masa,
+        fecha: day.fecha,
+        fuente: "infodia",
+        cu: h?.cu || 0,
+        mo: h?.mo || 0,
+        s: h?.s || 0,
+        comunes: h?.comunes || [],
+      };
+    }
   }
   state.siloNiveles = { ...(state.siloNiveles || {}), ...lastBySilo };
   save("oxmo:siloNiveles", state.siloNiveles);
@@ -1702,6 +1839,25 @@ function parsePct(v) {
 function normalizarFechaHoja(name) {
   const m = name.match(/(\d{2})-(\d{2})-(\d{4})/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : name.trim();
+}
+
+function normalizarFechaAnalisis(v) {
+  if (typeof v === "number" && Number.isFinite(v)) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+    return d.toISOString().slice(0, 10);
+  }
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+  const raw = String(v ?? "").trim();
+  if (!raw) return "";
+  const iso = raw.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (iso) return `${iso[1]}-${String(iso[2]).padStart(2, "0")}-${String(iso[3]).padStart(2, "0")}`;
+  const meses = { ene:1, enero:1, feb:2, febrero:2, mar:3, marzo:3, abr:4, abril:4, may:5, mayo:5, jun:6, junio:6, jul:7, julio:7, ago:8, agosto:8, sep:9, sept:9, septiembre:9, oct:10, octubre:10, nov:11, noviembre:11, dic:12, diciembre:12 };
+  const m = raw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/(\d{1,2})[-/\s.]([a-z]+|\d{1,2})[-/\s.](\d{2,4})/);
+  if (!m) return raw;
+  const month = /^\d+$/.test(m[2]) ? Number(m[2]) : meses[m[2]];
+  const year = Number(m[3]) < 100 ? 2000 + Number(m[3]) : Number(m[3]);
+  if (!month || !year) return raw;
+  return `${year}-${String(month).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
 }
 
 function configureCloud() {
