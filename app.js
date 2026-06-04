@@ -348,6 +348,7 @@ function render() {
     bindLogin();
     return;
   }
+  syncInventarioACP();
   app.innerHTML = shellHTML();
   bindShell();
 }
@@ -441,7 +442,7 @@ function shellHTML() {
       </section>
       <nav class="tabs">
         ${[
-          ["inventario","Inventario"],["silos","Silos"],["quimica","Química"],["lotesOxmo","Lotes OXMO/BQA"],
+          ["inventario","Inventario"],["silos","Silos"],["quimica","Quimica"],["lotesOxmo","Lotes OXMO/BQA"],
           ["comunesTurno","Comunes de turno"],["mezclas","Mezclas"],["siloHistorial","Historial Silos"],
           ["etiquetas","Etiquetas"],["reportes","Reportes"],["alertas","Alertas"]
         ].map(([id, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
@@ -730,7 +731,7 @@ function quimicaHTML() {
     if (!hasAnalysis(l)) return `<div class="card" style="border-left:4px solid ${C.yellow}"><div style="display:flex;justify-content:space-between"><b class="mono" style="color:var(--blue-light)">${l.id}</b><span class="tag" style="color:${C.yellow};background:${C.yellow}22">Pendiente</span></div><div style="text-align:center;color:${C.yellow};padding:18px 0">Sin análisis</div><button class="btn secondary" data-chem="${l.id}" style="width:100%">Ingresar análisis</button></div>`;
     return `<div class="card" style="border-left:4px solid ${c.color}">
       <div style="display:flex;justify-content:space-between;margin-bottom:10px"><b class="mono" style="color:var(--blue-light)">${l.id}</b><span class="tag" style="color:${c.color};background:${c.color}22;border-color:${c.color}44">${c.clase}</span></div>
-      ${chemBar("Cu", l.cu, l.cu >= 0.51, 3)}
+      ${chemBar("Cu", l.cu, l.cu >= 0 && l.cu <= 3, 3)}
       ${chemBar("Mo", l.mo, l.mo >= moMinimo(l.cu), 70)}
       ${chemBar("S", l.s, l.s < 0.1, 1)}
       <div style="margin-top:8px;color:var(--txt2);font-size:10px">${l.sector} · ${l.masa}kg · ${l.fecha}</div>
@@ -800,7 +801,10 @@ function analisisACPHTML({ titulo, subtitulo, items, kpis, empty }) {
         <div style="color:var(--txt);font-size:18px;font-weight:900">${titulo}</div>
         <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:860px;line-height:1.45">${subtitulo}</div>
       </div>
-      <button class="btn secondary" data-tab="infodia">Importar Infodia</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn secondary" id="applyAcpInventory">Actualizar inventario con ACP</button>
+        <button class="btn secondary" data-tab="infodia">Importar Infodia</button>
+      </div>
     </div>
     <div class="grid-cards" style="margin-bottom:14px">
       ${kpis.map(([label, value, color]) => miniReport(label, value, color)).join("")}
@@ -808,7 +812,10 @@ function analisisACPHTML({ titulo, subtitulo, items, kpis, empty }) {
     <div class="card" style="margin-bottom:14px">
       <div class="field" style="margin:0">
         <label>Buscar en cartilla</label>
-        <input id="acpSearch" value="${state.acpSearch || ""}" placeholder="Ej: OXMO8635-26, OXBR1305-26, OO300-001-06149-26, 2026-05-16">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="acpSearch" value="${state.acpSearch || ""}" dir="ltr" style="direction:ltr;text-align:left" placeholder="Ej: OXMO8635-26, OXBR1305-26, OO300-001-06149-26, 2026-05-16">
+          <button class="btn secondary" id="acpSearchBtn" type="button">Buscar</button>
+        </div>
       </div>
     </div>
     ${filtered.length ? `<div class="table-wrap">
@@ -818,7 +825,7 @@ function analisisACPHTML({ titulo, subtitulo, items, kpis, empty }) {
           const c = clasificar(a);
           return `<tr>
             <td class="mono" style="color:var(--blue-light);font-weight:900">${a.codigo}</td>
-            <td>${a.tipoAnalisis === "briqueta" ? "Briqueta" : a.tipoAnalisis === "comun_turno" ? "Comun turno" : "Lote OXMO"}</td>
+            <td>${a.tipoAnalisis === "briqueta" ? "Briqueta" : a.tipoAnalisis === "comun_turno" ? "Comun turno" : a.tipoAnalisis === "otro_lote" ? "Otro lote" : "Lote OXMO"}</td>
             <td style="color:var(--txt2)">${a.producto || "-"}</td>
             <td class="mono">${a.fecha || "-"}</td>
             <td class="mono" style="color:${a.cu >= 0.51 ? C.copper : C.green}">${Number(a.cu || 0).toFixed(3)}</td>
@@ -835,12 +842,27 @@ function analisisACPHTML({ titulo, subtitulo, items, kpis, empty }) {
 
 function bindAnalisisACP() {
   const input = document.querySelector("#acpSearch");
-  if (!input) return;
-  input.addEventListener("input", e => {
-    state.acpSearch = e.target.value;
+  const searchBtn = document.querySelector("#acpSearchBtn");
+  const applyBtn = document.querySelector("#applyAcpInventory");
+  if (input) {
+    input.addEventListener("input", e => {
+      state.acpSearch = e.target.value;
+    });
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        state.acpSearch = e.target.value;
+        render();
+        focusInputEnd("#acpSearch");
+      }
+    });
+  }
+  searchBtn?.addEventListener("click", () => {
+    state.acpSearch = document.querySelector("#acpSearch")?.value || "";
     render();
-    setTimeout(() => document.querySelector("#acpSearch")?.focus(), 0);
+    focusInputEnd("#acpSearch");
   });
+  applyBtn?.addEventListener("click", aplicarACPInventarioActual);
 }
 
 function mezclasHTML() {
@@ -1839,8 +1861,19 @@ function bindSiloHistorial() {
   input.addEventListener("input", e => {
     state.siloHistSearch = e.target.value;
     render();
-    setTimeout(() => document.querySelector("#siloHistSearch")?.focus(), 0);
+    focusInputEnd("#siloHistSearch");
   });
+}
+
+function focusInputEnd(selector) {
+  setTimeout(() => {
+    const next = document.querySelector(selector);
+    if (!next) return;
+    next.focus();
+    try {
+      next.setSelectionRange(next.value.length, next.value.length);
+    } catch {}
+  }, 0);
 }
 
 function bindInfodia() {
@@ -1867,7 +1900,7 @@ async function importarInfodia(file) {
   const wb = XLSX.read(buffer, { type: "array", cellDates: false });
   const analisisACP = parseAnalisisACP(wb);
   const analisis = analisisACP.filter(a => a.tipoAnalisis === "comun_turno");
-  const analisisLotes = analisisACP.filter(a => a.tipoAnalisis === "lote_oxmo" || a.tipoAnalisis === "briqueta");
+  const analisisLotes = analisisACP.filter(a => a.tipoAnalisis !== "comun_turno");
   const days = wb.SheetNames
     .filter(name => /\d{2}-\d{2}-\d{4}/.test(name))
     .map(name => parseInfodiaSheet(name, XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: "" })))
@@ -1902,7 +1935,7 @@ function parseAnalisisACP(wb) {
   const sIdx = idxExact("S");
   if (loteIdx < 0 || fechaIdx < 0 || cuIdx < 0 || moIdx < 0 || sIdx < 0) return [];
   return rows.slice((headerRow >= 0 ? headerRow : 0) + 1).map(r => {
-    const codigo = String(r[loteIdx] || "").trim().toUpperCase();
+    const codigo = normalizarCodigoAnalisis(r[loteIdx]);
     const tipoAnalisis = tipoAnalisisACP(codigo);
     if (!tipoAnalisis) return null;
     const fecha = normalizarFechaAnalisis(r[fechaIdx]);
@@ -1916,10 +1949,99 @@ function parseAnalisisACP(wb) {
 }
 
 function tipoAnalisisACP(codigo) {
+  codigo = normalizarCodigoAnalisis(codigo);
   if (/^OO300-001-\d+-\d{2}$/.test(codigo)) return "comun_turno";
   if (/^OXMO\d+-\d{2}$/.test(codigo)) return "lote_oxmo";
   if (/^OXBR\d+-\d{2}$/.test(codigo)) return "briqueta";
+  if (/^[A-Z]{2,12}\d+-\d{2}$/.test(codigo)) return "otro_lote";
   return "";
+}
+
+function normalizarCodigoAnalisis(codigo) {
+  let s = String(codigo || "").trim().toUpperCase().replace(/\s+/g, "");
+  s = s.replace(/^([A-Z]+)-(?=\d)/, "$1");
+  const base = s.match(/^(.+?-\d{2})(?:[-_].*)$/);
+  return base ? base[1] : s;
+}
+
+function codigoPartesInventario(codigo) {
+  const s = normalizarCodigoAnalisis(codigo);
+  const m = s.match(/^([A-Z]+)0*(\d+)-(\d{2})$/);
+  if (!m) return null;
+  return { prefix: m[1], numero: String(Number(m[2])), year: m[3] };
+}
+
+function scoreMatchACP(lote, analisis) {
+  const loteCodigo = normalizarCodigoAnalisis(lote.id);
+  const acpCodigo = normalizarCodigoAnalisis(analisis.codigo);
+  if (!loteCodigo || !acpCodigo) return 0;
+  if (loteCodigo === acpCodigo) return 4;
+  if (loteCodigo.startsWith(`${acpCodigo}-`) || acpCodigo.startsWith(`${loteCodigo}-`)) return 3;
+  const lp = codigoPartesInventario(loteCodigo);
+  const ap = codigoPartesInventario(acpCodigo);
+  if (!lp || !ap) return 0;
+  if (lp.prefix === ap.prefix && lp.numero === ap.numero && lp.year === ap.year) return 3;
+  if (lp.numero === ap.numero && lp.year === ap.year) return 1;
+  return 0;
+}
+
+function buscarAnalisisParaInventario(lote, analisisACP) {
+  const candidatos = (analisisACP || [])
+    .filter(a => a.tipoAnalisis !== "comun_turno" && hasAnalysis(a))
+    .map(a => ({ item: a, score: scoreMatchACP(lote, a) }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score || String(b.item.fecha || "").localeCompare(String(a.item.fecha || "")));
+  return candidatos[0]?.item || null;
+}
+
+function actualizarInventarioConACP(lotes, analisisACP) {
+  let actualizados = 0;
+  const updated = (lotes || []).map(l => {
+    const match = buscarAnalisisParaInventario(l, analisisACP);
+    if (!match) return l;
+    const quimica = {
+      cu: Number(Number(match.cu || 0).toFixed(3)),
+      mo: Number(Number(match.mo || 0).toFixed(3)),
+      s: Number(Number(match.s || 0).toFixed(4)),
+    };
+    const cl = clasificar(quimica);
+    const obsBase = String(l.obs || "").replace(/\s*\|?\s*ACP:[^|]+/g, "").trim();
+    const obsAcp = `ACP: ${match.codigo}${match.fecha ? ` ${match.fecha}` : ""}`;
+    const next = {
+      ...l,
+      ...quimica,
+      estado: l.estado === "Bloqueado" ? "Bloqueado" : cl.clase === "Fuera Esp" ? "Fuera Esp" : "Disponible",
+      acpMatch: match.codigo,
+      acpFecha: match.fecha,
+      obs: obsBase ? `${obsBase} | ${obsAcp}` : obsAcp,
+    };
+    if (
+      Number(l.cu || 0) !== next.cu ||
+      Number(l.mo || 0) !== next.mo ||
+      Number(l.s || 0) !== next.s ||
+      l.estado !== next.estado ||
+      l.acpMatch !== next.acpMatch
+    ) actualizados += 1;
+    return next;
+  });
+  return { lotes: updated, actualizados };
+}
+
+function syncInventarioACP() {
+  const acp = state.infodia?.analisisACP?.length ? state.infodia.analisisACP : state.infodia?.analisisLotes || [];
+  if (!acp.length) return;
+  const result = actualizarInventarioConACP(state.lotes, acp);
+  if (!result.actualizados) return;
+  state.lotes = result.lotes;
+  save("oxmo:lotes", state.lotes);
+}
+
+function aplicarACPInventarioActual() {
+  const result = actualizarInventarioConACP(state.lotes, state.infodia?.analisisACP || state.infodia?.analisisLotes || []);
+  state.lotes = result.lotes;
+  save("oxmo:lotes", state.lotes);
+  addHist("Inventario actualizado con ACP", "", `${result.actualizados} lote(s) cruzados con cartilla`, result.actualizados ? C.green : C.yellow);
+  render();
 }
 
 function buildSiloHistorial(days, analisis) {
@@ -2090,8 +2212,13 @@ function selectSiloSimulationDays(days) {
 }
 
 function aplicarInfodia(info) {
-  state.lotes = state.lotes.filter(l => !isInfodiaProductionLote(l));
+  const lotesBase = state.lotes.filter(l => !isInfodiaProductionLote(l));
+  const acpInventario = actualizarInventarioConACP(lotesBase, info.analisisACP || info.analisisLotes || []);
+  state.lotes = acpInventario.lotes;
   save("oxmo:lotes", state.lotes);
+  if (acpInventario.actualizados) {
+    addHist("Inventario actualizado con ACP", "", `${acpInventario.actualizados} lote(s) cruzados al importar Infodia`, C.green);
+  }
   const lastLevelBySilo = {};
   const lastAnalysisBySilo = {};
   state.siloHistorial = info.siloHistorial || [];
