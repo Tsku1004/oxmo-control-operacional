@@ -19,6 +19,7 @@ const DEFAULT_CLOUD_CONFIG = {
 };
 const PUBLIC_APP_URL = "https://oxmo-control-operacional.vercel.app/";
 const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:siloHistorial", "oxmo:infodia"]);
+const HIDDEN_TABS = new Set(["quimica", "siloHistorial"]);
 const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "", needsLotesCleanup: false, needsSiloCleanup: false };
 
 const DEFAULT_SILOS = Array.from({ length: 8 }, (_, i) => ({
@@ -331,6 +332,34 @@ function addHist(accion, loteId = "", detalle = "", color = C.txt2) {
 }
 function persistLotes() { save("oxmo:lotes", state.lotes); }
 
+function guardarComunManual(data, fuente = "manual") {
+  const masa = parseNum(data.masa);
+  const cu = parseNum(data.cu);
+  const mo = parseNum(data.mo);
+  const s = parseNum(data.s);
+  if (!data.siloId || !masa || masa <= 0 || !String(data.cu ?? "").trim() || !String(data.mo ?? "").trim() || !String(data.s ?? "").trim()) {
+    alert("Ingresa silo, masa y analisis quimico validos");
+    return false;
+  }
+  const comun = {
+    id: `C-${Date.now()}`,
+    codigo: data.codigo || `Manual-${Date.now()}`,
+    siloId: data.siloId,
+    turno: data.turno || "Dia",
+    fecha: data.fecha || new Date().toISOString().slice(0, 10),
+    masa: Number(masa.toFixed(2)),
+    cu: Number(cu.toFixed(3)),
+    mo: Number(mo.toFixed(3)),
+    s: Number(s.toFixed(4)),
+    fuente,
+    tipoAnalisis: "comun_turno_manual",
+  };
+  state.comunes.push(comun);
+  save("oxmo:comunes", state.comunes);
+  addHist("Comun de turno ingresado", comun.siloId, `${comun.masa}t ${comun.turno}`, clasificar(comun).color);
+  return true;
+}
+
 function render() {
   const app = document.querySelector("#app");
   const etiquetaPublica = publicEtiquetaFromUrl();
@@ -348,6 +377,7 @@ function render() {
     bindLogin();
     return;
   }
+  if (HIDDEN_TABS.has(state.tab)) state.tab = "inventario";
   syncInventarioACP();
   app.innerHTML = shellHTML();
   bindShell();
@@ -442,8 +472,8 @@ function shellHTML() {
       </section>
       <nav class="tabs">
         ${[
-          ["inventario","Inventario"],["silos","Silos"],["quimica","Quimica"],["lotesOxmo","Lotes OXMO/BQA"],
-          ["comunesTurno","Comunes de turno"],["mezclas","Mezclas"],["siloHistorial","Historial Silos"],
+          ["inventario","Inventario"],["silos","Silos"],["lotesOxmo","Lotes OXMO/BQA"],
+          ["comunesTurno","Comunes de turno"],["mezclas","Mezclas"],
           ["etiquetas","Etiquetas"],["reportes","Reportes"],["alertas","Alertas"]
         ].map(([id, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
       </nav>
@@ -502,7 +532,8 @@ function bindTab() {
   if (state.tab === "mezclas") bindMezclas();
   if (state.tab === "infodia") bindInfodia();
   if (state.tab === "siloHistorial") bindSiloHistorial();
-  if (state.tab === "lotesOxmo" || state.tab === "comunesTurno") bindAnalisisACP();
+  if (state.tab === "lotesOxmo") bindAnalisisACP();
+  if (state.tab === "comunesTurno") bindComunesTurno();
   if (state.tab === "etiquetas") bindEtiquetas();
   if (state.tab === "reportes") bindReportes();
   if (state.tab === "quimica") bindQuimica();
@@ -775,7 +806,45 @@ function comunesTurnoHTML() {
     .filter(a => /^OO300-001-\d+-\d{2}$/.test(a.codigo))
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.codigo.localeCompare(b.codigo));
   const may1to16 = items.filter(a => a.fecha >= "2026-05-01" && a.fecha <= "2026-05-16");
-  return analisisACPHTML({
+  const manuales = [...state.comunes].reverse();
+  const form = `<div class="box" style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px">
+      <div>
+        <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Ingreso manual</div>
+        <div style="color:var(--txt);font-size:18px;font-weight:900">Comun de turno para silo</div>
+        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:840px;line-height:1.45">Registra un comun puntual cuando aun no este cargado en Infodia. Al guardar, la pestaña Silos recalcula el ponderado del silo seleccionado.</div>
+      </div>
+    </div>
+    <form id="comunTurnoForm">
+      <div class="form-grid">
+        ${selectField("siloId","Silo",state.silosBase[0]?.id || "Silo 4",state.silosBase.map(s => s.id))}
+        ${selectField("turno","Turno","Dia",["Dia","Noche"])}
+        ${inputField("fecha","Fecha",new Date().toISOString().slice(0, 10),"date")}
+        ${inputField("masa","Masa comun (t)","50","number","50","0.01")}
+        ${inputField("cu","Cu %","","number","0.49","0.001")}
+        ${inputField("mo","Mo %","","number","57.5","0.001")}
+        ${inputField("s","S %","","number","0.012","0.0001")}
+      </div>
+      <button class="btn" style="margin-top:10px">GUARDAR COMUN</button>
+    </form>
+    <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
+      <div class="muted-title" style="margin-bottom:10px">Comunes asociados a silos - ${state.comunes.length}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px;max-height:230px;overflow:auto">
+        ${manuales.map(c => {
+          const cl = clasificar(c);
+          return `<div class="card" style="padding:10px;border-left:3px solid ${cl.color}">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+              <div class="mono" style="color:var(--blue-light);font-weight:900">${c.siloId} - ${c.turno || "Dia"}</div>
+              <button class="icon-btn" data-comun-del="${c.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">x</button>
+            </div>
+            <div style="color:var(--txt2);font-size:10px;margin-top:4px">${c.fecha || "-"} - ${c.masa || 0}t - Cu ${c.cu}% - Mo ${c.mo}% - S ${c.s}%</div>
+            <span class="tag" style="margin-top:6px;background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${cl.clase}</span>
+          </div>`;
+        }).join("") || `<div style="color:var(--txt3);font-size:11px">Sin comunes manuales registrados.</div>`}
+      </div>
+    </div>
+  </div>`;
+  return form + analisisACPHTML({
     titulo: "Comunes de turno OO300-001",
     subtitulo: "Listado auditable de comunes de turno leidos desde ACP. Estos valores alimentan la caracterizacion historica de silos.",
     items,
@@ -863,6 +932,23 @@ function bindAnalisisACP() {
     focusInputEnd("#acpSearch");
   });
   applyBtn?.addEventListener("click", aplicarACPInventarioActual);
+}
+
+function bindComunesTurno() {
+  bindAnalisisACP();
+  const form = document.querySelector("#comunTurnoForm");
+  if (form) {
+    form.addEventListener("submit", e => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(form).entries());
+      if (guardarComunManual(data, "manual-comunes-turno")) render();
+    });
+  }
+  document.querySelectorAll("[data-comun-del]").forEach(btn => btn.addEventListener("click", () => {
+    state.comunes = state.comunes.filter(c => c.id !== btn.dataset.comunDel);
+    save("oxmo:comunes", state.comunes);
+    render();
+  }));
 }
 
 function mezclasHTML() {
@@ -1474,7 +1560,7 @@ function alertasHTML() {
 }
 
 function buscarMejoresMezclas2() {
-  const objetivoKg = Number(state.mix.masa || 20000);
+  const objetivoKg = Math.min(40000, Math.max(1000, Math.round(parseNum(state.mix.masa || 20000) / 1000) * 1000));
   const paso = 1000;
   const basePool = state.lotes.filter(l => hasAnalysis(l) && l.masa > 0 && (state.mix.sector === "Todos" || l.sector === state.mix.sector));
   const pool = state.mix.sel.length ? basePool.filter(l => state.mix.sel.includes(l.id)) : basePool;
@@ -1484,9 +1570,9 @@ function buscarMejoresMezclas2() {
     const mix = mezclaDe(items);
     if (Math.abs(mix.masaKg - objetivoKg) > 0.01) return;
     const fueraKg = items.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + x.kg, 0);
-    const cuPenalty = Math.abs(mix.cu - state.mix.cu) * 160;
-    const moPenalty = Math.max(0, state.mix.mo - mix.mo) * 120;
-    const sPenalty = Math.max(0, mix.s - state.mix.s) * 900;
+    const cuPenalty = Math.abs(mix.cu - parseNum(state.mix.cu)) * 160;
+    const moPenalty = Math.max(0, parseNum(state.mix.mo) - mix.mo) * 120;
+    const sPenalty = Math.max(0, mix.s - parseNum(state.mix.s)) * 900;
     const specBonus = mix.ok ? 800 : 0;
     const fueraBonus = fueraKg / 1000 * 18;
     opciones.push({ items, mix, fueraKg, score: specBonus + fueraBonus - cuPenalty - moPenalty - sPenalty });
@@ -1520,16 +1606,17 @@ function buscarMejoresMezclas2() {
 }
 
 function mezclasHTML() {
+  state.mix.masa = Math.min(40000, Math.max(1000, Math.round(parseNum(state.mix.masa || 20000) / 1000) * 1000));
   const materiales = state.lotes.filter(l => hasAnalysis(l) && (state.mix.sector === "Todos" || l.sector === state.mix.sector));
   const opciones = buscarMejoresMezclas2();
   return `<div class="mix-layout">
     <div style="display:flex;flex-direction:column;gap:8px">
       <div class="box">
         <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Objetivo</div>
-        ${range("Cu objetivo", "cu", state.mix.cu, 0, 2, 0.01, "%", C.copper)}
+        ${range("Cu objetivo", "cu", state.mix.cu, 0, 3, 0.01, "%", C.copper)}
         ${range("Mo mínimo", "mo", state.mix.mo, 45, 65, 0.1, "%", C.green)}
         ${range("S máximo", "s", state.mix.s, 0, 0.5, 0.01, "%", C.yellow)}
-        ${range("Masa lote", "masa", state.mix.masa, 5000, 30000, 1000, "kg", C.cyan)}
+        ${range("Masa lote", "masa", state.mix.masa, 1000, 40000, 1000, "kg", C.cyan)}
         <button class="btn" id="autoMix" style="width:100%;margin-top:8px">BUSCAR MEJOR COMBINACIÓN</button>
         <button class="btn secondary" id="clearMix" style="width:100%;margin-top:6px">Usar todos los materiales</button>
         ${state.mixMsg ? `<div class="notice" style="margin:10px 0 0;text-align:center;animation:mixPulse 1.2s ease">${state.mixMsg}</div>` : ""}
@@ -1587,7 +1674,32 @@ function mezclaDetalleHTML(op) {
 }
 
 function bindMezclas() {
-  document.querySelectorAll("[data-range]").forEach(el => el.addEventListener("input", () => { state.mix[el.dataset.range] = Number(el.value); render(); }));
+  const commitMixInput = el => {
+    const key = el.dataset.rangeInput;
+    const min = parseNum(el.dataset.min);
+    const max = parseNum(el.dataset.max);
+    const step = parseNum(el.dataset.step) || 1;
+    let value = parseNum(el.value);
+    if (!Number.isFinite(value)) value = parseNum(state.mix[key]);
+    value = Math.min(max, Math.max(min, value));
+    if (key === "masa") value = Math.min(40000, Math.max(1000, Math.round(value / step) * step));
+    state.mix[key] = Number(value.toFixed(step < 0.01 ? 4 : step < 0.1 ? 2 : step < 1 ? 1 : 0));
+  };
+  document.querySelectorAll("[data-range]").forEach(el => el.addEventListener("input", () => {
+    const key = el.dataset.range;
+    state.mix[key] = key === "masa" ? Number(el.value) : parseNum(el.value);
+    render();
+  }));
+  document.querySelectorAll("[data-range-input]").forEach(el => {
+    el.addEventListener("change", () => { commitMixInput(el); render(); });
+    el.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commitMixInput(el);
+        render();
+      }
+    });
+  });
   document.querySelectorAll("[data-mix-sector]").forEach(btn => btn.addEventListener("click", () => { state.mix.sector = btn.dataset.mixSector; render(); }));
   document.querySelectorAll("[data-mix-lot]").forEach(tile => tile.addEventListener("click", () => {
     const id = tile.dataset.mixLot;
@@ -1596,6 +1708,7 @@ function bindMezclas() {
   }));
   document.querySelector("#clearMix").addEventListener("click", () => { state.mix.sel = []; render(); });
   document.querySelector("#autoMix").addEventListener("click", () => {
+    document.querySelectorAll("[data-range-input]").forEach(commitMixInput);
     state.mixMsg = "Opciones calculadas";
     render();
     setTimeout(() => { state.mixMsg = ""; if (state.tab === "mezclas") render(); }, 2200);
@@ -2323,7 +2436,7 @@ function range(label, key, value, min, max, step, unit, color) {
   return `<div class="mix-target" style="--accent:${color}">
     <div class="mix-target-head">
       <span>${label}</span>
-      <label><input data-range-input="${key}" type="number" min="${min}" max="${max}" step="${step}" value="${displayValue}" /> ${unit}</label>
+      <label><input data-range-input="${key}" data-min="${min}" data-max="${max}" data-step="${step}" type="text" inputmode="decimal" dir="ltr" value="${displayValue}" /> ${unit}</label>
     </div>
     <input data-range="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" />
   </div>`;
