@@ -1,4 +1,4 @@
-const C = {
+﻿const C = {
   blue: "#1E6FD9", blueLight: "#3A8EF5", cyan: "#00D4FF",
   green: "#00E5A0", copper: "#C87533", yellow: "#FFB800", red: "#FF4560",
   txt2: "#6A8FAF", txt3: "#2D4A6A"
@@ -399,7 +399,6 @@ function render() {
   }
   if (HIDDEN_TABS.has(state.tab)) state.tab = "inventario";
   repararIdsLotesManuales();
-  syncInventarioACP();
   app.innerHTML = shellHTML();
   bindShell();
 }
@@ -521,7 +520,9 @@ function bindShell() {
     render();
   });
   document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => {
-    state.tab = btn.dataset.tab;
+    const nextTab = btn.dataset.tab;
+    if (state.tab === nextTab) return;
+    state.tab = nextTab;
     render();
   }));
   const clock = document.querySelector("#clock");
@@ -649,7 +650,7 @@ function deleteLot(id) {
 }
 
 function registroHTML() {
-  const l = state.editando || {tipo:"Maxisaco",masa:"",sector:DEFAULT_SECTORES[0],fila:0,cu:"",mo:"",s:"",obs:"",estado:"Disponible"};
+  const l = state.editando || {id:"",tipo:"Maxisaco",masa:"",sector:DEFAULT_SECTORES[0],fila:0,cu:"",mo:"",s:"",obs:"",estado:"Disponible"};
   const sectorOptions = [...allSectores(), "Añadir sector..."];
   return `
     <div class="grid-2">
@@ -660,6 +661,7 @@ function registroHTML() {
         </div>
         <form id="lotForm">
           <div class="form-grid">
+            ${inputField("idManual","ID lote / nombre",state.editando ? l.id : "","text","Ej: OXMO10080-26 o L-008")}
             ${selectField("tipo","Tipo",l.tipo,["Maxisaco","Tambor"],"span-2")}
             ${selectField("sector","Sector",l.sector,sectorOptions)}
             <div class="field span-2" id="newSectorField" style="display:none"><label>Nombre nuevo sector</label><input name="nuevoSector" placeholder="Ej: Patio norte, Bodega temporal, Zona 3"></div>
@@ -727,8 +729,14 @@ function bindRegistro() {
       saveSectores();
     }
     const hasChem = data.cu && data.mo && data.s;
+    const idSolicitado = String(data.idManual || "").trim();
+    const idLote = state.editando ? state.editando.id : (idSolicitado || nuevoId());
+    if (!state.editando && state.lotes.some(l => String(l.id).toLowerCase() === idLote.toLowerCase())) {
+      alert("Ya existe un lote con ese ID o nombre");
+      return;
+    }
     const lote = {
-      id: state.editando ? state.editando.id : nuevoId(),
+      id: idLote,
       tipo: data.tipo, masa, sector, fila: parseNum(data.fila || 0),
       cu: data.cu ? Number(parseNum(data.cu).toFixed(3)) : 0,
       mo: data.mo ? Number(parseNum(data.mo).toFixed(3)) : 0,
@@ -1166,7 +1174,7 @@ function alertasHTML() {
 
 function silosHTML() {
   const silos = silosPonderados();
-  return `<div style="display:grid;grid-template-columns:minmax(320px,1fr) 360px;gap:14px">
+  return `<div style="display:flex;flex-direction:column;gap:14px">
     <div class="grid-cards">${silos.map(s => {
       const color = s.muestras ? s.color : C.txt3;
       const source = s.nivelImportado?.fuente === "infodia"
@@ -1421,7 +1429,7 @@ function bindMezclas() {
 
 function silosHTML() {
   const silos = silosPonderados();
-  return `<div style="display:grid;grid-template-columns:minmax(320px,1fr) 360px;gap:14px">
+  return `<div style="display:flex;flex-direction:column;gap:14px">
     <div class="grid-cards">${silos.map(s => {
       const color = s.muestras ? s.color : C.txt3;
       const source = s.nivelImportado?.fuente === "infodia"
@@ -1496,16 +1504,7 @@ function bindSilos() {
   form.addEventListener("submit", e => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(form).entries());
-    const masa = Number(data.masa), cu = Number(data.cu), mo = Number(data.mo), s = Number(data.s);
-    if (!masa || masa <= 0 || Number.isNaN(cu) || Number.isNaN(mo) || Number.isNaN(s)) {
-      alert("Ingresa masa y análisis químico válidos");
-      return;
-    }
-    const comun = { id:`C-${Date.now()}`, siloId:data.siloId, turno:data.turno, fecha:data.fecha || hoy(), masa:Number(masa.toFixed(2)), cu:Number(cu.toFixed(2)), mo:Number(mo.toFixed(2)), s:Number(s.toFixed(2)) };
-    state.comunes.push(comun);
-    save("oxmo:comunes", state.comunes);
-    addHist("Común de turno ingresado", comun.siloId, `${comun.masa}t ${comun.turno}`, clasificar(comun).color);
-    render();
+    if (guardarComunManual(data, "manual-silos")) render();
   });
 }
 
@@ -2769,3 +2768,4 @@ function printLabels() {
 
 render();
 initCloud();
+
