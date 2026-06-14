@@ -10,6 +10,7 @@ const DEFAULT_USUARIOS = [
   { u: "supervisor", p: "super456", rol: "Supervisor", nombre: "Supervisor Planta" },
 ];
 const USUARIOS = DEFAULT_USUARIOS;
+const ROLES_USUARIO = ["Operador", "Supervisor", "Jefe de planta", "Super intendente", "Gerente", "Administrador"];
 
 const LOTES_DEFAULT = [];
 const DEFAULT_SECTORES = ["Bodega en transito", "Planta Envase"];
@@ -19,7 +20,7 @@ const DEFAULT_CLOUD_CONFIG = {
   anonKey: "sb_publishable_MYJYPjkMBaSbY_9ujIZRhQ_A5Ta7re0",
 };
 const PUBLIC_APP_URL = "https://oxmo-control-operacional.vercel.app/";
-const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:siloHistorial", "oxmo:infodia", "oxmo:usuarios", "oxmo:userStats"]);
+const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:siloHistorial", "oxmo:infodia", "oxmo:usuarios", "oxmo:userStats", "oxmo:avisos"]);
 const HIDDEN_TABS = new Set(["quimica", "siloHistorial", "comunesTurno"]);
 const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "", needsLotesCleanup: false, needsSiloCleanup: false };
 let tabRenderFrame = 0;
@@ -90,7 +91,10 @@ const state = {
   cloudMsg: "",
   siloHistSearch: "",
   acpSearch: "",
+  avisos: load("oxmo:avisos", []),
   mixMsg: "",
+  mixProcessing: false,
+  mixProgress: 0,
   mixOptions: null,
   mix: { cu: 0.5, mo: 57, s: 0.1, masa: 20000, sel: [], sector: "Todos" },
 };
@@ -173,6 +177,7 @@ function sharedFallback(key) {
   if (key === "oxmo:infodia") return null;
   if (key === "oxmo:usuarios") return DEFAULT_USUARIOS;
   if (key === "oxmo:userStats") return {};
+  if (key === "oxmo:avisos") return [];
   return null;
 }
 async function cloudSave(key, value) {
@@ -211,6 +216,7 @@ function applyCloudValue(key, value) {
   if (key === "oxmo:infodia") state.infodia = value || null;
   if (key === "oxmo:usuarios") state.usuarios = Array.isArray(value) ? value.map(normalizarUsuario) : DEFAULT_USUARIOS;
   if (key === "oxmo:userStats") state.userStats = value || {};
+  if (key === "oxmo:avisos") state.avisos = Array.isArray(value) ? value : [];
   cloud.applying = false;
 }
 async function initCloud() {
@@ -385,6 +391,40 @@ function persistLotes() { save("oxmo:lotes", state.lotes); }
 function isAdmin(user = state.user) {
   return user?.rol === "Administrador";
 }
+function isSupervisor(user = state.user) {
+  return user?.rol === "Supervisor";
+}
+function isOperator(user = state.user) {
+  return user?.rol === "Operador";
+}
+function canViewTab(id, user = state.user) {
+  if (!user) return false;
+  if (HIDDEN_TABS.has(id)) return false;
+  if (isAdmin(user)) return true;
+  if (isOperator(user)) return ["inventario", "registro", "lotesOxmo", "alertas", "avisos"].includes(id);
+  if (isSupervisor(user)) return ["inventario", "silos", "lotesOxmo", "mezclas", "etiquetas", "reportes", "alertas", "avisos", "infodia"].includes(id);
+  return ["inventario", "silos", "lotesOxmo", "mezclas", "etiquetas", "reportes", "alertas"].includes(id);
+}
+function visibleTabs() {
+  return [
+    ["inventario", "Inventario"],
+    ["silos", "Silos"],
+    ["lotesOxmo", "Lotes OXMO/BQA"],
+    ["mezclas", "Mezclas"],
+    ["etiquetas", "Etiquetas"],
+    ["reportes", "Reportes"],
+    ["alertas", "Alertas"],
+    ["avisos", "Avisos"],
+    ["admin", "Admin"],
+  ].filter(([id]) => canViewTab(id));
+}
+function canEditLot(l, user = state.user) {
+  if (!user || !l) return false;
+  if (isAdmin(user) || isSupervisor(user)) return true;
+  if (!isOperator(user)) return true;
+  const owner = String(l.createdBy || "").trim().toLowerCase();
+  return owner && owner === userKey(user);
+}
 function saveUsuarios() {
   state.usuarios = state.usuarios.map(normalizarUsuario);
   save("oxmo:usuarios", state.usuarios);
@@ -502,8 +542,7 @@ function render() {
     bindLogin();
     return;
   }
-  if (state.tab === "admin" && !isAdmin()) state.tab = "inventario";
-  if (HIDDEN_TABS.has(state.tab)) state.tab = "inventario";
+  if (!canViewTab(state.tab)) state.tab = visibleTabs()[0]?.[0] || "inventario";
   app.innerHTML = shellHTML();
   bindShell();
 }
@@ -574,11 +613,11 @@ function shellHTML() {
           <div class="brand-sub">OXMO · ENVASE · TRAZABILIDAD</div>
         </div>
       </div>
+      <div class="top-user-center">
+        <div class="top-user-role">${state.user.rol.toUpperCase()}</div>
+        <div class="top-user-name">${state.user.nombre}</div>
+      </div>
       <div class="top-actions">
-        <div style="text-align:right">
-          <div style="color:var(--txt3);font-size:8px;letter-spacing:2px">${state.user.rol.toUpperCase()}</div>
-          <div style="color:var(--blue-light);font-size:11px;font-weight:800">${state.user.nombre}</div>
-        </div>
         <div style="text-align:right">
           <div id="clock" class="mono" style="color:var(--green);font-size:13px;font-weight:800">${new Date().toLocaleTimeString("es-CL")}</div>
           <div style="color:var(--txt3);font-size:8px;letter-spacing:1px">${hoy()}</div>
@@ -598,15 +637,11 @@ function shellHTML() {
         ${kpi("Sin Análisis", pend.length, "", "Pendientes lab", C.yellow, "LAB", 0)}
       </section>
       <nav class="tabs">
-        ${[
-          ["inventario","Inventario"],["silos","Silos"],["lotesOxmo","Lotes OXMO/BQA"],
-          ["mezclas","Mezclas"],["etiquetas","Etiquetas"],["reportes","Reportes"],["alertas","Alertas"],
-          ...(isAdmin() ? [["admin","Admin"]] : [])
-        ].map(([id, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
+        ${visibleTabs().map(([id, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
       </nav>
-      <div class="filters" style="margin-bottom:12px">
+      ${canViewTab("infodia") ? `<div class="filters" style="margin-bottom:12px">
         <button class="pill ${state.tab === "infodia" ? "active" : ""}" data-tab="infodia">Importar Infodia</button>
-      </div>
+      </div>` : ""}
       <section id="tabView">${tabHTML()}</section>
     </main>
     <footer class="footer">
@@ -653,6 +688,7 @@ function tabHTML() {
   if (state.tab === "silos") return silosHTML();
   if (state.tab === "quimica") return quimicaHTML();
   if (state.tab === "lotesOxmo") return lotesOxmoHTML();
+  if (state.tab === "avisos") return avisosHTML();
   if (state.tab === "comunesTurno") return comunesTurnoHTML();
   if (state.tab === "admin") return adminHTML();
   if (state.tab === "mezclas") return mezclasHTML();
@@ -671,6 +707,7 @@ function bindTab() {
   if (state.tab === "infodia") bindInfodia();
   if (state.tab === "siloHistorial") bindSiloHistorial();
   if (state.tab === "lotesOxmo") bindAnalisisACP();
+  if (state.tab === "avisos") bindAvisos();
   if (state.tab === "comunesTurno") bindComunesTurno();
   if (state.tab === "admin") bindAdmin();
   if (state.tab === "etiquetas") bindEtiquetas();
@@ -708,6 +745,9 @@ function inventarioHTML() {
 }
 function rowHTML(l) {
   const {clase, color} = clasificar(l);
+  const actions = canEditLot(l)
+    ? `<div class="mini-actions"><button class="icon-btn" data-edit="${l.id}">✏</button><button class="icon-btn" data-del="${l.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button></div>`
+    : "";
   return `<tr>
     <td class="mono" style="color:var(--blue-light);font-weight:800">${l.id}</td>
     <td style="color:var(--txt2)">${l.tipo}</td>
@@ -719,13 +759,19 @@ function rowHTML(l) {
     <td><span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${clase}</span></td>
     <td style="color:${eColor(l.estado)}">● ${l.estado}</td>
     <td class="mono" style="color:var(--txt3);font-size:10px">${l.fecha}</td>
-    <td><div class="mini-actions"><button class="icon-btn" data-edit="${l.id}">✏️</button><button class="icon-btn" data-del="${l.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">🗑</button></div></td>
+    <td>${actions}</td>
   </tr>`;
 }
 function bindInventario() {
   document.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => { state.filtro = btn.dataset.filter; render(); }));
   document.querySelector("#newLot").addEventListener("click", () => { state.editando = null; state.tab = "registro"; render(); });
-  document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => { state.editando = state.lotes.find(l => l.id === btn.dataset.edit); state.tab = "registro"; render(); }));
+  document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => {
+    const lote = state.lotes.find(l => l.id === btn.dataset.edit);
+    if (!canEditLot(lote)) { alert("No tienes permiso para modificar este lote."); return; }
+    state.editando = lote;
+    state.tab = "registro";
+    render();
+  }));
   document.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => deleteLot(btn.dataset.del)));
 }
 function cartillaManualLotes() {
@@ -758,6 +804,11 @@ function aplicarCartillaManual() {
   render();
 }
 function deleteLot(id) {
+  const lote = state.lotes.find(l => l.id === id);
+  if (!canEditLot(lote)) {
+    alert("No tienes permiso para eliminar este lote.");
+    return;
+  }
   if (!confirm(`¿Eliminar ${id}? Esta acción no se puede deshacer.`)) return;
   state.lotes = state.lotes.filter(l => l.id !== id);
   addHist("Lote eliminado", id, "", C.red);
@@ -808,7 +859,7 @@ function registroHTML() {
               <div style="color:var(--txt2);font-size:10px;margin-top:2px">${kgToTon(x.masa, 3)} · ${x.fecha}</div>
               <div style="margin-top:3px"><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span> <span style="color:${eColor(x.estado)};font-size:10px">● ${x.estado}</span></div>
             </div>
-            <div class="mini-actions"><button class="icon-btn" data-copy="${x.id}">📋</button><button class="icon-btn" data-del="${x.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">🗑</button></div>
+            <div class="mini-actions">${canEditLot(x) ? `<button class="icon-btn" data-copy="${x.id}">Copiar</button><button class="icon-btn" data-del="${x.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button>` : ""}</div>
           </div>`;
         }).join("")}
       </div>
@@ -860,6 +911,8 @@ function bindRegistro() {
       obs: data.obs || "",
       fecha: state.editando ? state.editando.fecha : hoy(),
       createdAt: state.editando ? (state.editando.createdAt || new Date().toISOString()) : new Date().toISOString(),
+      createdBy: state.editando ? (state.editando.createdBy || userKey()) : userKey(),
+      createdByName: state.editando ? (state.editando.createdByName || state.user?.nombre || userKey()) : (state.user?.nombre || userKey()),
       estado: "Pendiente"
     };
     const clasif = clasificar(lote);
@@ -881,6 +934,7 @@ function bindRegistro() {
   });
   document.querySelectorAll("[data-copy]").forEach(btn => btn.addEventListener("click", () => {
     const src = state.lotes.find(l => l.id === btn.dataset.copy);
+    if (!canEditLot(src)) { alert("No tienes permiso para usar este lote como base."); return; }
     state.editando = {...src, id: null, fecha: hoy()};
     render();
   }));
@@ -925,7 +979,7 @@ function adminUsersHTML(rows) {
           <div class="field"><label>Usuario</label><input name="u" autocomplete="off" placeholder="ej: turno_a"></div>
           <div class="field"><label>Nombre</label><input name="nombre" autocomplete="off" placeholder="Nombre visible"></div>
           <div class="field"><label>Contraseña</label><input name="p" type="password" autocomplete="new-password" placeholder="Contraseña inicial"></div>
-          ${selectField("rol", "Rol", "Operador", ["Operador", "Supervisor", "Administrador"])}
+          ${selectField("rol", "Rol", "Operador", ROLES_USUARIO)}
           <button class="btn" style="width:100%">CREAR USUARIO</button>
         </form>
       </div>
@@ -933,7 +987,7 @@ function adminUsersHTML(rows) {
         <div class="muted-title" style="margin-bottom:12px">Cuentas creadas — ${rows.length}</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Creado</th><th>Último uso</th><th></th></tr></thead>
+            <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Creado</th><th>Último uso</th><th>Control</th></tr></thead>
             <tbody>${rows.map(({u, stat}) => `<tr>
               <td class="mono" style="color:var(--blue-light);font-weight:900">${esc(u.u)}</td>
               <td>${esc(u.nombre)}</td>
@@ -941,7 +995,10 @@ function adminUsersHTML(rows) {
               <td style="color:${u.activo !== false ? C.green : C.red}">● ${u.activo !== false ? "Activo" : "Inactivo"}</td>
               <td class="mono" style="color:var(--txt3)">${esc(u.creado || "-")}</td>
               <td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td>
-              <td>${u.u !== "admin" ? `<button class="icon-btn" data-toggle-user="${esc(u.u)}">${u.activo !== false ? "Pausar" : "Activar"}</button>` : ""}</td>
+              <td><div class="mini-actions">
+                <button class="icon-btn" data-pass-user="${esc(u.u)}">Clave</button>
+                ${u.u !== "admin" && u.u !== userKey() ? `<button class="icon-btn" data-toggle-user="${esc(u.u)}">${u.activo !== false ? "Pausar" : "Activar"}</button><button class="icon-btn" data-delete-user="${esc(u.u)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button>` : ""}
+              </div></td>
             </tr>`).join("")}</tbody>
           </table>
         </div>
@@ -1021,6 +1078,123 @@ function bindAdmin() {
     saveUsuarios();
     const estado = state.usuarios.find(x => x.u === u)?.activo === false ? "Inactivo" : "Activo";
     addHist("Estado de cuenta actualizado", u, estado, C.yellow);
+    render();
+  }));
+  document.querySelectorAll("[data-pass-user]").forEach(btn => btn.addEventListener("click", () => {
+    const u = btn.dataset.passUser;
+    const next = prompt(`Nueva contraseña para ${u}`);
+    if (next === null) return;
+    if (!next.trim()) { alert("La contraseña no puede quedar vacía."); return; }
+    state.usuarios = state.usuarios.map(x => x.u === u ? { ...x, p: next.trim() } : x);
+    saveUsuarios();
+    addHist("Contraseña actualizada", u, "Cambio realizado por administrador", C.cyan);
+    render();
+  }));
+  document.querySelectorAll("[data-delete-user]").forEach(btn => btn.addEventListener("click", () => {
+    const u = btn.dataset.deleteUser;
+    if (u === "admin" || u === userKey()) return;
+    if (!confirm(`¿Eliminar la cuenta ${u}?`)) return;
+    state.usuarios = state.usuarios.filter(x => x.u !== u);
+    delete state.userStats[u];
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Cuenta eliminada", u, "Eliminada por administrador", C.red);
+    render();
+  }));
+}
+
+function avisosHTML() {
+  const puedeCrear = isOperator() || isAdmin() || isSupervisor();
+  const puedeVerTodo = isAdmin() || isSupervisor();
+  const avisos = [...(state.avisos || [])]
+    .filter(a => puedeVerTodo || a.autor === userKey())
+    .sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""));
+  return `
+    <div class="box">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
+        <div>
+          <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Avisos operacionales</div>
+          <div style="font-size:20px;font-weight:900">Condiciones, notas y respaldo visual</div>
+          <div style="color:var(--txt2);font-size:12px;margin-top:6px">El operador informa condiciones relevantes. Supervisor y administrador pueden revisar el historial.</div>
+        </div>
+        <div class="tag" style="color:${C.green};background:${C.green}22;border-color:${C.green}44">${avisos.length} aviso(s)</div>
+      </div>
+      <div style="display:grid;grid-template-columns:${puedeCrear ? "minmax(300px,420px) 1fr" : "1fr"};gap:16px;align-items:start">
+        ${puedeCrear ? `<div class="card">
+          <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Nuevo aviso</div>
+          <form id="avisoForm">
+            <div class="field"><label>Título / condición</label><input name="titulo" maxlength="80" placeholder="Ej: Derrame menor, condición de equipo, material observado"></div>
+            <div class="field"><label>Prioridad</label><select name="prioridad"><option>Normal</option><option>Alta</option><option>Crítica</option></select></div>
+            <div class="field"><label>Detalle</label><textarea name="detalle" rows="4" placeholder="Describe qué ocurrió, ubicación, acción tomada o recomendación."></textarea></div>
+            <div class="field"><label>Fotografía opcional</label><input name="foto" type="file" accept="image/*"></div>
+            <button class="btn" style="width:100%">PUBLICAR AVISO</button>
+          </form>
+        </div>` : ""}
+        <div class="card">
+          <div class="muted-title" style="margin-bottom:12px">${puedeVerTodo ? "Avisos recibidos" : "Mis avisos enviados"}</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            ${avisos.map(a => avisoCardHTML(a, puedeVerTodo)).join("") || `<div style="color:var(--txt3);font-size:12px;text-align:center;padding:20px">Sin avisos registrados.</div>`}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function avisoCardHTML(a, puedeGestionar) {
+  const color = a.prioridad === "Crítica" ? C.red : a.prioridad === "Alta" ? C.yellow : C.blueLight;
+  return `<div class="lot-row" style="--accent:${color};align-items:flex-start">
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span class="tag" style="color:${color};background:${color}22;border-color:${color}44">${esc(a.prioridad || "Normal")}</span>
+        <b style="color:var(--txt)">${esc(a.titulo || "Aviso operacional")}</b>
+      </div>
+      <div style="color:var(--txt2);font-size:11px;margin-top:4px">${esc(a.autorNombre || a.autor || "-")} · ${esc(a.fecha || "-")} ${esc(a.hora || "")}</div>
+      <div style="color:var(--txt);font-size:12px;margin-top:8px;white-space:pre-wrap">${esc(a.detalle || "")}</div>
+      ${a.foto ? `<img src="${a.foto}" alt="Foto aviso" style="max-width:220px;max-height:160px;border:1px solid var(--line);border-radius:6px;margin-top:10px;object-fit:cover">` : ""}
+    </div>
+    ${puedeGestionar ? `<button class="icon-btn" data-del-aviso="${esc(a.id)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button>` : ""}
+  </div>`;
+}
+function bindAvisos() {
+  document.querySelector("#avisoForm")?.addEventListener("submit", e => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (!String(data.titulo || "").trim() || !String(data.detalle || "").trim()) {
+      alert("Ingresa título y detalle del aviso.");
+      return;
+    }
+    const guardar = foto => {
+      const aviso = {
+        id: `A-${Date.now()}`,
+        titulo: String(data.titulo || "").trim(),
+        detalle: String(data.detalle || "").trim(),
+        prioridad: data.prioridad || "Normal",
+        foto,
+        autor: userKey(),
+        autorNombre: state.user?.nombre || userKey(),
+        rol: state.user?.rol || "",
+        fecha: hoy(),
+        hora: ahora(),
+        createdAt: new Date().toISOString(),
+      };
+      state.avisos = [aviso, ...(state.avisos || [])].slice(0, 120);
+      save("oxmo:avisos", state.avisos);
+      addHist("Aviso operacional", aviso.id, aviso.titulo, aviso.prioridad === "Crítica" ? C.red : C.cyan);
+      render();
+    };
+    const file = form.elements.foto?.files?.[0];
+    if (!file) { guardar(""); return; }
+    const reader = new FileReader();
+    reader.onload = () => guardar(String(reader.result || ""));
+    reader.onerror = () => { alert("No se pudo cargar la fotografía."); guardar(""); };
+    reader.readAsDataURL(file);
+  });
+  document.querySelectorAll("[data-del-aviso]").forEach(btn => btn.addEventListener("click", () => {
+    if (!confirm("¿Eliminar este aviso?")) return;
+    state.avisos = (state.avisos || []).filter(a => a.id !== btn.dataset.delAviso);
+    save("oxmo:avisos", state.avisos);
+    addHist("Aviso eliminado", btn.dataset.delAviso, "", C.red);
     render();
   }));
 }
@@ -1852,19 +2026,29 @@ function buscarMejoresMezclas2() {
       + Math.max(0, Number(l.s || 0) - parseNum(state.mix.s)) * 90
       - Math.min(Number(l.masa || 0), objetivoKg) / 1000;
   };
-  const pool = (state.mix.sel.length ? basePool.filter(l => state.mix.sel.includes(l.id)) : [...basePool].sort((a, b) => scoreLote(a) - scoreLote(b)).slice(0, 22));
+  const pool = (state.mix.sel.length ? basePool.filter(l => state.mix.sel.includes(l.id)) : basePool)
+    .sort((a, b) => scoreLote(a) - scoreLote(b))
+    .slice(0, 18);
   const opciones = [];
+  const firmas = new Set();
   const masasObjetivo = [objetivoKg];
   for (let delta = paso; delta <= 5000; delta += paso) {
     if (objetivoKg - delta >= paso) masasObjetivo.push(objetivoKg - delta);
     if (objetivoKg + delta <= 40000) masasObjetivo.push(objetivoKg + delta);
   }
   const evaluar = items => {
-    if (items.some(x => x.kg <= 0 || x.kg > x.lote.masa)) return;
-    const mix = mezclaDe(items);
+    const clean = items
+      .map(x => ({ lote: x.lote, kg: Math.round(Number(x.kg || 0) / 1000) * 1000 }))
+      .filter(x => x.kg > 0)
+      .sort((a, b) => String(a.lote.id).localeCompare(String(b.lote.id)));
+    if (!clean.length || clean.some(x => x.kg > x.lote.masa)) return;
+    const firma = clean.map(x => `${x.lote.id}:${x.kg}`).join("|");
+    if (firmas.has(firma)) return;
+    firmas.add(firma);
+    const mix = mezclaDe(clean);
     const diffKg = Math.abs(mix.masaKg - objetivoKg);
     if (diffKg > 5000) return;
-    const fueraKg = items.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + x.kg, 0);
+    const fueraKg = clean.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + x.kg, 0);
     const cuPenalty = Math.abs(mix.cu - parseNum(state.mix.cu)) * 160;
     const moPenalty = Math.max(0, parseNum(state.mix.mo) - mix.mo) * 120;
     const sPenalty = Math.max(0, mix.s - parseNum(state.mix.s)) * 900;
@@ -1872,7 +2056,7 @@ function buscarMejoresMezclas2() {
     const specBonus = mix.ok ? 800 : 0;
     const exactBonus = diffKg === 0 ? 160 : 0;
     const fueraBonus = fueraKg / 1000 * 18;
-    opciones.push({ items, mix, fueraKg, diffKg, objetivoKg, exacta: diffKg === 0, score: specBonus + exactBonus + fueraBonus - cuPenalty - moPenalty - sPenalty - massPenalty });
+    opciones.push({ items: clean, mix, fueraKg, diffKg, objetivoKg, exacta: diffKg === 0, score: specBonus + exactBonus + fueraBonus - cuPenalty - moPenalty - sPenalty - massPenalty });
   };
   for (const targetKg of masasObjetivo) {
     for (let i = 0; i < pool.length; i++) evaluar([{ lote: pool[i], kg: targetKg }]);
@@ -1895,13 +2079,9 @@ function buscarMejoresMezclas2() {
       }
     }
   }
-  const seen = new Set();
-  return opciones.sort((a, b) => (Number(b.exacta) - Number(a.exacta)) || (a.diffKg - b.diffKg) || (b.score - a.score)).filter(op => {
-    const key = op.items.map(x => `${x.lote.id}:${x.kg}`).join("|");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).slice(0, 6);
+  return opciones
+    .sort((a, b) => (Number(b.exacta) - Number(a.exacta)) || (a.diffKg - b.diffKg) || (b.score - a.score))
+    .slice(0, 6);
 }
 
 function mezclasHTML() {
@@ -1916,8 +2096,8 @@ function mezclasHTML() {
         ${range("Mo mínimo", "mo", state.mix.mo, 45, 65, 0.1, "%", C.green)}
         ${range("S máximo", "s", state.mix.s, 0, 0.5, 0.01, "%", C.yellow)}
         ${range("Masa lote", "masa", state.mix.masa, 1000, 40000, 1000, "kg", C.cyan)}
-        <button class="btn" id="autoMix" style="width:100%;margin-top:8px">BUSCAR MEJOR COMBINACIÓN</button>
-        <button class="btn secondary" id="clearMix" style="width:100%;margin-top:6px">Usar todos los materiales</button>
+        <button class="btn" id="autoMix" style="width:100%;margin-top:8px" ${state.mixProcessing ? "disabled" : ""}>${state.mixProcessing ? "CALCULANDO..." : "BUSCAR MEJOR COMBINACIÓN"}</button>
+        ${state.mixProcessing ? `<div class="mix-progress"><div style="width:${state.mixProgress || 8}%"></div></div><div style="color:var(--txt2);font-size:11px;text-align:center;margin-top:6px">Procesando combinaciones originales...</div>` : ""}
         ${state.mixMsg ? `<div class="notice" style="margin:10px 0 0;text-align:center;animation:mixPulse 1.2s ease">${state.mixMsg}</div>` : ""}
       </div>
       <div class="box">
@@ -2041,13 +2221,21 @@ function bindMezclas() {
     state.mixOptions = null;
     render();
   }));
-  document.querySelector("#clearMix").addEventListener("click", () => { state.mix.sel = []; state.mixOptions = null; render(); });
   document.querySelector("#autoMix").addEventListener("click", () => {
     document.querySelectorAll("[data-range-input]").forEach(commitMixInput);
-    state.mixOptions = buscarMejoresMezclas2();
-    state.mixMsg = "Opciones calculadas";
+    state.mixProcessing = true;
+    state.mixProgress = 12;
+    state.mixMsg = "Calculando mezclas...";
     render();
-    setTimeout(() => { state.mixMsg = ""; if (state.tab === "mezclas") render(); }, 2200);
+    setTimeout(() => {
+      state.mixProgress = 60;
+      state.mixOptions = buscarMejoresMezclas2();
+      state.mixProcessing = false;
+      state.mixProgress = 100;
+      state.mixMsg = "Opciones calculadas";
+      render();
+      setTimeout(() => { state.mixMsg = ""; state.mixProgress = 0; if (state.tab === "mezclas") render(); }, 2200);
+    }, 80);
   });
 }
 

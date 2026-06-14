@@ -25,6 +25,10 @@ body {
 }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
+button:disabled {
+  cursor: wait;
+  opacity: .72;
+}
 .login {
   min-height: 100vh;
   display: grid;
@@ -154,11 +158,33 @@ button { cursor: pointer; }
   background: linear-gradient(90deg, #040a14, var(--panel));
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
+  position: relative;
 }
 .top-actions {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+.top-user-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  min-width: 220px;
+  pointer-events: none;
+}
+.top-user-role {
+  color: var(--txt3);
+  font-size: 9px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+.top-user-name {
+  color: var(--blue-light);
+  font-weight: 900;
+  font-size: 18px;
+  line-height: 1.2;
 }
 .status {
   padding: 5px 20px;
@@ -354,6 +380,26 @@ tbody tr:hover { background: var(--blue-dim); }
   min-height: 420px;
   overflow-y: auto;
   padding-right: 4px;
+}
+.mix-progress {
+  height: 9px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #040a14;
+  margin-top: 10px;
+}
+.mix-progress div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cyan), var(--green), var(--blue-light));
+  box-shadow: 0 0 16px #00d4ff66;
+  transition: width .25s ease;
+  animation: progressGlow 1s ease-in-out infinite;
+}
+@keyframes progressGlow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.35); }
 }
 .yard {
   min-height: 360px;
