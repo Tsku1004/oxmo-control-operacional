@@ -262,8 +262,28 @@ function ahora() { return new Date().toLocaleTimeString("es-CL", {hour:"2-digit"
 function fmt(n, d = 2) { return Number(n || 0).toFixed(d); }
 function kgToTon(kg, d = 2) { return `${(Number(kg || 0) / 1000).toFixed(d)} t`; }
 function nuevoId() {
-  const nums = state.lotes.map(l => parseInt((l.id.split("-")[1] || "0"), 10));
+  const nums = state.lotes
+    .map(l => /^L-\d+$/i.test(String(l.id || "")) ? parseInt(String(l.id).split("-")[1], 10) : 0)
+    .filter(Number.isFinite);
   return `L-${String(Math.max(0, ...nums) + 1).padStart(3, "0")}`;
+}
+function repararIdsLotesManuales() {
+  const esIdManualInvalido = id => !id || /^L-\s*(NaN|undefined|null)?$/i.test(id);
+  const usados = new Set(state.lotes.map(l => String(l.id || "").trim()).filter(id => id && !esIdManualInvalido(id)));
+  let changed = false;
+  state.lotes = state.lotes.map(l => {
+    const id = String(l.id || "").trim();
+    if (!esIdManualInvalido(id)) return l;
+    let nuevo = nuevoId();
+    while (usados.has(nuevo)) {
+      const n = parseInt(nuevo.split("-")[1], 10) + 1;
+      nuevo = `L-${String(n).padStart(3, "0")}`;
+    }
+    usados.add(nuevo);
+    changed = true;
+    return { ...l, id: nuevo };
+  });
+  if (changed) persistLotes();
 }
 function allSectores() {
   return [...new Set([...DEFAULT_SECTORES, ...state.sectores, ...state.lotes.map(l => l.sector).filter(Boolean)])];
@@ -378,6 +398,7 @@ function render() {
     return;
   }
   if (HIDDEN_TABS.has(state.tab)) state.tab = "inventario";
+  repararIdsLotesManuales();
   syncInventarioACP();
   app.innerHTML = shellHTML();
   bindShell();
@@ -696,7 +717,7 @@ function bindRegistro() {
   form.addEventListener("submit", e => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(form).entries());
-    const masa = Number(data.masa);
+    const masa = parseNum(data.masa);
     if (!masa || masa <= 0) { alert("Masa inválida"); return; }
     let sector = data.sector;
     if (sector === "Añadir sector...") {
@@ -708,10 +729,10 @@ function bindRegistro() {
     const hasChem = data.cu && data.mo && data.s;
     const lote = {
       id: state.editando ? state.editando.id : nuevoId(),
-      tipo: data.tipo, masa, sector, fila: Number(data.fila || 0),
-      cu: data.cu ? Number(Number(data.cu).toFixed(2)) : 0,
-      mo: data.mo ? Number(Number(data.mo).toFixed(3)) : 0,
-      s: data.s ? Number(Number(data.s).toFixed(2)) : 0,
+      tipo: data.tipo, masa, sector, fila: parseNum(data.fila || 0),
+      cu: data.cu ? Number(parseNum(data.cu).toFixed(3)) : 0,
+      mo: data.mo ? Number(parseNum(data.mo).toFixed(3)) : 0,
+      s: data.s ? Number(parseNum(data.s).toFixed(4)) : 0,
       obs: data.obs || "",
       fecha: state.editando ? state.editando.fecha : hoy(),
       estado: "Pendiente"
@@ -1565,39 +1586,49 @@ function buscarMejoresMezclas2() {
   const basePool = state.lotes.filter(l => hasAnalysis(l) && l.masa > 0 && (state.mix.sector === "Todos" || l.sector === state.mix.sector));
   const pool = state.mix.sel.length ? basePool.filter(l => state.mix.sel.includes(l.id)) : basePool;
   const opciones = [];
+  const masasObjetivo = [objetivoKg];
+  for (let delta = paso; delta <= 5000; delta += paso) {
+    if (objetivoKg - delta >= paso) masasObjetivo.push(objetivoKg - delta);
+    if (objetivoKg + delta <= 40000) masasObjetivo.push(objetivoKg + delta);
+  }
   const evaluar = items => {
     if (items.some(x => x.kg <= 0 || x.kg > x.lote.masa)) return;
     const mix = mezclaDe(items);
-    if (Math.abs(mix.masaKg - objetivoKg) > 0.01) return;
+    const diffKg = Math.abs(mix.masaKg - objetivoKg);
+    if (diffKg > 5000) return;
     const fueraKg = items.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + x.kg, 0);
     const cuPenalty = Math.abs(mix.cu - parseNum(state.mix.cu)) * 160;
     const moPenalty = Math.max(0, parseNum(state.mix.mo) - mix.mo) * 120;
     const sPenalty = Math.max(0, mix.s - parseNum(state.mix.s)) * 900;
+    const massPenalty = (diffKg / 1000) * 65;
     const specBonus = mix.ok ? 800 : 0;
+    const exactBonus = diffKg === 0 ? 160 : 0;
     const fueraBonus = fueraKg / 1000 * 18;
-    opciones.push({ items, mix, fueraKg, score: specBonus + fueraBonus - cuPenalty - moPenalty - sPenalty });
+    opciones.push({ items, mix, fueraKg, diffKg, objetivoKg, exacta: diffKg === 0, score: specBonus + exactBonus + fueraBonus - cuPenalty - moPenalty - sPenalty - massPenalty });
   };
-  for (let i = 0; i < pool.length; i++) evaluar([{ lote: pool[i], kg: objetivoKg }]);
-  for (let i = 0; i < pool.length; i++) {
-    for (let j = i + 1; j < pool.length; j++) {
-      for (let kgA = paso; kgA < objetivoKg; kgA += paso) {
-        evaluar([{ lote: pool[i], kg: kgA }, { lote: pool[j], kg: objetivoKg - kgA }]);
+  for (const targetKg of masasObjetivo) {
+    for (let i = 0; i < pool.length; i++) evaluar([{ lote: pool[i], kg: targetKg }]);
+    for (let i = 0; i < pool.length; i++) {
+      for (let j = i + 1; j < pool.length; j++) {
+        for (let kgA = paso; kgA < targetKg; kgA += paso) {
+          evaluar([{ lote: pool[i], kg: kgA }, { lote: pool[j], kg: targetKg - kgA }]);
+        }
       }
     }
-  }
-  for (let i = 0; i < pool.length; i++) {
-    for (let j = i + 1; j < pool.length; j++) {
-      for (let k = j + 1; k < pool.length; k++) {
-        for (let kgA = paso; kgA < objetivoKg - paso; kgA += paso) {
-          for (let kgB = paso; kgB < objetivoKg - kgA; kgB += paso) {
-            evaluar([{ lote: pool[i], kg: kgA }, { lote: pool[j], kg: kgB }, { lote: pool[k], kg: objetivoKg - kgA - kgB }]);
+    for (let i = 0; i < pool.length; i++) {
+      for (let j = i + 1; j < pool.length; j++) {
+        for (let k = j + 1; k < pool.length; k++) {
+          for (let kgA = paso; kgA < targetKg - paso; kgA += paso) {
+            for (let kgB = paso; kgB < targetKg - kgA; kgB += paso) {
+              evaluar([{ lote: pool[i], kg: kgA }, { lote: pool[j], kg: kgB }, { lote: pool[k], kg: targetKg - kgA - kgB }]);
+            }
           }
         }
       }
     }
   }
   const seen = new Set();
-  return opciones.sort((a, b) => b.score - a.score).filter(op => {
+  return opciones.sort((a, b) => (Number(b.exacta) - Number(a.exacta)) || (a.diffKg - b.diffKg) || (b.score - a.score)).filter(op => {
     const key = op.items.map(x => `${x.lote.id}:${x.kg}`).join("|");
     if (seen.has(key)) return false;
     seen.add(key);
@@ -1670,6 +1701,39 @@ function mezclaDetalleHTML(op) {
       <div class="mono" style="color:${op.mix.color};font-weight:900">Cu ${op.mix.cu.toFixed(3)}% · Mo ${op.mix.mo.toFixed(3)}% · S ${op.mix.s.toFixed(3)}%</div>
     </div>
   </div>
+  <pre style="white-space:pre-wrap;background:#040a14;border:1px solid var(--line);border-radius:6px;padding:10px;color:var(--txt2);font-size:10px;margin:10px 0 0">${formulaMezcla(op.items, op.mix)}</pre>`;
+}
+
+function mezclaOpcionHTML(op, idx) {
+  const estado = op.exacta ? (op.mix.ok ? "CUMPLE" : "REVISAR") : `APROX. ${(op.diffKg / 1000).toFixed(1)} t`;
+  const masaInfo = op.exacta
+    ? `Masa exacta: ${(op.mix.masaKg / 1000).toFixed(2)} t`
+    : `Masa aproximada: ${(op.mix.masaKg / 1000).toFixed(2)} t - diferencia ${(op.diffKg / 1000).toFixed(2)} t`;
+  return `<div class="card" style="border-left:4px solid ${op.mix.color};margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div>
+        <b style="color:${op.mix.color}">Opcion ${idx + 1} - ${op.mix.clase}</b>
+        <div style="color:var(--txt2);font-size:10px">${masaInfo}</div>
+        <div style="color:var(--txt2);font-size:10px">Fuera de especificacion usado: ${(op.fueraKg / 1000).toFixed(2)} t</div>
+      </div>
+      <div class="mono" style="font-weight:900;color:${op.mix.ok ? C.green : C.yellow}">${estado}</div>
+    </div>
+    ${mezclaDetalleHTML(op)}
+  </div>`;
+}
+
+function mezclaDetalleHTML(op) {
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:10px">
+    ${op.items.map(x => `<div style="background:#0f3a6e55;border-radius:5px;padding:8px">
+      <div class="mono" style="color:var(--blue-light);font-weight:800">${x.lote.id}</div>
+      <div style="color:var(--txt2);font-size:10px">${(x.kg / 1000).toFixed(0)} sacos - ${(x.kg / 1000).toFixed(2)} t</div>
+    </div>`).join("")}
+    <div style="background:#0f3a6e55;border-radius:5px;padding:8px">
+      <div style="color:var(--txt3);font-size:9px">Resultado</div>
+      <div class="mono" style="color:${op.mix.color};font-weight:900">Cu ${op.mix.cu.toFixed(3)}% - Mo ${op.mix.mo.toFixed(3)}% - S ${op.mix.s.toFixed(3)}%</div>
+    </div>
+  </div>
+  ${op.exacta ? "" : `<div style="color:var(--yellow);font-size:10px;margin-top:8px">No hubo ajuste exacto a ${(op.objetivoKg / 1000).toFixed(2)} t; se muestra la masa mas cercana encontrada.</div>`}
   <pre style="white-space:pre-wrap;background:#040a14;border:1px solid var(--line);border-radius:6px;padding:10px;color:var(--txt2);font-size:10px;margin:10px 0 0">${formulaMezcla(op.items, op.mix)}</pre>`;
 }
 
