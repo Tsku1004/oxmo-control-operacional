@@ -86,6 +86,7 @@ const state = {
   siloHistSearch: "",
   acpSearch: "",
   mixMsg: "",
+  mixOptions: null,
   mix: { cu: 0.5, mo: 57, s: 0.1, masa: 20000, sel: [], sector: "Todos" },
 };
 
@@ -326,15 +327,18 @@ function ponderarSilo(base) {
   const masa = comunes.reduce((a, c) => a + Number(c.masa || 0), 0);
   const weighted = key => masa ? comunes.reduce((a, c) => a + Number(c[key] || 0) * Number(c.masa || 0), 0) / masa : 0;
   const nivelImportado = state.siloNiveles?.[base.id] || null;
-  const masaOperacional = nivelImportado ? Number(nivelImportado.masa || 0) : masa;
+  const masaImportada = Number(nivelImportado?.masa || 0);
+  const usaComunes = masa > 0;
+  const usaInfodia = !usaComunes && masaImportada > 0;
+  const masaOperacional = usaComunes ? masa : usaInfodia ? masaImportada : 0;
   const silo = {
     ...base,
     masa: masaOperacional,
-    nivel: nivelImportado ? Number(nivelImportado.nivel || 0) : (base.cap ? Math.min(100, (masa / base.cap) * 100) : 0),
-    cu: nivelImportado?.cu ?? weighted("cu"),
-    mo: nivelImportado?.mo ?? weighted("mo"),
-    s: nivelImportado?.s ?? weighted("s"),
-    muestras: comunes.length || (nivelImportado && hasAnalysis(nivelImportado) ? 1 : 0),
+    nivel: base.cap ? Math.min(100, (masaOperacional / base.cap) * 100) : 0,
+    cu: usaComunes ? weighted("cu") : usaInfodia && hasAnalysis(nivelImportado) ? Number(nivelImportado.cu || 0) : 0,
+    mo: usaComunes ? weighted("mo") : usaInfodia && hasAnalysis(nivelImportado) ? Number(nivelImportado.mo || 0) : 0,
+    s: usaComunes ? weighted("s") : usaInfodia && hasAnalysis(nivelImportado) ? Number(nivelImportado.s || 0) : 0,
+    muestras: usaComunes ? comunes.length : usaInfodia && hasAnalysis(nivelImportado) ? 1 : 0,
     ultimo: comunes.at(-1),
     nivelImportado,
   };
@@ -1596,7 +1600,15 @@ function buscarMejoresMezclas2() {
   const objetivoKg = Math.min(40000, Math.max(1000, Math.round(parseNum(state.mix.masa || 20000) / 1000) * 1000));
   const paso = 1000;
   const basePool = state.lotes.filter(l => hasAnalysis(l) && l.masa > 0 && (state.mix.sector === "Todos" || l.sector === state.mix.sector));
-  const pool = state.mix.sel.length ? basePool.filter(l => state.mix.sel.includes(l.id)) : basePool;
+  const scoreLote = l => {
+    const c = clasificar(l);
+    return (c.clase === "Fuera Esp" ? -120 : 0)
+      + Math.abs(Number(l.cu || 0) - parseNum(state.mix.cu)) * 35
+      + Math.max(0, parseNum(state.mix.mo) - Number(l.mo || 0)) * 18
+      + Math.max(0, Number(l.s || 0) - parseNum(state.mix.s)) * 90
+      - Math.min(Number(l.masa || 0), objetivoKg) / 1000;
+  };
+  const pool = (state.mix.sel.length ? basePool.filter(l => state.mix.sel.includes(l.id)) : [...basePool].sort((a, b) => scoreLote(a) - scoreLote(b)).slice(0, 22));
   const opciones = [];
   const masasObjetivo = [objetivoKg];
   for (let delta = paso; delta <= 5000; delta += paso) {
@@ -1651,7 +1663,7 @@ function buscarMejoresMezclas2() {
 function mezclasHTML() {
   state.mix.masa = Math.min(40000, Math.max(1000, Math.round(parseNum(state.mix.masa || 20000) / 1000) * 1000));
   const materiales = state.lotes.filter(l => hasAnalysis(l) && (state.mix.sector === "Todos" || l.sector === state.mix.sector));
-  const opciones = buscarMejoresMezclas2();
+  const opciones = Array.isArray(state.mixOptions) ? state.mixOptions : [];
   return `<div class="mix-layout">
     <div style="display:flex;flex-direction:column;gap:8px">
       <div class="box">
@@ -1686,7 +1698,7 @@ function mezclasHTML() {
     </div>
     <div class="box">
       <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Mejores opciones</div>
-      <div class="mix-options">${opciones.length ? opciones.map((op, idx) => mezclaOpcionHTML(op, idx)).join("") : `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px">No hay combinaciones posibles con el stock actual.</div>`}</div>
+      <div class="mix-options">${opciones.length ? opciones.map((op, idx) => mezclaOpcionHTML(op, idx)).join("") : `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px">Ajusta los objetivos y presiona BUSCAR MEJOR COMBINACIÓN para calcular opciones.</div>`}</div>
     </div>
   </div>`;
 }
@@ -1764,27 +1776,31 @@ function bindMezclas() {
   document.querySelectorAll("[data-range]").forEach(el => el.addEventListener("input", () => {
     const key = el.dataset.range;
     state.mix[key] = key === "masa" ? Number(el.value) : parseNum(el.value);
+    state.mixOptions = null;
     render();
   }));
   document.querySelectorAll("[data-range-input]").forEach(el => {
-    el.addEventListener("change", () => { commitMixInput(el); render(); });
+    el.addEventListener("change", () => { commitMixInput(el); state.mixOptions = null; render(); });
     el.addEventListener("keydown", e => {
       if (e.key === "Enter") {
         e.preventDefault();
         commitMixInput(el);
+        state.mixOptions = null;
         render();
       }
     });
   });
-  document.querySelectorAll("[data-mix-sector]").forEach(btn => btn.addEventListener("click", () => { state.mix.sector = btn.dataset.mixSector; render(); }));
+  document.querySelectorAll("[data-mix-sector]").forEach(btn => btn.addEventListener("click", () => { state.mix.sector = btn.dataset.mixSector; state.mixOptions = null; render(); }));
   document.querySelectorAll("[data-mix-lot]").forEach(tile => tile.addEventListener("click", () => {
     const id = tile.dataset.mixLot;
     state.mix.sel = state.mix.sel.includes(id) ? state.mix.sel.filter(x => x !== id) : [...state.mix.sel, id];
+    state.mixOptions = null;
     render();
   }));
-  document.querySelector("#clearMix").addEventListener("click", () => { state.mix.sel = []; render(); });
+  document.querySelector("#clearMix").addEventListener("click", () => { state.mix.sel = []; state.mixOptions = null; render(); });
   document.querySelector("#autoMix").addEventListener("click", () => {
     document.querySelectorAll("[data-range-input]").forEach(commitMixInput);
+    state.mixOptions = buscarMejoresMezclas2();
     state.mixMsg = "Opciones calculadas";
     render();
     setTimeout(() => { state.mixMsg = ""; if (state.tab === "mezclas") render(); }, 2200);
