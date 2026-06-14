@@ -4,11 +4,12 @@
   txt2: "#6A8FAF", txt3: "#2D4A6A"
 };
 
-const USUARIOS = [
+const DEFAULT_USUARIOS = [
   { u: "admin", p: "oxmo2024", rol: "Administrador", nombre: "Administrador" },
   { u: "operador", p: "turno123", rol: "Operador", nombre: "Operador Turno" },
   { u: "supervisor", p: "super456", rol: "Supervisor", nombre: "Supervisor Planta" },
 ];
+const USUARIOS = DEFAULT_USUARIOS;
 
 const LOTES_DEFAULT = [];
 const DEFAULT_SECTORES = ["Bodega en transito", "Planta Envase"];
@@ -18,8 +19,8 @@ const DEFAULT_CLOUD_CONFIG = {
   anonKey: "sb_publishable_MYJYPjkMBaSbY_9ujIZRhQ_A5Ta7re0",
 };
 const PUBLIC_APP_URL = "https://oxmo-control-operacional.vercel.app/";
-const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:siloHistorial", "oxmo:infodia"]);
-const HIDDEN_TABS = new Set(["quimica", "siloHistorial"]);
+const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:siloHistorial", "oxmo:infodia", "oxmo:usuarios", "oxmo:userStats"]);
+const HIDDEN_TABS = new Set(["quimica", "siloHistorial", "comunesTurno"]);
 const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "", needsLotesCleanup: false, needsSiloCleanup: false };
 let tabRenderFrame = 0;
 
@@ -67,6 +68,10 @@ const CARTILLA_MANUAL_SIMULADA = [
 
 const state = {
   user: load("oxmo:user", null),
+  usuarios: loadUsuarios(),
+  userStats: load("oxmo:userStats", {}),
+  sessionStartedAt: Date.now(),
+  adminView: "usuarios",
   lotes: loadLotes(),
   historial: load("oxmo:hist", [{tiempo:"--:--",accion:"Sistema iniciado",color:C.green,loteId:"",detalle:""}]),
   tab: "inventario",
@@ -110,6 +115,22 @@ function loadLotes() {
   if (cleaned.length !== lotes.length) save("oxmo:lotes", cleaned);
   return cleaned;
 }
+function loadUsuarios() {
+  const saved = load("oxmo:usuarios", null);
+  if (Array.isArray(saved) && saved.length) return saved.map(normalizarUsuario);
+  save("oxmo:usuarios", DEFAULT_USUARIOS);
+  return structuredClone(DEFAULT_USUARIOS);
+}
+function normalizarUsuario(u) {
+  return {
+    u: String(u?.u || "").trim().toLowerCase(),
+    p: String(u?.p || ""),
+    rol: u?.rol || "Operador",
+    nombre: u?.nombre || u?.u || "Usuario",
+    activo: u?.activo !== false,
+    creado: u?.creado || hoy(),
+  };
+}
 function loadSilos() {
   const saved = load("oxmo:silos", DEFAULT_SILOS);
   if (!Array.isArray(saved) || saved.length < 8 || saved.some(s => /^S-\d+/.test(s.id || ""))) {
@@ -150,6 +171,8 @@ function sharedFallback(key) {
   if (key === "oxmo:siloNiveles") return {};
   if (key === "oxmo:siloHistorial") return [];
   if (key === "oxmo:infodia") return null;
+  if (key === "oxmo:usuarios") return DEFAULT_USUARIOS;
+  if (key === "oxmo:userStats") return {};
   return null;
 }
 async function cloudSave(key, value) {
@@ -186,6 +209,8 @@ function applyCloudValue(key, value) {
   if (key === "oxmo:siloNiveles") state.siloNiveles = nextValue || {};
   if (key === "oxmo:siloHistorial") state.siloHistorial = value || [];
   if (key === "oxmo:infodia") state.infodia = value || null;
+  if (key === "oxmo:usuarios") state.usuarios = Array.isArray(value) ? value.map(normalizarUsuario) : DEFAULT_USUARIOS;
+  if (key === "oxmo:userStats") state.userStats = value || {};
   cloud.applying = false;
 }
 async function initCloud() {
@@ -354,8 +379,83 @@ function addHist(accion, loteId = "", detalle = "", color = C.txt2) {
   state.historial.push({ tiempo: ahora(), accion, loteId, detalle, color });
   state.historial = state.historial.slice(-80);
   save("oxmo:hist", state.historial);
+  registrarActividadUsuario(accion, loteId, detalle);
 }
 function persistLotes() { save("oxmo:lotes", state.lotes); }
+function isAdmin(user = state.user) {
+  return user?.rol === "Administrador";
+}
+function saveUsuarios() {
+  state.usuarios = state.usuarios.map(normalizarUsuario);
+  save("oxmo:usuarios", state.usuarios);
+}
+function userKey(user = state.user) {
+  return String(user?.u || "").trim().toLowerCase();
+}
+function ensureUserStat(usuario) {
+  const key = typeof usuario === "string" ? usuario : userKey(usuario);
+  if (!key) return null;
+  if (!state.userStats[key]) {
+    state.userStats[key] = { acciones: 0, tiempoMs: 0, recientes: [], lastSeen: "" };
+  }
+  return state.userStats[key];
+}
+function registrarActividadUsuario(accion, loteId = "", detalle = "") {
+  if (!state.user) return;
+  const stat = ensureUserStat(state.user);
+  if (!stat) return;
+  stat.acciones = Number(stat.acciones || 0) + 1;
+  stat.lastSeen = new Date().toLocaleString("es-CL");
+  stat.recientes = [
+    { fecha: hoy(), tiempo: ahora(), accion, loteId, detalle },
+    ...(stat.recientes || [])
+  ].slice(0, 16);
+  save("oxmo:userStats", state.userStats);
+}
+function cerrarSesionUsuario() {
+  if (!state.user) return;
+  const stat = ensureUserStat(state.user);
+  if (stat && state.sessionStartedAt) {
+    stat.tiempoMs = Number(stat.tiempoMs || 0) + Math.max(0, Date.now() - state.sessionStartedAt);
+    stat.lastSeen = new Date().toLocaleString("es-CL");
+    save("oxmo:userStats", state.userStats);
+  }
+  state.sessionStartedAt = Date.now();
+}
+function tiempoUsuarioMs(usuario) {
+  const key = typeof usuario === "string" ? usuario : userKey(usuario);
+  const stat = state.userStats[key] || {};
+  let ms = Number(stat.tiempoMs || 0);
+  if (state.user && userKey() === key && state.sessionStartedAt) ms += Math.max(0, Date.now() - state.sessionStartedAt);
+  return ms;
+}
+function formatDuration(ms) {
+  const mins = Math.max(0, Math.round(Number(ms || 0) / 60000));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h ? `${h} h ${m} min` : `${m} min`;
+}
+function fechaOrdenMs(fecha) {
+  if (!fecha) return 0;
+  const raw = String(fecha).trim();
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(`${iso[1]}-${iso[2]}-${iso[3]}T00:00:00`).getTime();
+  const cl = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (cl) return new Date(`${cl[3]}-${String(cl[2]).padStart(2, "0")}-${String(cl[1]).padStart(2, "0")}T00:00:00`).getTime();
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : 0;
+}
+function loteOrdenReciente(l) {
+  const created = Date.parse(l?.createdAt || "");
+  if (Number.isFinite(created)) return created;
+  const fecha = fechaOrdenMs(l?.fecha);
+  if (fecha) return fecha;
+  const num = parseInt(String(l?.id || "").match(/\d+/)?.[0] || "0", 10);
+  return Number.isFinite(num) ? num : 0;
+}
+function lotesRecientes(lotes = state.lotes) {
+  return [...lotes].sort((a, b) => loteOrdenReciente(b) - loteOrdenReciente(a));
+}
 
 function guardarComunManual(data, fuente = "manual") {
   const masa = parseNum(data.masa);
@@ -402,6 +502,7 @@ function render() {
     bindLogin();
     return;
   }
+  if (state.tab === "admin" && !isAdmin()) state.tab = "inventario";
   if (HIDDEN_TABS.has(state.tab)) state.tab = "inventario";
   app.innerHTML = shellHTML();
   bindShell();
@@ -422,12 +523,12 @@ function loginHTML() {
         <div class="box">
           <div class="muted-title" style="text-align:center;margin-bottom:24px">Iniciar sesión</div>
           <div id="loginError"></div>
-          <div class="field"><label>Usuario</label><input id="loginUser" placeholder="admin / operador / supervisor" autocomplete="username"></div>
+          <div class="field"><label>Usuario</label><input id="loginUser" placeholder="Usuario asignado" autocomplete="username"></div>
           <div class="field"><label>Contraseña</label><input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
           <button class="btn" id="loginBtn" style="width:100%">INGRESAR →</button>
           <div class="hint">
-            <div style="letter-spacing:2px;margin-bottom:6px">CREDENCIALES DE PRUEBA</div>
-            ${USUARIOS.map(x => `<div>${x.u} / ${x.p} <span style="opacity:.65">(${x.rol})</span></div>`).join("")}
+            <div style="letter-spacing:2px;margin-bottom:6px">ACCESO AUTORIZADO</div>
+            <div>Las cuentas son creadas por el administrador del sistema.</div>
           </div>
         </div>
       </section>
@@ -438,13 +539,15 @@ function bindLogin() {
   const submit = () => {
     const u = document.querySelector("#loginUser").value.trim().toLowerCase();
     const p = document.querySelector("#loginPass").value;
-    const found = USUARIOS.find(x => x.u === u && x.p === p);
+    const found = state.usuarios.find(x => x.activo !== false && x.u === u && x.p === p);
     if (!found) {
       document.querySelector("#loginError").innerHTML = `<div class="error">Usuario o contraseña incorrectos</div>`;
       return;
     }
     state.user = found;
+    state.sessionStartedAt = Date.now();
     save("oxmo:user", found);
+    registrarActividadUsuario("Inicio de sesión", "", "Acceso al sistema");
     render();
   };
   document.querySelector("#loginBtn").addEventListener("click", submit);
@@ -497,8 +600,8 @@ function shellHTML() {
       <nav class="tabs">
         ${[
           ["inventario","Inventario"],["silos","Silos"],["lotesOxmo","Lotes OXMO/BQA"],
-          ["comunesTurno","Comunes de turno"],["mezclas","Mezclas"],
-          ["etiquetas","Etiquetas"],["reportes","Reportes"],["alertas","Alertas"]
+          ["mezclas","Mezclas"],["etiquetas","Etiquetas"],["reportes","Reportes"],["alertas","Alertas"],
+          ...(isAdmin() ? [["admin","Admin"]] : [])
         ].map(([id, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
       </nav>
       <div class="filters" style="margin-bottom:12px">
@@ -519,6 +622,7 @@ function kpi(label, value, unit, sub, color, icon, dec = 0) {
 }
 function bindShell() {
   document.querySelector("#logoutBtn").addEventListener("click", () => {
+    cerrarSesionUsuario();
     state.user = null;
     save("oxmo:user", null);
     render();
@@ -550,6 +654,7 @@ function tabHTML() {
   if (state.tab === "quimica") return quimicaHTML();
   if (state.tab === "lotesOxmo") return lotesOxmoHTML();
   if (state.tab === "comunesTurno") return comunesTurnoHTML();
+  if (state.tab === "admin") return adminHTML();
   if (state.tab === "mezclas") return mezclasHTML();
   if (state.tab === "registro") return registroHTML();
   if (state.tab === "infodia") return infodiaHTML();
@@ -567,19 +672,20 @@ function bindTab() {
   if (state.tab === "siloHistorial") bindSiloHistorial();
   if (state.tab === "lotesOxmo") bindAnalisisACP();
   if (state.tab === "comunesTurno") bindComunesTurno();
+  if (state.tab === "admin") bindAdmin();
   if (state.tab === "etiquetas") bindEtiquetas();
   if (state.tab === "reportes") bindReportes();
   if (state.tab === "quimica") bindQuimica();
 }
 
 function inventarioHTML() {
-  const lotes = state.filtro === "Todos" ? state.lotes : state.lotes.filter(l => l.estado === state.filtro);
+  const lotesBase = state.filtro === "Todos" ? state.lotes : state.lotes.filter(l => l.estado === state.filtro);
+  const lotes = lotesRecientes(lotesBase);
   const dist = allSectores().map(s => ({s, v: state.lotes.filter(l => l.sector === s).reduce((a,l) => a + l.masa, 0)}));
   const max = Math.max(1, ...dist.map(d => d.v));
   return `
     <div class="filters">
       ${["Todos","Disponible","Bloqueado","Pendiente","Fuera Esp"].map(f => `<button class="pill ${state.filtro === f ? "active" : ""}" data-filter="${f}">${f} (${f === "Todos" ? state.lotes.length : state.lotes.filter(l => l.estado === f).length})</button>`).join("")}
-      <button class="pill" id="manualInventory" style="border-color:#c8753355;color:var(--copper)">Simular cartilla manual</button>
       <button class="pill" id="newLot" style="margin-left:auto;border-color:#00e5a055;color:var(--green)">+ Nuevo lote</button>
     </div>
     <div class="table-wrap">
@@ -619,7 +725,6 @@ function rowHTML(l) {
 function bindInventario() {
   document.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => { state.filtro = btn.dataset.filter; render(); }));
   document.querySelector("#newLot").addEventListener("click", () => { state.editando = null; state.tab = "registro"; render(); });
-  document.querySelector("#manualInventory")?.addEventListener("click", aplicarCartillaManual);
   document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => { state.editando = state.lotes.find(l => l.id === btn.dataset.edit); state.tab = "registro"; render(); }));
   document.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => deleteLot(btn.dataset.del)));
 }
@@ -695,7 +800,7 @@ function registroHTML() {
       </div>
       <div class="card list">
         <div class="muted-title" style="margin-bottom:12px">Lotes registrados — ${state.lotes.length} total</div>
-        ${[...state.lotes].reverse().map(x => {
+        ${lotesRecientes(state.lotes).map(x => {
           const c = clasificar(x);
           return `<div class="lot-row" style="--accent:${c.color}">
             <div>
@@ -754,6 +859,7 @@ function bindRegistro() {
       s: data.s ? Number(parseNum(data.s).toFixed(4)) : 0,
       obs: data.obs || "",
       fecha: state.editando ? state.editando.fecha : hoy(),
+      createdAt: state.editando ? (state.editando.createdAt || new Date().toISOString()) : new Date().toISOString(),
       estado: "Pendiente"
     };
     const clasif = clasificar(lote);
@@ -779,6 +885,144 @@ function bindRegistro() {
     render();
   }));
   document.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => deleteLot(btn.dataset.del)));
+}
+
+function adminHTML() {
+  if (!isAdmin()) return `<div class="notice">No tienes permisos para acceder a administración.</div>`;
+  const usuarios = state.usuarios.map(normalizarUsuario);
+  const totalTiempo = Math.max(1, usuarios.reduce((a, u) => a + tiempoUsuarioMs(u), 0));
+  const totalAcciones = Math.max(1, usuarios.reduce((a, u) => a + Number(state.userStats[u.u]?.acciones || 0), 0));
+  const rows = usuarios.map(u => {
+    const stat = state.userStats[u.u] || {};
+    const tiempo = tiempoUsuarioMs(u);
+    const usoPct = Math.round((tiempo / totalTiempo) * 100);
+    const accionPct = Math.round((Number(stat.acciones || 0) / totalAcciones) * 100);
+    return { u, stat, tiempo, usoPct, accionPct };
+  });
+  return `
+    <div class="box">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px">
+        <div>
+          <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Administración</div>
+          <div style="font-size:20px;font-weight:900;color:var(--txt)">Usuarios y uso de la aplicación</div>
+          <div style="color:var(--txt2);font-size:12px;margin-top:6px">Solo Administrador puede crear cuentas. Las métricas se generan con inicios de sesión y actividades registradas en OXMO.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="pill ${state.adminView === "usuarios" ? "active" : ""}" data-admin-view="usuarios">Usuarios</button>
+          <button class="pill ${state.adminView === "estadisticas" ? "active" : ""}" data-admin-view="estadisticas">Estadísticas</button>
+        </div>
+      </div>
+      ${state.adminView === "estadisticas" ? adminStatsHTML(rows) : adminUsersHTML(rows)}
+    </div>
+  `;
+}
+function adminUsersHTML(rows) {
+  return `
+    <div style="display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:16px;align-items:start">
+      <div class="card">
+        <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Crear cuenta</div>
+        <form id="adminUserForm">
+          <div class="field"><label>Usuario</label><input name="u" autocomplete="off" placeholder="ej: turno_a"></div>
+          <div class="field"><label>Nombre</label><input name="nombre" autocomplete="off" placeholder="Nombre visible"></div>
+          <div class="field"><label>Contraseña</label><input name="p" type="password" autocomplete="new-password" placeholder="Contraseña inicial"></div>
+          ${selectField("rol", "Rol", "Operador", ["Operador", "Supervisor", "Administrador"])}
+          <button class="btn" style="width:100%">CREAR USUARIO</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="muted-title" style="margin-bottom:12px">Cuentas creadas — ${rows.length}</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Creado</th><th>Último uso</th><th></th></tr></thead>
+            <tbody>${rows.map(({u, stat}) => `<tr>
+              <td class="mono" style="color:var(--blue-light);font-weight:900">${esc(u.u)}</td>
+              <td>${esc(u.nombre)}</td>
+              <td>${esc(u.rol)}</td>
+              <td style="color:${u.activo !== false ? C.green : C.red}">● ${u.activo !== false ? "Activo" : "Inactivo"}</td>
+              <td class="mono" style="color:var(--txt3)">${esc(u.creado || "-")}</td>
+              <td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td>
+              <td>${u.u !== "admin" ? `<button class="icon-btn" data-toggle-user="${esc(u.u)}">${u.activo !== false ? "Pausar" : "Activar"}</button>` : ""}</td>
+            </tr>`).join("")}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function adminStatsHTML(rows) {
+  return `
+    <div class="grid-cards" style="margin-bottom:14px">
+      ${miniReport("Usuarios activos", String(rows.filter(r => r.u.activo !== false).length), C.green)}
+      ${miniReport("Acciones totales", String(rows.reduce((a, r) => a + Number(r.stat.acciones || 0), 0)), C.blueLight)}
+      ${miniReport("Tiempo registrado", formatDuration(rows.reduce((a, r) => a + r.tiempo, 0)), C.copper)}
+      ${miniReport("Usuarios creados", String(rows.length), C.cyan)}
+    </div>
+    <div class="table-wrap" style="margin-bottom:14px">
+      <table>
+        <thead><tr><th>Usuario</th><th>Rol</th><th>% Uso tiempo</th><th>% Actividad</th><th>Tiempo de uso</th><th>Acciones</th><th>Último uso</th></tr></thead>
+        <tbody>${rows.map(({u, stat, tiempo, usoPct, accionPct}) => `<tr>
+          <td class="mono" style="color:var(--blue-light);font-weight:900">${esc(u.u)}</td>
+          <td>${esc(u.rol)}</td>
+          <td><div style="display:flex;align-items:center;gap:8px"><div class="bar" style="width:120px;--accent:var(--green)"><span style="--w:${usoPct}%"></span></div><span class="mono">${usoPct}%</span></div></td>
+          <td><div style="display:flex;align-items:center;gap:8px"><div class="bar" style="width:120px;--accent:var(--blue-light)"><span style="--w:${accionPct}%"></span></div><span class="mono">${accionPct}%</span></div></td>
+          <td class="mono">${formatDuration(tiempo)}</td>
+          <td class="mono">${Number(stat.acciones || 0)}</td>
+          <td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td>
+        </tr>`).join("")}</tbody>
+      </table>
+    </div>
+    <div class="grid-cards">
+      ${rows.map(({u, stat}) => `<div class="card">
+        <div class="mono" style="color:var(--blue-light);font-size:16px;font-weight:900;margin-bottom:8px">${esc(u.nombre)}</div>
+        <div style="color:var(--txt2);font-size:11px;margin-bottom:10px">${esc(u.rol)} · ${esc(u.u)}</div>
+        ${(stat.recientes || []).slice(0, 6).map(r => `<div style="border-top:1px solid var(--line);padding:7px 0;font-size:11px">
+          <span class="mono" style="color:var(--txt3)">${esc(r.fecha)} ${esc(r.tiempo)}</span>
+          <div style="color:var(--txt)">${esc(r.accion)} ${r.loteId ? `<span class="mono" style="color:var(--blue-light)">${esc(r.loteId)}</span>` : ""}</div>
+          ${r.detalle ? `<div style="color:var(--txt3)">${esc(r.detalle)}</div>` : ""}
+        </div>`).join("") || `<div style="color:var(--txt3);font-size:11px">Sin actividad registrada.</div>`}
+      </div>`).join("")}
+    </div>
+  `;
+}
+function bindAdmin() {
+  document.querySelectorAll("[data-admin-view]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminView = btn.dataset.adminView;
+    render();
+  }));
+  document.querySelector("#adminUserForm")?.addEventListener("submit", e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+    const u = String(data.u || "").trim().toLowerCase();
+    const nombre = String(data.nombre || "").trim();
+    const p = String(data.p || "").trim();
+    if (!u || !nombre || !p) {
+      alert("Completa usuario, nombre y contraseña.");
+      return;
+    }
+    if (!/^[a-z0-9._-]{3,24}$/.test(u)) {
+      alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
+      return;
+    }
+    if (state.usuarios.some(x => x.u === u)) {
+      alert("Ese usuario ya existe.");
+      return;
+    }
+    const nuevo = normalizarUsuario({ u, nombre, p, rol: data.rol || "Operador", creado: hoy(), activo: true });
+    state.usuarios.push(nuevo);
+    saveUsuarios();
+    ensureUserStat(nuevo);
+    save("oxmo:userStats", state.userStats);
+    addHist("Cuenta creada", nuevo.u, `${nuevo.nombre} (${nuevo.rol})`, C.cyan);
+    render();
+  });
+  document.querySelectorAll("[data-toggle-user]").forEach(btn => btn.addEventListener("click", () => {
+    const u = btn.dataset.toggleUser;
+    state.usuarios = state.usuarios.map(x => x.u === u ? { ...x, activo: x.activo === false } : x);
+    saveUsuarios();
+    const estado = state.usuarios.find(x => x.u === u)?.activo === false ? "Inactivo" : "Activo";
+    addHist("Estado de cuenta actualizado", u, estado, C.yellow);
+    render();
+  }));
 }
 
 function silosHTML() {
