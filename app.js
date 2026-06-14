@@ -3747,9 +3747,192 @@ function bindSilos() {
   });
 }
 
+function codigoClaveAnalisis(codigo) {
+  const norm = normalizarCodigoAnalisis(codigo);
+  const year = norm.match(/-(\d{2})$/)?.[1] || "";
+  const body = year ? norm.replace(/-\d{2}$/, "") : norm;
+  const nums = [...body.matchAll(/\d+/g)].map(m => String(Number(m[0])));
+  const compact = `${body.replace(/\d+/g, m => String(Number(m)))}${year ? `-${year}` : ""}`;
+  return { norm, year, nums, serial: nums[nums.length - 1] || "", compact };
+}
+
+function normalizarCodigoAnalisis(codigo) {
+  const raw = String(codigo || "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "")
+    .replace(/[–—]/g, "-")
+    .replace(/^([A-Z]+)-(?=\d)/, "$1");
+  const m = raw.match(/^(.*-\d{2})(?:[-_].*)?$/);
+  return m ? m[1] : raw;
+}
+
+function tipoAnalisisACP(codigo) {
+  const c = normalizarCodigoAnalisis(codigo);
+  if (/^OO300-001-\d+-\d{2}$/.test(c)) return "comun_turno";
+  if (/^OXMO\d+-\d{2}$/.test(c)) return "lote_oxmo";
+  if (/^OXBR\d+-\d{2}$/.test(c)) return "briqueta";
+  if (c.includes("OSAC") && /-\d{2}$/.test(c)) return "lote_osac";
+  if (/^[A-Z0-9]+(?:-[A-Z0-9]+)*-\d{2}$/.test(c)) return "otro_lote";
+  return "";
+}
+
+function codigoPartesInventario(codigo) {
+  const k = codigoClaveAnalisis(codigo);
+  return k.year && k.serial ? { prefix: k.norm.replace(/[\d-]/g, ""), numero: k.serial, year: k.year, nums: k.nums, compact: k.compact } : null;
+}
+
+function scoreMatchACP(lote, analisis) {
+  const l = codigoClaveAnalisis(lote.id);
+  const a = codigoClaveAnalisis(analisis.codigo);
+  if (!l.norm || !a.norm) return 0;
+  if (l.norm === a.norm) return 8;
+  if (l.compact === a.compact) return 7;
+  if (l.norm.startsWith(`${a.norm}-`) || a.norm.startsWith(`${l.norm}-`)) return 6;
+  if (l.year && a.year && l.year === a.year) {
+    const sameNumericPath = l.nums.length && a.nums.length && l.nums.join(".") === a.nums.join(".");
+    if (sameNumericPath) return 6;
+    if (l.serial && a.serial && l.serial === a.serial) return 3;
+  }
+  return 0;
+}
+
+function analisisACPHTML({ titulo, subtitulo, items, kpis, empty }) {
+  const q = String(state.acpSearch || "").trim().toLowerCase();
+  const filtered = q
+    ? items.filter(a => [a.codigo, a.fecha, a.producto, a.tipoAnalisis, a.clase].join(" ").toLowerCase().includes(q))
+    : items;
+  return `<div class="box">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
+      <div>
+        <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Cartilla ACP</div>
+        <div style="color:var(--txt);font-size:18px;font-weight:900">${titulo}</div>
+        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:860px;line-height:1.45">${subtitulo}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn secondary" id="applyAcpInventory">Actualizar inventario con ACP</button>
+        <button class="btn secondary" data-tab="infodia">Importar Infodia</button>
+      </div>
+    </div>
+    <div class="grid-cards" style="margin-bottom:14px">
+      ${kpis.map(([label, value, color]) => miniReport(label, value, color)).join("")}
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="field" style="margin:0">
+        <label>Buscar en cartilla</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="acpSearch" value="${state.acpSearch || ""}" dir="ltr" style="direction:ltr;text-align:left" placeholder="Ej: OXMO8635-26, OXBR1305-26, OO300-001-06149-26, 2026-05-16">
+          <button class="btn secondary" id="acpSearchBtn" type="button">Buscar</button>
+        </div>
+      </div>
+    </div>
+    ${filtered.length ? `<div class="table-wrap">
+      <table>
+        <thead><tr><th>ID lote</th><th>Tipo</th><th>Producto</th><th>Fecha analisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th></tr></thead>
+        <tbody>${filtered.map(a => {
+          const c = clasificar(a);
+          return `<tr>
+            <td class="mono" style="color:var(--blue-light);font-weight:900">${esc(a.codigo)}</td>
+            <td>${a.tipoAnalisis === "briqueta" ? "Briqueta" : a.tipoAnalisis === "comun_turno" ? "Comun turno" : a.tipoAnalisis === "otro_lote" || a.tipoAnalisis === "lote_osac" ? "Otro lote" : "Lote OXMO"}</td>
+            <td style="color:var(--txt2)">${esc(a.producto || "-")}</td>
+            <td class="mono">${esc(a.fecha || "-")}</td>
+            <td class="mono" style="color:${a.cu >= 0.51 ? C.copper : C.green}">${Number(a.cu || 0).toFixed(3)}</td>
+            <td class="mono" style="color:${a.mo >= moMinimo(a.cu) ? C.green : C.red}">${Number(a.mo || 0).toFixed(3)}</td>
+            <td class="mono" style="color:${a.s < 0.1 ? C.green : C.red}">${Number(a.s || 0).toFixed(4)}</td>
+            <td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span></td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">${empty}</div>`}
+  </div>`;
+}
+
+function inventarioHTML() {
+  const lotes = state.filtro === "Todos" ? lotesRecientes() : lotesRecientes().filter(l => l.estado === state.filtro);
+  const selected = new Set(state.inventorySelected || []);
+  const editableIds = lotes.filter(canEditLot).map(l => l.id);
+  const dist = allSectores().map(s => ({s, v: state.lotes.filter(l => l.sector === s).reduce((a,l) => a + l.masa, 0)}));
+  const max = Math.max(1, ...dist.map(d => d.v));
+  return `
+    <div class="filters">
+      ${["Todos","Disponible","Bloqueado","Pendiente","Fuera Esp"].map(f => `<button class="pill ${state.filtro === f ? "active" : ""}" data-filter="${f}">${f} (${f === "Todos" ? state.lotes.length : state.lotes.filter(l => l.estado === f).length})</button>`).join("")}
+      ${selected.size ? `<button class="pill" id="deleteSelectedLots" style="border-color:#ff456055;color:var(--red)">Eliminar seleccionados (${selected.size})</button>` : ""}
+      <button class="pill" id="newLot" style="margin-left:auto;border-color:#00e5a055;color:var(--green)">+ Nuevo lote</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th><input id="invSelectAll" type="checkbox" ${editableIds.length && editableIds.every(id => selected.has(id)) ? "checked" : ""}></th>${["ID","Tipo","Masa","Sector","Cu%","Mo%","S%","Clasif.","Estado","Fecha",""].map(h => `<th>${h}</th>`).join("")}</tr></thead>
+        <tbody>${lotes.map(l => rowHTML(l)).join("")}</tbody>
+      </table>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px">
+      <div class="card">
+        <div class="muted-title" style="margin-bottom:10px">Por sector</div>
+        ${dist.map(d => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:128px;color:var(--txt2);font-size:11px">${esc(d.s)}</span><div class="bar" style="flex:1;--accent:var(--blue)"><span style="--w:${(d.v/max)*100}%"></span></div><span class="mono" style="color:var(--txt2);font-size:11px">${kgToTon(d.v, 1)}</span></div>`).join("")}
+      </div>
+      <div class="card">
+        <div class="muted-title" style="margin-bottom:10px">Estados</div>
+        ${["Disponible","Bloqueado","Pendiente","Fuera Esp"].map(e => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a2e4a33"><span style="color:${eColor(e)}">● ${e}</span><span class="mono" style="font-weight:800">${state.lotes.filter(l => l.estado === e).length}</span></div>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function rowHTML(l) {
+  const {clase, color} = clasificar(l);
+  const selected = (state.inventorySelected || []).includes(l.id);
+  const select = canEditLot(l) ? `<input type="checkbox" data-inv-select="${esc(l.id)}" ${selected ? "checked" : ""}>` : "";
+  const labelAction = `<button class="icon-btn" data-label-lot="${esc(l.id)}" title="Imprimir etiqueta">▦</button>`;
+  const actions = canEditLot(l)
+    ? `<div class="mini-actions">${labelAction}<button class="icon-btn" data-edit="${esc(l.id)}">✏</button><button class="icon-btn" data-del="${esc(l.id)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button></div>`
+    : `<div class="mini-actions">${labelAction}</div>`;
+  return `<tr>
+    <td>${select}</td>
+    <td class="mono" style="color:var(--blue-light);font-weight:800">${esc(l.id)}</td>
+    <td style="color:var(--txt2)">${esc(l.tipo)}</td>
+    <td class="mono">${kgToTon(l.masa, 3)}</td>
+    <td><span class="tag" style="color:var(--blue-light);background:#0f3a6e">${esc(l.sector)}</span></td>
+    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.cu >= 0.51 ? C.copper : C.green}">${hasAnalysis(l) ? l.cu : "—"}</td>
+    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.mo >= moMinimo(l.cu) ? C.green : C.red}">${hasAnalysis(l) ? l.mo : "—"}</td>
+    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.s < 0.1 ? C.green : C.red}">${hasAnalysis(l) ? l.s : "—"}</td>
+    <td><span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${clase}</span></td>
+    <td style="color:${eColor(l.estado)}">● ${esc(l.estado)}</td>
+    <td class="mono" style="color:var(--txt3);font-size:10px">${esc(l.fecha)}</td>
+    <td>${actions}</td>
+  </tr>`;
+}
+
 function bindInventario() {
-  document.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => { state.filtro = btn.dataset.filter; render(); }));
+  document.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => {
+    state.filtro = btn.dataset.filter;
+    state.inventorySelected = [];
+    render();
+  }));
   document.querySelector("#newLot")?.addEventListener("click", () => { state.editando = null; state.tab = "registro"; render(); });
+  document.querySelector("#invSelectAll")?.addEventListener("change", e => {
+    const lotes = state.filtro === "Todos" ? lotesRecientes() : lotesRecientes().filter(l => l.estado === state.filtro);
+    state.inventorySelected = e.target.checked ? lotes.filter(canEditLot).map(l => l.id) : [];
+    render();
+  });
+  document.querySelectorAll("[data-inv-select]").forEach(chk => chk.addEventListener("change", e => {
+    const id = e.target.dataset.invSelect;
+    const set = new Set(state.inventorySelected || []);
+    e.target.checked ? set.add(id) : set.delete(id);
+    state.inventorySelected = [...set];
+    render();
+  }));
+  document.querySelector("#deleteSelectedLots")?.addEventListener("click", () => {
+    const ids = (state.inventorySelected || []).filter(id => canEditLot(state.lotes.find(l => l.id === id)));
+    if (!ids.length) return;
+    if (!confirm(`¿Eliminar ${ids.length} lote(s) seleccionados? Esta accion no se puede deshacer.`)) return;
+    state.lotes = state.lotes.filter(l => !ids.includes(l.id));
+    state.inventorySelected = [];
+    persistLotes();
+    addHist("Lotes eliminados", `${ids.length}`, ids.slice(0, 6).join(", "), C.red);
+    render();
+  });
   document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => {
     const lote = state.lotes.find(l => l.id === btn.dataset.edit);
     if (!canEditLot(lote)) { alert("No tienes permiso para modificar este lote."); return; }
@@ -3764,6 +3947,325 @@ function bindInventario() {
   }));
 }
 
+function evaluarMezclaObjetivo(items, objetivo, firmas, opciones) {
+  if (!items.length || items.some(x => x.kg <= 0)) return;
+  const totalKg = items.reduce((a, x) => a + x.kg, 0);
+  if (totalKg <= 0 || totalKg > 40000) return;
+  if (items.some(x => x.kg > x.lote.masa + 0.001)) return;
+  const firma = items
+    .map(x => `${x.lote.id}:${Math.round(x.kg)}`)
+    .sort()
+    .join("|");
+  if (firmas.has(firma)) return;
+  firmas.add(firma);
+
+  const mix = mezclaDe(items);
+  const diffKg = Math.abs(totalKg - objetivo.masa);
+  const cuDiff = Math.abs(mix.cu - objetivo.cu);
+  const moShort = Math.max(0, objetivo.mo - mix.mo);
+  const sOver = Math.max(0, mix.s - objetivo.s);
+  const moDiff = Math.abs(mix.mo - objetivo.mo);
+  const sDiff = Math.abs(mix.s - objetivo.s);
+  const fueraKg = items.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + x.kg, 0);
+  const exacta = diffKg < 0.001;
+  const cumpleObjetivo = exacta && cuDiff <= 0.035 && moShort <= 0 && sOver <= 0;
+  const chemPenalty = (cuDiff * 60000) + (moShort * 7000) + (sOver * 120000) + (moDiff * 55) + (sDiff * 1200);
+  const massPenalty = (diffKg / 1000) * 180;
+  const classPenalty = cumpleObjetivo ? 0 : 220;
+  const score = chemPenalty + massPenalty + classPenalty - (fueraKg / 1000) * 8;
+  mix.ok = cumpleObjetivo;
+  opciones.push({ items, mix, score, chemPenalty, diffKg, fueraKg, exacta, cumpleObjetivo, cuDiff, moShort, sOver });
+}
+
+function buscarMejoresMezclas2() {
+  const objetivo = objetivoMezcla();
+  const selectedPool = state.lotes
+    .filter(l => hasAnalysis(l) && l.estado !== "Pendiente" && Number(l.masa || 0) >= 1000)
+    .filter(l => state.mix.sector === "Todos" || l.sector === state.mix.sector);
+  const relevancia = l => {
+    const c = clasificar(l);
+    return Math.abs(Number(l.cu || 0) - objetivo.cu) * 900
+      + Math.max(0, objetivo.mo - Number(l.mo || 0)) * 65
+      + Math.max(0, Number(l.s || 0) - objetivo.s) * 1600
+      - (c.clase === "Fuera Esp" ? 8 : 0);
+  };
+  const selectedIds = new Set(state.mix.sel || []);
+  const selected = selectedPool.filter(l => selectedIds.has(l.id));
+  const basePool = selected.length ? selected : selectedPool;
+  const pool = [...basePool].sort((a, b) => relevancia(a) - relevancia(b)).slice(0, 22);
+  const opciones = [];
+  const firmas = new Set();
+  const masasObjetivo = [objetivo.masa];
+  for (let delta = 1000; delta <= 5000; delta += 1000) {
+    if (objetivo.masa - delta >= 1000) masasObjetivo.push(objetivo.masa - delta);
+    if (objetivo.masa + delta <= 40000) masasObjetivo.push(objetivo.masa + delta);
+  }
+
+  for (const targetKg of masasObjetivo) {
+    for (let i = 0; i < pool.length; i++) {
+      evaluarMezclaObjetivo([{ lote: pool[i], kg: Math.min(targetKg, pool[i].masa) }], objetivo, firmas, opciones);
+    }
+    for (let i = 0; i < pool.length; i++) {
+      for (let j = i + 1; j < pool.length; j++) {
+        for (let kgA = 1000; kgA < targetKg; kgA += 1000) {
+          evaluarMezclaObjetivo([{ lote: pool[i], kg: kgA }, { lote: pool[j], kg: targetKg - kgA }], objetivo, firmas, opciones);
+        }
+      }
+    }
+    for (let i = 0; i < pool.length; i++) {
+      for (let j = i + 1; j < pool.length; j++) {
+        for (let k = j + 1; k < pool.length; k++) {
+          for (let kgA = 1000; kgA < targetKg - 1000; kgA += 1000) {
+            for (let kgB = 1000; kgB < targetKg - kgA; kgB += 1000) {
+              evaluarMezclaObjetivo([
+                { lote: pool[i], kg: kgA },
+                { lote: pool[j], kg: kgB },
+                { lote: pool[k], kg: targetKg - kgA - kgB },
+              ], objetivo, firmas, opciones);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const exactas = opciones.filter(o => o.exacta);
+  const base = exactas.length ? exactas : opciones;
+  const minCu = base.reduce((m, o) => Math.min(m, o.cuDiff), Infinity);
+  const enfocadas = base.filter(o => o.cuDiff <= Math.max(minCu + 0.04, 0.08));
+  return enfocadas
+    .sort((a, b) =>
+      a.cuDiff - b.cuDiff ||
+      a.moShort - b.moShort ||
+      a.sOver - b.sOver ||
+      a.diffKg - b.diffKg ||
+      a.chemPenalty - b.chemPenalty ||
+      b.fueraKg - a.fueraKg
+    )
+    .slice(0, 10);
+}
+
+function mezclaOpcionHTML(op, idx) {
+  const color = C.green;
+  const estado = op.cumpleObjetivo ? "CUMPLE" : (op.exacta ? "MAS CERCANA" : `APROX. ${(op.diffKg / 1000).toFixed(1)} t`);
+  const masaInfo = op.exacta
+    ? `Masa exacta: ${(op.mix.masaKg / 1000).toFixed(2)} t`
+    : `Masa aproximada: ${(op.mix.masaKg / 1000).toFixed(2)} t - diferencia ${(op.diffKg / 1000).toFixed(2)} t`;
+  return `<div class="card" style="border-left:4px solid ${color};margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div>
+        <b style="color:${color}">Opcion ${idx + 1} - ${op.mix.clase}</b>
+        <div style="color:var(--txt2);font-size:10px">${masaInfo}</div>
+        <div style="color:var(--txt2);font-size:10px">Diferencia Cu: ${op.cuDiff.toFixed(3)} · Fuera de especificacion usado: ${(op.fueraKg / 1000).toFixed(2)} t</div>
+      </div>
+      <div class="mono" style="font-weight:900;color:${op.cumpleObjetivo ? C.green : C.yellow}">${estado}</div>
+    </div>
+    ${mezclaDetalleHTML(op)}
+  </div>`;
+}
+
+function claveComun(c) {
+  return `${normalizarCodigoAnalisis(c.codigo || c.id)}|${c.fecha || ""}|${c.siloId || ""}`;
+}
+
+function comunesAsignados() {
+  const acp = new Map((state.infodia?.analisis || []).map(a => [normalizarCodigoAnalisis(a.codigo), a]));
+  const manuales = new Map((state.comunes || []).filter(c => isValidSiloId(c.siloId)).map(c => [claveComun(c), c]));
+  const rows = [];
+  const seen = new Set();
+  for (const h of state.siloHistorial || []) {
+    if (!isValidSiloId(h.siloId)) continue;
+    const codigos = Array.isArray(h.comunes) ? h.comunes : [];
+    for (const codigo of codigos) {
+      const a = acp.get(normalizarCodigoAnalisis(codigo)) || {};
+      const base = {
+        id: `${normalizarCodigoAnalisis(codigo)}|${h.fecha}|${h.siloId}`,
+        codigo,
+        fecha: a.fecha || h.fecha || "",
+        siloId: h.siloId,
+        turno: h.turno || "Dia",
+        masa: Number(h.masaLlenado || h.llenado || h.masa || 0),
+        cu: Number(a.cu ?? h.cu ?? 0),
+        mo: Number(a.mo ?? h.mo ?? 0),
+        s: Number(a.s ?? h.s ?? 0),
+        fuente: "Infodia/ACP",
+      };
+      const key = claveComun(base);
+      const row = manuales.get(key) ? { ...base, ...manuales.get(key), fuente: "Manual" } : base;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push(row);
+    }
+  }
+  for (const c of state.comunes || []) {
+    const key = claveComun(c);
+    if (!isValidSiloId(c.siloId) || seen.has(key)) continue;
+    seen.add(key);
+    rows.push({ ...c, fuente: c.fuente || "Manual" });
+  }
+  return rows
+    .filter(r => isValidSiloId(r.siloId))
+    .sort((a, b) => fechaOrdenMs(b.fecha) - fechaOrdenMs(a.fecha) || String(b.codigo || "").localeCompare(String(a.codigo || "")));
+}
+
+function buscarComunPorId(id) {
+  return comunesAsignados().find(c => c.id === id || claveComun(c) === id);
+}
+
+function siloManualModalHTML(siloId) {
+  if (!siloId) return "";
+  const edit = state.comunEditId ? buscarComunPorId(state.comunEditId) : null;
+  const fechaHoy = new Date().toISOString().slice(0, 10);
+  return `<div class="modal-backdrop" role="dialog" aria-modal="true">
+    <form class="cloud-modal" id="comunForm">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px">
+        <div>
+          <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">${edit ? "Modificar comun de turno" : "Ajuste manual de silo"}</div>
+          <h2 style="margin:0;color:var(--txt);font-size:20px">${esc(edit?.siloId || siloId)}</h2>
+          <p style="margin:8px 0 0;color:var(--txt2);font-size:12px">Usa este ingreso solo para corregir o cargar un comun puntual. La carga normal viene desde Infodia/ACP.</p>
+        </div>
+        <button type="button" class="icon-btn" id="siloManualClose">X</button>
+      </div>
+      <input type="hidden" name="editId" value="${esc(edit ? claveComun(edit) : "")}">
+      <div class="form-grid">
+        ${inputField("codigo","Codigo comun",edit?.codigo || `MANUAL-${Date.now().toString().slice(-6)}`,"text")}
+        ${selectField("siloId","Silo",edit?.siloId || siloId,state.silosBase.map(s => s.id))}
+        ${selectField("turno","Turno",edit?.turno || "Dia",["Dia","Noche"])}
+        ${inputField("fecha","Fecha",edit?.fecha || fechaHoy,"date")}
+        ${inputField("masa","Masa comun (t)",edit?.masa || "50","number","50","0.01")}
+        ${inputField("cu","Cu %",edit?.cu ?? "","number","0.49","0.001")}
+        ${inputField("mo","Mo %",edit?.mo ?? "","number","57.5","0.001")}
+        ${inputField("s","S %",edit?.s ?? "","number","0.08","0.0001")}
+      </div>
+      <button class="btn" style="width:100%;margin-top:12px">${edit ? "GUARDAR CAMBIOS" : "GUARDAR COMUN"}</button>
+    </form>
+  </div>`;
+}
+
+function silosHTML() {
+  const silos = silosPonderados();
+  const comunes = comunesAsignados();
+  return `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start">
+    <section class="box" style="min-width:0">
+      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Silos de almacenamiento</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;max-height:640px;overflow:auto;padding-right:4px">${silos.map(s => {
+      const color = s.muestras ? s.color : C.txt3;
+      const source = s.nivelImportado?.fuente === "infodia"
+        ? `${hasAnalysis(s.nivelImportado) ? "Infodia/ACP" : "Infodia nivel"} ${s.nivelImportado.fecha || ""}`
+        : s.muestras ? "Manual" : "Sin datos";
+      return `<div class="card" style="border-top:3px solid ${color}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="muted-title" style="color:var(--cyan);font-weight:800">${s.id}</div>
+          <span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${s.muestras ? s.clase : "Sin comunes"}</span>
+        </div>
+        <div style="height:118px;width:76px;margin:0 auto 10px;border:1px solid var(--line);background:#2d4a6a33;border-radius:5px;position:relative;overflow:hidden">
+          <div style="position:absolute;left:0;right:0;bottom:0;height:${s.nivel}%;background:linear-gradient(180deg,${color}bb,${color}55)"></div>
+          <div class="mono" style="position:absolute;inset:0;display:grid;place-items:center;font-weight:900">${s.nivel.toFixed(0)}%</div>
+        </div>
+        <div class="mono" style="text-align:center;color:${color};font-weight:900">${s.masa.toFixed(1)} / ${s.cap} t</div>
+        <div style="text-align:center;color:var(--txt3);font-size:9px;margin-top:4px">${source}${s.nivelImportado?.horaInicio ? ` · ${s.nivelImportado.horaInicio}-${s.nivelImportado.horaTermino}` : ""}</div>
+        <div style="text-align:center;color:var(--txt2);font-size:11px;margin-top:3px">Cu: ${s.muestras ? s.cu.toFixed(2) : "-"}% · Mo: ${s.muestras ? s.mo.toFixed(2) : "-"}% · S: ${s.muestras ? s.s.toFixed(3) : "-"}%</div>
+        <div style="display:flex;justify-content:center;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="icon-btn" data-silo-fill="${s.id}">Ajuste manual</button>
+          <button class="icon-btn" data-silo-calc="${s.id}">Ver calculo</button>
+          <button class="icon-btn" data-silo-clear="${s.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Vaciar</button>
+        </div>
+      </div>`;
+    }).join("")}</div>
+    </section>
+    <section class="box" style="min-width:0">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px">
+        <div class="muted-title" style="color:var(--cyan)">Comunes de turno actualizados</div>
+        <span style="color:var(--txt3);font-size:10px">${comunes.length} registros</span>
+      </div>
+      <div class="notice" style="margin-bottom:12px;border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Listado trazable de comunes asignados a silos. El mas reciente aparece primero.</div>
+      <div class="table-wrap" style="max-height:540px;overflow:auto">
+        <table>
+          <thead><tr><th>Fecha</th><th>Codigo</th><th>Silo</th><th>Masa</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th></th></tr></thead>
+          <tbody>${comunes.map(c => {
+            const cl = clasificar(c);
+            const id = esc(claveComun(c));
+            return `<tr>
+              <td class="mono">${esc(c.fecha || "-")}</td>
+              <td class="mono" style="color:var(--blue-light);font-weight:900">${esc(c.codigo || c.id)}</td>
+              <td>${esc(c.siloId)} · ${esc(c.turno || "Dia")}</td>
+              <td class="mono">${fmt(c.masa, 2)} t</td>
+              <td class="mono">${fmt(c.cu, 3)}</td>
+              <td class="mono">${fmt(c.mo, 3)}</td>
+              <td class="mono">${fmt(c.s, 4)}</td>
+              <td><span class="tag" style="background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${cl.clase}</span></td>
+              <td><div class="mini-actions"><button class="icon-btn" data-silo-calc="${esc(c.siloId)}">Calc</button><button class="icon-btn" data-comun-edit="${id}">Editar</button><button class="icon-btn" data-comun-del="${id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button></div></td>
+            </tr>`;
+          }).join("") || `<tr><td colspan="9" style="color:var(--txt3);text-align:center;padding:18px">Sin comunes trazables registrados.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  ${siloManualModalHTML(state.siloManualOpen)}
+  ${state.siloCalcOpen ? siloCalculoHTML(state.siloCalcOpen) : ""}`;
+}
+
+function bindSilos() {
+  document.querySelectorAll("[data-silo-fill]").forEach(btn => btn.addEventListener("click", () => {
+    state.siloManualOpen = btn.dataset.siloFill;
+    state.comunEditId = "";
+    render();
+  }));
+  document.querySelectorAll("[data-comun-edit]").forEach(btn => btn.addEventListener("click", () => {
+    const c = buscarComunPorId(btn.dataset.comunEdit);
+    state.siloManualOpen = c?.siloId || "Silo 4";
+    state.comunEditId = btn.dataset.comunEdit;
+    render();
+  }));
+  document.querySelectorAll("[data-comun-del]").forEach(btn => btn.addEventListener("click", () => {
+    const id = btn.dataset.comunDel;
+    if (!confirm("¿Eliminar este comun de turno del registro de silos?")) return;
+    state.comunes = (state.comunes || []).filter(c => claveComun(c) !== id && c.id !== id);
+    state.siloHistorial = (state.siloHistorial || []).filter(h => {
+      const codigos = Array.isArray(h.comunes) ? h.comunes : [];
+      return !codigos.some(codigo => claveComun({ codigo, fecha: h.fecha, siloId: h.siloId }) === id);
+    });
+    save("oxmo:comunes", state.comunes);
+    save("oxmo:siloHistorial", state.siloHistorial);
+    addHist("Comun eliminado", id, "Registro de silo ajustado", C.red);
+    render();
+  }));
+  document.querySelectorAll("[data-silo-calc]").forEach(btn => btn.addEventListener("click", () => {
+    state.siloCalcOpen = btn.dataset.siloCalc;
+    render();
+  }));
+  document.querySelectorAll("[data-silo-clear]").forEach(btn => btn.addEventListener("click", () => {
+    const siloId = btn.dataset.siloClear;
+    if (!confirm(`¿Vaciar todos los registros de ${siloId}?`)) return;
+    state.comunes = state.comunes.filter(c => c.siloId !== siloId);
+    state.siloHistorial = state.siloHistorial.filter(h => h.siloId !== siloId);
+    save("oxmo:comunes", state.comunes);
+    save("oxmo:siloHistorial", state.siloHistorial);
+    addHist("Silo vaciado", siloId, "Comunes eliminados", C.red);
+    render();
+  }));
+  document.querySelector("#siloManualClose")?.addEventListener("click", () => {
+    state.siloManualOpen = "";
+    state.comunEditId = "";
+    render();
+  });
+  document.querySelector("#siloCalcClose")?.addEventListener("click", () => { state.siloCalcOpen = ""; render(); });
+  const form = document.querySelector("#comunForm");
+  form?.addEventListener("submit", e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (data.editId) {
+      state.comunes = (state.comunes || []).filter(c => claveComun(c) !== data.editId && c.id !== data.editId);
+    }
+    if (guardarComunManual(data, "manual-silos")) {
+      state.siloManualOpen = "";
+      state.comunEditId = "";
+      render();
+    }
+  });
+}
+
+syncInventarioACP();
 repararIdsLotesManuales();
 render();
 initCloud();
