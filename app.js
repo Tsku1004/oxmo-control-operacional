@@ -21,6 +21,7 @@ const PUBLIC_APP_URL = "https://oxmo-control-operacional.vercel.app/";
 const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:siloHistorial", "oxmo:infodia"]);
 const HIDDEN_TABS = new Set(["quimica", "siloHistorial"]);
 const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "", needsLotesCleanup: false, needsSiloCleanup: false };
+let tabRenderFrame = 0;
 
 const DEFAULT_SILOS = Array.from({ length: 8 }, (_, i) => ({
   id: `Silo ${i + 4}`,
@@ -398,7 +399,6 @@ function render() {
     return;
   }
   if (HIDDEN_TABS.has(state.tab)) state.tab = "inventario";
-  repararIdsLotesManuales();
   app.innerHTML = shellHTML();
   bindShell();
 }
@@ -523,7 +523,7 @@ function bindShell() {
     const nextTab = btn.dataset.tab;
     if (state.tab === nextTab) return;
     state.tab = nextTab;
-    render();
+    renderTabSoon();
   }));
   const clock = document.querySelector("#clock");
   setTimeout(() => { if (clock) clock.textContent = new Date().toLocaleTimeString("es-CL"); }, 1000);
@@ -531,6 +531,13 @@ function bindShell() {
   if (cloudBtn) cloudBtn.addEventListener("click", configureCloud);
   bindCloudPanel();
   bindTab();
+}
+function renderTabSoon() {
+  if (tabRenderFrame) cancelAnimationFrame(tabRenderFrame);
+  tabRenderFrame = requestAnimationFrame(() => {
+    tabRenderFrame = 0;
+    render();
+  });
 }
 
 function tabHTML() {
@@ -1174,8 +1181,10 @@ function alertasHTML() {
 
 function silosHTML() {
   const silos = silosPonderados();
-  return `<div style="display:flex;flex-direction:column;gap:14px">
-    <div class="grid-cards">${silos.map(s => {
+  return `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,1fr);gap:14px;align-items:start">
+    <section class="box" style="min-width:0">
+      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Silos de almacenamiento</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;max-height:640px;overflow:auto;padding-right:4px">${silos.map(s => {
       const color = s.muestras ? s.color : C.txt3;
       const source = s.nivelImportado?.fuente === "infodia"
         ? `${hasAnalysis(s.nivelImportado) ? "Infodia/ACP" : "Infodia nivel"} ${s.nivelImportado.fecha || ""}`
@@ -1199,7 +1208,8 @@ function silosHTML() {
         </div>
       </div>`;
     }).join("")}</div>
-    <div class="box">
+    </section>
+    <section class="box" style="min-width:0">
       <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Ingreso manual de respaldo</div>
       <div class="notice" style="margin-bottom:12px;border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">La carga normal se actualiza al subir Infodia con comunes OO300-001. Usa este formulario solo para corregir o cargar un comun puntual.</div>
       <form id="comunForm">
@@ -1230,7 +1240,7 @@ function silosHTML() {
           </div>`;
         }).join("") || `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px 0">Sin comunes registrados</div>`}</div>
       </div>
-    </div>
+    </section>
   </div>`;
 }
 
@@ -1429,8 +1439,10 @@ function bindMezclas() {
 
 function silosHTML() {
   const silos = silosPonderados();
-  return `<div style="display:flex;flex-direction:column;gap:14px">
-    <div class="grid-cards">${silos.map(s => {
+  return `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,1fr);gap:14px;align-items:start">
+    <section class="box" style="min-width:0">
+      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Silos de almacenamiento</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;max-height:640px;overflow:auto;padding-right:4px">${silos.map(s => {
       const color = s.muestras ? s.color : C.txt3;
       const source = s.nivelImportado?.fuente === "infodia"
         ? `${hasAnalysis(s.nivelImportado) ? "Infodia/ACP" : "Infodia nivel"} ${s.nivelImportado.fecha || ""}`
@@ -1453,7 +1465,8 @@ function silosHTML() {
         </div>
       </div>`;
     }).join("")}</div>
-    <div class="box">
+    </section>
+    <section class="box" style="min-width:0">
       <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Ingreso manual de respaldo</div>
       <div class="notice" style="margin-bottom:12px;border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">La carga normal se actualiza al subir Infodia con comunes OO300-001. Usa este formulario solo para corregir o cargar un comun puntual.</div>
       <form id="comunForm">
@@ -1478,7 +1491,7 @@ function silosHTML() {
           </div>`;
         }).join("") || `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px 0">Sin comunes registrados</div>`}</div>
       </div>
-    </div>
+    </section>
   </div>`;
 }
 
@@ -2766,6 +2779,7 @@ function printLabels() {
   w.document.close();
 }
 
+repararIdsLotesManuales();
 render();
 initCloud();
 
