@@ -3411,6 +3411,359 @@ function printLabels() {
   w.document.close();
 }
 
+// --- Ajustes finales 2026-06-14: mezcla por objetivo, silos con comunes y etiqueta desde inventario ---
+function correlativoAnalisis(codigo) {
+  const txt = normalizarCodigoAnalisis(codigo || "");
+  const nums = [...txt.matchAll(/(\d+)/g)].map(m => Number(m[1])).filter(Number.isFinite);
+  return nums.length ? Math.max(...nums) : -1;
+}
+
+function lotesOxmoHTML() {
+  const items = (state.infodia?.analisisLotes || [])
+    .filter(a => /^(OXMO|OXBR)\d+-\d{2}$/.test(normalizarCodigoAnalisis(a.codigo)) || String(a.codigo || "").toUpperCase().includes("OSAC"))
+    .sort((a, b) => {
+      const nb = correlativoAnalisis(b.codigo);
+      const na = correlativoAnalisis(a.codigo);
+      return (nb - na) || String(b.fecha || "").localeCompare(String(a.fecha || "")) || String(b.codigo || "").localeCompare(String(a.codigo || ""));
+    });
+  const oxmo = items.filter(a => a.tipoAnalisis === "lote_oxmo");
+  const briquetas = items.filter(a => a.tipoAnalisis === "briqueta");
+  const osac = items.filter(a => a.tipoAnalisis === "lote_osac" || String(a.codigo || "").toUpperCase().includes("OSAC"));
+  return analisisACPHTML({
+    titulo: "Resultado de lotes OXMO - BQA",
+    subtitulo: "Listado de analisis ACP para lotes OXMO, briquetas OXBR y registros OSAC. Estos datos son cartilla de laboratorio, no inventario fisico.",
+    items,
+    kpis: [
+      ["Lotes OXMO", oxmo.length, C.blueLight],
+      ["Briquetas OXBR", briquetas.length, C.copper],
+      ["OSAC", osac.length, C.cyan],
+      ["Con analisis", items.filter(hasAnalysis).length, C.green],
+      ["Fuera espec.", items.filter(x => clasificar(x).clase === "Fuera Esp").length, C.red],
+    ],
+    empty: "No hay analisis OXMO/OXBR/OSAC cargados. Sube el Infodia con la hoja ACP.",
+  });
+}
+
+function objetivoMezcla() {
+  const masa = Math.min(40000, Math.max(1000, Math.round(parseNum(state.mix.masa || 20000) / 1000) * 1000));
+  state.mix.masa = masa;
+  return {
+    cu: parseNum(state.mix.cu),
+    mo: parseNum(state.mix.mo),
+    s: parseNum(state.mix.s),
+    masa,
+  };
+}
+
+function evaluarMezclaObjetivo(items, objetivo, firmas, opciones) {
+  const clean = items
+    .map(x => ({ lote: x.lote, kg: Math.round(Number(x.kg || 0) / 1000) * 1000 }))
+    .filter(x => x.kg > 0)
+    .sort((a, b) => String(a.lote.id).localeCompare(String(b.lote.id)));
+  if (!clean.length || clean.some(x => x.kg > Math.floor(Number(x.lote.masa || 0) / 1000) * 1000)) return;
+  const firma = clean.map(x => `${x.lote.id}:${x.kg}`).join("|");
+  if (firmas.has(firma)) return;
+  firmas.add(firma);
+
+  const mix = mezclaDe(clean);
+  const diffKg = Math.abs(mix.masaKg - objetivo.masa);
+  if (diffKg > 5000) return;
+
+  const cuDiff = Math.abs(mix.cu - objetivo.cu);
+  const moShort = Math.max(0, objetivo.mo - mix.mo);
+  const moDiff = Math.abs(mix.mo - objetivo.mo);
+  const sOver = Math.max(0, mix.s - objetivo.s);
+  const sDiff = Math.abs(mix.s - objetivo.s);
+  const claseObjetivoAlta = objetivo.cu > 0.5;
+  const claseMezclaAlta = mix.cu > 0.5;
+  const clasePenalty = claseObjetivoAlta === claseMezclaAlta ? 0 : 180;
+  const chemPenalty = (cuDiff * 1200) + (moShort * 1000) + (moDiff * 80) + (sOver * 16000) + (sDiff * 900) + clasePenalty;
+  const massPenalty = (diffKg / 1000) * 70;
+  const fueraKg = clean.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + x.kg, 0);
+  const targetOk = cuDiff <= 0.04 && mix.mo >= objetivo.mo && mix.s <= objetivo.s && diffKg === 0;
+  mix.ok = targetOk;
+  opciones.push({
+    items: clean,
+    mix,
+    fueraKg,
+    diffKg,
+    objetivoKg: objetivo.masa,
+    exacta: diffKg === 0,
+    chemPenalty,
+    score: chemPenalty + massPenalty - (fueraKg / 1000 * 14),
+  });
+}
+
+function buscarMejoresMezclas2() {
+  const objetivo = objetivoMezcla();
+  const basePool = state.lotes
+    .filter(l => hasAnalysis(l) && Number(l.masa || 0) >= 1000 && (state.mix.sector === "Todos" || l.sector === state.mix.sector))
+    .filter(l => Math.floor(Number(l.masa || 0) / 1000) > 0);
+  const selectedPool = state.mix.sel.length ? basePool.filter(l => state.mix.sel.includes(l.id)) : basePool;
+  const relevancia = l => {
+    const cl = clasificar(l).clase;
+    return Math.abs(Number(l.cu || 0) - objetivo.cu) * 100
+      + Math.max(0, objetivo.mo - Number(l.mo || 0)) * 22
+      + Math.max(0, Number(l.s || 0) - objetivo.s) * 700
+      - (cl === "Fuera Esp" ? 8 : 0)
+      - Math.min(Number(l.masa || 0), objetivo.masa) / 8000;
+  };
+  const pool = [...selectedPool].sort((a, b) => relevancia(a) - relevancia(b)).slice(0, 18);
+  const opciones = [];
+  const firmas = new Set();
+  const masasObjetivo = [objetivo.masa];
+  for (let delta = 1000; delta <= 5000; delta += 1000) {
+    if (objetivo.masa - delta >= 1000) masasObjetivo.push(objetivo.masa - delta);
+    if (objetivo.masa + delta <= 40000) masasObjetivo.push(objetivo.masa + delta);
+  }
+
+  for (const targetKg of masasObjetivo) {
+    for (let i = 0; i < pool.length; i++) {
+      evaluarMezclaObjetivo([{ lote: pool[i], kg: targetKg }], objetivo, firmas, opciones);
+    }
+    for (let i = 0; i < pool.length; i++) {
+      for (let j = i + 1; j < pool.length; j++) {
+        for (let kgA = 1000; kgA < targetKg; kgA += 1000) {
+          evaluarMezclaObjetivo([{ lote: pool[i], kg: kgA }, { lote: pool[j], kg: targetKg - kgA }], objetivo, firmas, opciones);
+        }
+      }
+    }
+    for (let i = 0; i < pool.length; i++) {
+      for (let j = i + 1; j < pool.length; j++) {
+        for (let k = j + 1; k < pool.length; k++) {
+          for (let kgA = 1000; kgA < targetKg - 1000; kgA += 1000) {
+            for (let kgB = 1000; kgB < targetKg - kgA; kgB += 1000) {
+              evaluarMezclaObjetivo([
+                { lote: pool[i], kg: kgA },
+                { lote: pool[j], kg: kgB },
+                { lote: pool[k], kg: targetKg - kgA - kgB },
+              ], objetivo, firmas, opciones);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return opciones
+    .sort((a, b) => a.score - b.score || a.chemPenalty - b.chemPenalty || a.diffKg - b.diffKg || b.fueraKg - a.fueraKg)
+    .slice(0, 8);
+}
+
+function mezclaOpcionHTML(op, idx) {
+  const estado = op.mix.ok ? "CUMPLE" : (op.exacta ? "MEJOR QUIMICA" : `APROX. ${(op.diffKg / 1000).toFixed(1)} t`);
+  const masaInfo = op.exacta
+    ? `Masa exacta: ${(op.mix.masaKg / 1000).toFixed(2)} t`
+    : `Masa aproximada: ${(op.mix.masaKg / 1000).toFixed(2)} t - diferencia ${(op.diffKg / 1000).toFixed(2)} t`;
+  return `<div class="card" style="border-left:4px solid ${op.mix.color};margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div>
+        <b style="color:${op.mix.color}">Opcion ${idx + 1} - ${op.mix.clase}</b>
+        <div style="color:var(--txt2);font-size:10px">${masaInfo}</div>
+        <div style="color:var(--txt2);font-size:10px">Fuera de especificacion usado: ${(op.fueraKg / 1000).toFixed(2)} t</div>
+      </div>
+      <div class="mono" style="font-weight:900;color:${op.mix.ok ? C.green : C.yellow}">${estado}</div>
+    </div>
+    ${mezclaDetalleHTML(op)}
+  </div>`;
+}
+
+function comunesAsignados() {
+  const acp = new Map((state.infodia?.analisis || []).map(a => [normalizarCodigoAnalisis(a.codigo), a]));
+  const rows = [];
+  const seen = new Set();
+  for (const h of state.siloHistorial || []) {
+    if (!isValidSiloId(h.siloId)) continue;
+    const codigos = Array.isArray(h.comunes) ? h.comunes : [];
+    for (const codigo of codigos) {
+      const key = `${normalizarCodigoAnalisis(codigo)}|${h.fecha}|${h.siloId}|infodia`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const a = acp.get(normalizarCodigoAnalisis(codigo)) || {};
+      rows.push({
+        id: key,
+        codigo: codigo,
+        fecha: a.fecha || h.fecha || "",
+        siloId: h.siloId,
+        turno: h.turno || "Dia",
+        masa: Number(h.masaLlenado || h.llenado || h.masa || 0),
+        cu: Number(a.cu ?? h.cu ?? 0),
+        mo: Number(a.mo ?? h.mo ?? 0),
+        s: Number(a.s ?? h.s ?? 0),
+        fuente: "Infodia/ACP",
+      });
+    }
+  }
+  for (const c of state.comunes || []) {
+    const key = `${c.id}|manual`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({ ...c, fuente: "Manual" });
+  }
+  return rows
+    .filter(r => isValidSiloId(r.siloId))
+    .sort((a, b) => fechaOrdenMs(b.fecha) - fechaOrdenMs(a.fecha) || String(b.codigo || "").localeCompare(String(a.codigo || "")));
+}
+
+function siloCalculoHTML(siloId) {
+  const silo = silosPonderados().find(s => s.id === siloId);
+  if (!silo) return "";
+  const comunes = comunesAsignados().filter(c => c.siloId === siloId && hasAnalysis(c));
+  const masa = comunes.reduce((a, c) => a + Number(c.masa || 0), 0);
+  const linea = key => comunes.map(c => `(${fmt(c[key], 3)} x ${fmt(c.masa, 2)})`).join(" + ") || "0";
+  const calc = masa > 0
+    ? `Cu = (${linea("cu")}) / ${fmt(masa, 2)} = ${fmt(silo.cu, 3)}%\nMo = (${linea("mo")}) / ${fmt(masa, 2)} = ${fmt(silo.mo, 3)}%\nS = (${linea("s")}) / ${fmt(masa, 2)} = ${fmt(silo.s, 4)}%`
+    : "Silo sin masa ni comunes con analisis. Ponderacion en cero.";
+  return `<div class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="cloud-modal">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px">
+        <div>
+          <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Calculo de ponderacion</div>
+          <h2 style="margin:0;color:var(--txt);font-size:20px">${silo.id} · ${silo.clase}</h2>
+          <p style="margin:8px 0 0;color:var(--txt2);font-size:12px">Masa actual ${fmt(silo.masa, 2)} t · Nivel ${fmt(silo.nivel, 1)}%</p>
+        </div>
+        <button type="button" class="icon-btn" id="siloCalcClose">X</button>
+      </div>
+      <pre style="white-space:pre-wrap;background:#040a14;border:1px solid var(--line);border-radius:6px;padding:12px;color:var(--txt2);font-size:11px">${esc(calc)}</pre>
+      <div style="max-height:260px;overflow:auto;margin-top:12px">${comunes.map(c => {
+        const cl = clasificar(c);
+        return `<div class="card" style="padding:10px;margin-bottom:8px;border-left:3px solid ${cl.color}">
+          <div class="mono" style="color:var(--blue-light);font-weight:900">${esc(c.codigo || c.id)} · ${esc(c.fecha || "-")}</div>
+          <div style="color:var(--txt2);font-size:10px;margin-top:4px">${esc(c.fuente || "")} · ${fmt(c.masa, 2)} t · Cu ${fmt(c.cu, 3)}% · Mo ${fmt(c.mo, 3)}% · S ${fmt(c.s, 4)}%</div>
+        </div>`;
+      }).join("") || `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:16px">Sin comunes trazables para este silo.</div>`}</div>
+    </div>
+  </div>`;
+}
+
+function siloManualModalHTML(siloId) {
+  if (!siloId) return "";
+  return `<div class="modal-backdrop" role="dialog" aria-modal="true">
+    <form class="cloud-modal" id="comunForm">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px">
+        <div>
+          <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Ajuste manual de silo</div>
+          <h2 style="margin:0;color:var(--txt);font-size:20px">${esc(siloId)}</h2>
+          <p style="margin:8px 0 0;color:var(--txt2);font-size:12px">Usa este ingreso solo para corregir o cargar un comun puntual. La carga normal viene desde Infodia/ACP.</p>
+        </div>
+        <button type="button" class="icon-btn" id="siloManualClose">X</button>
+      </div>
+      <div class="form-grid">
+        ${selectField("siloId","Silo",siloId,state.silosBase.map(s => s.id))}
+        ${selectField("turno","Turno","Dia",["Dia","Noche"])}
+        ${inputField("fecha","Fecha",new Date().toISOString().slice(0, 10),"date")}
+        ${inputField("masa","Masa comun (t)","50","number","50","0.01")}
+        ${inputField("cu","Cu %","","number","0.49","0.001")}
+        ${inputField("mo","Mo %","","number","57.5","0.001")}
+        ${inputField("s","S %","","number","0.08","0.0001")}
+      </div>
+      <button class="btn" style="width:100%;margin-top:12px">GUARDAR COMUN</button>
+    </form>
+  </div>`;
+}
+
+function silosHTML() {
+  const silos = silosPonderados();
+  const comunes = comunesAsignados();
+  return `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,1fr);gap:14px;align-items:start">
+    <section class="box" style="min-width:0">
+      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Silos de almacenamiento</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;max-height:640px;overflow:auto;padding-right:4px">${silos.map(s => {
+      const color = s.muestras ? s.color : C.txt3;
+      const source = s.nivelImportado?.fuente === "infodia"
+        ? `${hasAnalysis(s.nivelImportado) ? "Infodia/ACP" : "Infodia nivel"} ${s.nivelImportado.fecha || ""}`
+        : s.muestras ? "Manual" : "Sin datos";
+      return `<div class="card" style="border-top:3px solid ${color}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="muted-title" style="color:var(--cyan);font-weight:800">${s.id}</div>
+          <span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${s.muestras ? s.clase : "Sin comunes"}</span>
+        </div>
+        <div style="height:118px;width:76px;margin:0 auto 10px;border:1px solid var(--line);background:#2d4a6a33;border-radius:5px;position:relative;overflow:hidden">
+          <div style="position:absolute;left:0;right:0;bottom:0;height:${s.nivel}%;background:linear-gradient(180deg,${color}bb,${color}55)"></div>
+          <div class="mono" style="position:absolute;inset:0;display:grid;place-items:center;font-weight:900">${s.nivel.toFixed(0)}%</div>
+        </div>
+        <div class="mono" style="text-align:center;color:${color};font-weight:900">${s.masa.toFixed(1)} / ${s.cap} t</div>
+        <div style="text-align:center;color:var(--txt3);font-size:9px;margin-top:4px">${source}${s.nivelImportado?.horaInicio ? ` · ${s.nivelImportado.horaInicio}-${s.nivelImportado.horaTermino}` : ""}</div>
+        <div style="text-align:center;color:var(--txt2);font-size:11px;margin-top:3px">Cu: ${s.muestras ? s.cu.toFixed(2) : "-"}% · Mo: ${s.muestras ? s.mo.toFixed(2) : "-"}% · S: ${s.muestras ? s.s.toFixed(3) : "-"}%</div>
+        <div style="display:flex;justify-content:center;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="icon-btn" data-silo-fill="${s.id}">Ajuste manual</button>
+          <button class="icon-btn" data-silo-calc="${s.id}">Ver calculo</button>
+          <button class="icon-btn" data-silo-clear="${s.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Vaciar</button>
+        </div>
+      </div>`;
+    }).join("")}</div>
+    </section>
+    <section class="box" style="min-width:0">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px">
+        <div class="muted-title" style="color:var(--cyan)">Comunes de turno actualizados</div>
+        <span style="color:var(--txt3);font-size:10px">${comunes.length} registros</span>
+      </div>
+      <div class="notice" style="margin-bottom:12px;border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Listado trazable de comunes asignados a silos. El mas reciente aparece primero.</div>
+      <div style="max-height:540px;overflow:auto">${comunes.map(c => {
+        const cl = clasificar(c);
+        return `<div class="card" style="padding:10px;margin-bottom:8px;border-left:3px solid ${cl.color}">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+            <div class="mono" style="color:var(--blue-light);font-weight:900">${esc(c.codigo || c.id)} · ${esc(c.siloId)}</div>
+            <button class="icon-btn" data-silo-calc="${esc(c.siloId)}">Calculo</button>
+          </div>
+          <div style="color:var(--txt2);font-size:10px;margin-top:4px">${esc(c.fecha || "-")} · ${esc(c.turno || "Dia")} · ${fmt(c.masa, 2)} t · ${esc(c.fuente || "")}</div>
+          <div class="mono" style="font-size:10px;color:var(--txt2);margin-top:4px">Cu ${fmt(c.cu, 3)}% · Mo ${fmt(c.mo, 3)}% · S ${fmt(c.s, 4)}%</div>
+          <span class="tag" style="margin-top:6px;background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${cl.clase}</span>
+        </div>`;
+      }).join("") || `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px 0">Sin comunes trazables registrados.</div>`}</div>
+    </section>
+  </div>
+  ${siloManualModalHTML(state.siloManualOpen)}
+  ${state.siloCalcOpen ? siloCalculoHTML(state.siloCalcOpen) : ""}`;
+}
+
+function bindSilos() {
+  document.querySelectorAll("[data-silo-fill]").forEach(btn => btn.addEventListener("click", () => {
+    state.siloManualOpen = btn.dataset.siloFill;
+    render();
+  }));
+  document.querySelectorAll("[data-silo-calc]").forEach(btn => btn.addEventListener("click", () => {
+    state.siloCalcOpen = btn.dataset.siloCalc;
+    render();
+  }));
+  document.querySelectorAll("[data-silo-clear]").forEach(btn => btn.addEventListener("click", () => {
+    const siloId = btn.dataset.siloClear;
+    if (!confirm(`¿Vaciar comunes manuales de ${siloId}?`)) return;
+    state.comunes = state.comunes.filter(c => c.siloId !== siloId);
+    save("oxmo:comunes", state.comunes);
+    addHist("Silo vaciado", siloId, "Comunes manuales eliminados", C.red);
+    render();
+  }));
+  document.querySelector("#siloManualClose")?.addEventListener("click", () => { state.siloManualOpen = ""; render(); });
+  document.querySelector("#siloCalcClose")?.addEventListener("click", () => { state.siloCalcOpen = ""; render(); });
+  const form = document.querySelector("#comunForm");
+  form?.addEventListener("submit", e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (guardarComunManual(data, "manual-silos")) {
+      state.siloManualOpen = "";
+      render();
+    }
+  });
+}
+
+function bindInventario() {
+  document.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => { state.filtro = btn.dataset.filter; render(); }));
+  document.querySelector("#newLot")?.addEventListener("click", () => { state.editando = null; state.tab = "registro"; render(); });
+  document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => {
+    const lote = state.lotes.find(l => l.id === btn.dataset.edit);
+    if (!canEditLot(lote)) { alert("No tienes permiso para modificar este lote."); return; }
+    state.editando = lote;
+    state.tab = "registro";
+    render();
+  }));
+  document.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => deleteLot(btn.dataset.del)));
+  document.querySelectorAll("[data-label-lot]").forEach(btn => btn.addEventListener("click", () => {
+    state.etiquetaSel = [btn.dataset.labelLot];
+    printLabels();
+  }));
+}
+
 repararIdsLotesManuales();
 render();
 initCloud();
