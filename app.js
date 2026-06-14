@@ -21,7 +21,7 @@ const DEFAULT_CLOUD_CONFIG = {
 };
 const PUBLIC_APP_URL = "https://oxmo-control-operacional.vercel.app/";
 const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:siloHistorial", "oxmo:infodia", "oxmo:usuarios", "oxmo:userStats", "oxmo:avisos"]);
-const HIDDEN_TABS = new Set(["quimica", "siloHistorial", "comunesTurno"]);
+const HIDDEN_TABS = new Set(["quimica", "siloHistorial", "comunesTurno", "etiquetas"]);
 const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "", needsLotesCleanup: false, needsSiloCleanup: false };
 let tabRenderFrame = 0;
 
@@ -402,8 +402,8 @@ function canViewTab(id, user = state.user) {
   if (HIDDEN_TABS.has(id)) return false;
   if (isAdmin(user)) return true;
   if (isOperator(user)) return ["inventario", "registro", "lotesOxmo", "alertas", "avisos"].includes(id);
-  if (isSupervisor(user)) return ["inventario", "silos", "lotesOxmo", "mezclas", "etiquetas", "reportes", "alertas", "avisos", "infodia"].includes(id);
-  return ["inventario", "silos", "lotesOxmo", "mezclas", "etiquetas", "reportes", "alertas"].includes(id);
+  if (isSupervisor(user)) return ["inventario", "silos", "lotesOxmo", "mezclas", "reportes", "alertas", "avisos", "infodia"].includes(id);
+  return ["inventario", "silos", "lotesOxmo", "mezclas", "reportes", "alertas"].includes(id);
 }
 function visibleTabs() {
   return [
@@ -745,9 +745,10 @@ function inventarioHTML() {
 }
 function rowHTML(l) {
   const {clase, color} = clasificar(l);
+  const labelAction = `<button class="icon-btn" data-label-lot="${esc(l.id)}" title="Imprimir etiqueta">▦</button>`;
   const actions = canEditLot(l)
-    ? `<div class="mini-actions"><button class="icon-btn" data-edit="${l.id}">✏</button><button class="icon-btn" data-del="${l.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button></div>`
-    : "";
+    ? `<div class="mini-actions">${labelAction}<button class="icon-btn" data-edit="${esc(l.id)}">✏</button><button class="icon-btn" data-del="${esc(l.id)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button></div>`
+    : `<div class="mini-actions">${labelAction}</div>`;
   return `<tr>
     <td class="mono" style="color:var(--blue-light);font-weight:800">${l.id}</td>
     <td style="color:var(--txt2)">${l.tipo}</td>
@@ -939,6 +940,10 @@ function bindRegistro() {
     render();
   }));
   document.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => deleteLot(btn.dataset.del)));
+  document.querySelectorAll("[data-label-lot]").forEach(btn => btn.addEventListener("click", () => {
+    state.etiquetaSel = [btn.dataset.labelLot];
+    printLabels();
+  }));
 }
 
 function adminHTML() {
@@ -996,6 +1001,7 @@ function adminUsersHTML(rows) {
               <td class="mono" style="color:var(--txt3)">${esc(u.creado || "-")}</td>
               <td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td>
               <td><div class="mini-actions">
+                <button class="icon-btn" data-edit-user="${esc(u.u)}">Editar</button>
                 <button class="icon-btn" data-pass-user="${esc(u.u)}">Clave</button>
                 ${u.u !== "admin" && u.u !== userKey() ? `<button class="icon-btn" data-toggle-user="${esc(u.u)}">${u.activo !== false ? "Pausar" : "Activar"}</button><button class="icon-btn" data-delete-user="${esc(u.u)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button>` : ""}
               </div></td>
@@ -1078,6 +1084,56 @@ function bindAdmin() {
     saveUsuarios();
     const estado = state.usuarios.find(x => x.u === u)?.activo === false ? "Inactivo" : "Activo";
     addHist("Estado de cuenta actualizado", u, estado, C.yellow);
+    render();
+  }));
+  document.querySelectorAll("[data-edit-user]").forEach(btn => btn.addEventListener("click", () => {
+    const original = btn.dataset.editUser;
+    const actual = state.usuarios.find(x => x.u === original);
+    if (!actual) return;
+    const nextUserRaw = prompt("Usuario de acceso", actual.u);
+    if (nextUserRaw === null) return;
+    const nextUser = String(nextUserRaw || "").trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,24}$/.test(nextUser)) {
+      alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
+      return;
+    }
+    if (nextUser !== original && state.usuarios.some(x => x.u === nextUser)) {
+      alert("Ese usuario ya existe.");
+      return;
+    }
+    const nextNombreRaw = prompt("Nombre visible", actual.nombre || actual.u);
+    if (nextNombreRaw === null) return;
+    const nextNombre = String(nextNombreRaw || "").trim();
+    if (!nextNombre) {
+      alert("El nombre visible no puede quedar vacío.");
+      return;
+    }
+    const rolesTxt = ROLES_USUARIO.join(", ");
+    const nextRolRaw = prompt(`Rol (${rolesTxt})`, actual.rol || "Operador");
+    if (nextRolRaw === null) return;
+    const nextRol = ROLES_USUARIO.find(r => r.toLowerCase() === String(nextRolRaw).trim().toLowerCase());
+    if (!nextRol) {
+      alert(`Rol no válido. Usa uno de estos: ${rolesTxt}.`);
+      return;
+    }
+    state.usuarios = state.usuarios.map(x => x.u === original ? { ...x, u: nextUser, nombre: nextNombre, rol: nextRol } : x);
+    if (nextUser !== original) {
+      if (state.userStats[original]) {
+        state.userStats[nextUser] = { ...(state.userStats[nextUser] || {}), ...state.userStats[original] };
+        delete state.userStats[original];
+      }
+      state.lotes = state.lotes.map(l => l.createdBy === original ? { ...l, createdBy: nextUser, createdByName: nextNombre } : l);
+      state.avisos = (state.avisos || []).map(a => a.autor === original ? { ...a, autor: nextUser, autorNombre: nextNombre } : a);
+      if (state.user?.u === original) state.user = { ...state.user, u: nextUser, nombre: nextNombre, rol: nextRol };
+    } else if (state.user?.u === original) {
+      state.user = { ...state.user, nombre: nextNombre, rol: nextRol };
+    }
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    save("oxmo:lotes", state.lotes);
+    save("oxmo:avisos", state.avisos || []);
+    save("oxmo:user", state.user);
+    addHist("Cuenta editada", nextUser, `${nextNombre} (${nextRol})`, C.cyan);
     render();
   }));
   document.querySelectorAll("[data-pass-user]").forEach(btn => btn.addEventListener("click", () => {
@@ -1241,21 +1297,23 @@ function bindQuimica() {
 
 function lotesOxmoHTML() {
   const items = (state.infodia?.analisisLotes || [])
-    .filter(a => /^(OXMO|OXBR)\d+-\d{2}$/.test(a.codigo))
+    .filter(a => /^(OXMO|OXBR)\d+-\d{2}$/.test(a.codigo) || String(a.codigo || "").includes("OSAC"))
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.codigo.localeCompare(b.codigo));
   const oxmo = items.filter(a => a.tipoAnalisis === "lote_oxmo");
   const briquetas = items.filter(a => a.tipoAnalisis === "briqueta");
+  const osac = items.filter(a => a.tipoAnalisis === "lote_osac" || String(a.codigo || "").includes("OSAC"));
   return analisisACPHTML({
     titulo: "Resultado de lotes OXMO - BQA",
-    subtitulo: "Listado de analisis ACP para lotes OXMO y briquetas OXBR. Estos datos son cartilla de laboratorio, no inventario fisico.",
+    subtitulo: "Listado de analisis ACP para lotes OXMO, briquetas OXBR y registros OSAC. Estos datos son cartilla de laboratorio, no inventario fisico.",
     items,
     kpis: [
       ["Lotes OXMO", oxmo.length, C.blueLight],
       ["Briquetas OXBR", briquetas.length, C.copper],
+      ["OSAC", osac.length, C.cyan],
       ["Con analisis", items.filter(hasAnalysis).length, C.green],
       ["Fuera espec.", items.filter(x => clasificar(x).clase === "Fuera Esp").length, C.red],
     ],
-    empty: "No hay analisis OXMO/OXBR cargados. Sube el Infodia con la hoja ACP.",
+    empty: "No hay analisis OXMO/OXBR/OSAC cargados. Sube el Infodia con la hoja ACP.",
   });
 }
 
@@ -2121,7 +2179,10 @@ function mezclasHTML() {
       }).join("") || `<div style="color:var(--txt3);font-size:11px">No hay materiales con análisis para mezclar.</div>`}</div>
     </div>
     <div class="box">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Mejores opciones</div>
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px">
+        <div class="muted-title" style="color:var(--cyan)">Mejores opciones</div>
+        ${opciones.length ? `<button class="btn secondary" id="printMixOptions">Imprimir / PDF</button>` : ""}
+      </div>
       <div class="mix-options">${opciones.length ? opciones.map((op, idx) => mezclaOpcionHTML(op, idx)).join("") : `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px">Ajusta los objetivos y presiona BUSCAR MEJOR COMBINACIÓN para calcular opciones.</div>`}</div>
     </div>
   </div>`;
@@ -2237,6 +2298,77 @@ function bindMezclas() {
       setTimeout(() => { state.mixMsg = ""; state.mixProgress = 0; if (state.tab === "mezclas") render(); }, 2200);
     }, 80);
   });
+  document.querySelector("#printMixOptions")?.addEventListener("click", printMixOptions);
+}
+
+function printMixOptions() {
+  const opciones = Array.isArray(state.mixOptions) ? state.mixOptions : [];
+  if (!opciones.length) {
+    alert("Primero calcula las opciones de mezcla.");
+    return;
+  }
+  const fecha = new Date().toLocaleString("es-CL");
+  const objetivo = state.mix || {};
+  const rows = opciones.map((op, idx) => `
+    <section class="option">
+      <div class="option-head">
+        <div>
+          <h2>Opción ${idx + 1} - ${esc(op.mix.clase)}</h2>
+          <p>${op.exacta ? "Masa exacta" : "Masa aproximada"}: ${(op.mix.masaKg / 1000).toFixed(2)} t · Fuera de especificación usado: ${(op.fueraKg / 1000).toFixed(2)} t</p>
+        </div>
+        <strong class="${op.mix.ok ? "ok" : "warn"}">${op.mix.ok ? "CUMPLE" : "MEJOR APROX."}</strong>
+      </div>
+      <table>
+        <thead><tr><th>Lote</th><th>Sacos</th><th>Masa</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasificación</th></tr></thead>
+        <tbody>${op.items.map(x => {
+          const cl = clasificar(x.lote);
+          return `<tr><td>${esc(x.lote.id)}</td><td>${(x.kg / 1000).toFixed(0)}</td><td>${(x.kg / 1000).toFixed(2)} t</td><td>${fmt(x.lote.cu, 3)}</td><td>${fmt(x.lote.mo, 3)}</td><td>${fmt(x.lote.s, 4)}</td><td>${esc(cl.clase)}</td></tr>`;
+        }).join("")}</tbody>
+      </table>
+      <div class="result">Resultado: Cu ${op.mix.cu.toFixed(3)}% · Mo ${op.mix.mo.toFixed(3)}% · S ${op.mix.s.toFixed(4)}%</div>
+      <pre>${esc(formulaMezcla(op.items, op.mix))}</pre>
+    </section>
+  `).join("");
+  const w = window.open("", "_blank");
+  if (!w) {
+    alert("Permite ventanas emergentes para generar el reporte de mezclas.");
+    return;
+  }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>mezclas_${new Date().toISOString().slice(0,10)}</title><style>
+    @page{size:A4 portrait;margin:12mm}
+    body{font-family:Arial,sans-serif;color:#112;margin:0;background:#f5f7fb}
+    main{padding:18px;max-width:980px;margin:0 auto;background:white}
+    h1{margin:0;color:#003366;font-size:22px}
+    .sub{color:#52657a;font-size:12px;margin:6px 0 16px}
+    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+    .kpi{border:1px solid #cbd8e6;border-top:4px solid #1e6fd9;border-radius:8px;padding:9px}
+    .kpi b{display:block;color:#64748b;font-size:10px;text-transform:uppercase}
+    .kpi span{font-family:Consolas,monospace;font-weight:900;font-size:16px}
+    .option{border:1px solid #d7e2ee;border-left:5px solid #00a878;border-radius:8px;padding:12px;margin:12px 0;page-break-inside:avoid}
+    .option-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+    h2{font-size:16px;margin:0;color:#0f3a6e}
+    p{margin:4px 0 10px;color:#52657a;font-size:11px}
+    strong{font-family:Consolas,monospace}
+    .ok{color:#008a61}.warn{color:#b77900}
+    table{width:100%;border-collapse:collapse;font-size:11px}
+    th{background:#0f3a6e;color:white;text-align:left;padding:6px}
+    td{border:1px solid #d7e2ee;padding:5px}
+    .result{margin-top:8px;font-family:Consolas,monospace;font-weight:900;color:#008a61}
+    pre{white-space:pre-wrap;background:#f3f7fb;border:1px solid #d7e2ee;border-radius:6px;padding:8px;font-size:10px;color:#334155}
+    .no-print{position:fixed;top:10px;right:10px}.no-print button{padding:9px 12px;font-weight:900}
+    @media print{body{background:white}.no-print{display:none}main{padding:0;max-width:none}}
+  </style></head><body><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div><main>
+    <h1>Opciones de mezcla OXMO</h1>
+    <div class="sub">Generado: ${esc(fecha)} · Preparado para operador/encargado</div>
+    <div class="kpis">
+      <div class="kpi"><b>Cu objetivo</b><span>${fmt(objetivo.cu, 3)}%</span></div>
+      <div class="kpi"><b>Mo mínimo</b><span>${fmt(objetivo.mo, 3)}%</span></div>
+      <div class="kpi"><b>S máximo</b><span>${fmt(objetivo.s, 4)}%</span></div>
+      <div class="kpi"><b>Masa solicitada</b><span>${(parseNum(objetivo.masa) / 1000).toFixed(2)} t</span></div>
+    </div>
+    ${rows}
+  </main><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
+  w.document.close();
 }
 
 function bindReportes() {
@@ -2590,6 +2722,7 @@ function tipoAnalisisACP(codigo) {
   if (/^OO300-001-\d+-\d{2}$/.test(codigo)) return "comun_turno";
   if (/^OXMO\d+-\d{2}$/.test(codigo)) return "lote_oxmo";
   if (/^OXBR\d+-\d{2}$/.test(codigo)) return "briqueta";
+  if (codigo.includes("OSAC") && /-\d{2}$/.test(codigo)) return "lote_osac";
   if (/^[A-Z]{2,12}\d+-\d{2}$/.test(codigo)) return "otro_lote";
   return "";
 }
@@ -2848,7 +2981,58 @@ function selectSiloSimulationDays(days) {
   return { days: sorted, label: "todas las fechas disponibles" };
 }
 
+function uniqueBy(items, keyFn, preferNew = true) {
+  const map = new Map();
+  for (const item of items || []) {
+    const key = keyFn(item);
+    if (!key) continue;
+    if (preferNew || !map.has(key)) map.set(key, item);
+  }
+  return [...map.values()];
+}
+
+function recalcularTotalesInfodia(days) {
+  return (days || []).reduce((a, d) => ({
+    lotes: a.lotes + (d.lotes || []).length,
+    produccionKg: a.produccionKg + Number(d.produccionKg || 0),
+    kgMo: a.kgMo + Number(d.kgMo || 0),
+    llenadoT: a.llenadoT + Number(d.llenadoT || 0),
+    descargaT: a.descargaT + Number(d.descargaT || 0),
+  }), { lotes: 0, produccionKg: 0, kgMo: 0, llenadoT: 0, descargaT: 0 });
+}
+
+function fusionarInfodia(prev, next) {
+  if (!prev?.days?.length && !prev?.analisisACP?.length) return next;
+  const days = uniqueBy([...(prev.days || []), ...(next.days || [])], d => d.fecha)
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const analisisACP = uniqueBy([...(prev.analisisACP || []), ...(next.analisisACP || [])], a => `${a.codigo}|${a.fecha}|${a.fuente || ""}`)
+    .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.codigo || "").localeCompare(String(b.codigo || "")));
+  const analisis = analisisACP.filter(a => a.tipoAnalisis === "comun_turno");
+  const analisisLotes = analisisACP.filter(a => a.tipoAnalisis !== "comun_turno");
+  const siloHistorial = uniqueBy([...(prev.siloHistorial || []), ...(next.siloHistorial || [])], h => [
+    h.fecha,
+    h.siloId,
+    h.turno,
+    h.horaInicio,
+    h.horaTermino,
+    h.movimiento,
+  ].join("|")).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.siloId || "").localeCompare(String(b.siloId || "")));
+  const selectedWindow = selectSiloSimulationDays(days);
+  return {
+    ...prev,
+    ...next,
+    days,
+    analisis,
+    analisisLotes,
+    analisisACP,
+    siloHistorial,
+    simWindow: selectedWindow.label,
+    totals: recalcularTotalesInfodia(days),
+  };
+}
+
 function aplicarInfodia(info) {
+  info = fusionarInfodia(state.infodia, info);
   const lotesBase = state.lotes.filter(l => !isInfodiaProductionLote(l));
   const acpInventario = actualizarInventarioConACP(lotesBase, info.analisisACP || info.analisisLotes || []);
   state.lotes = acpInventario.lotes;
