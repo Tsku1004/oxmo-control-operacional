@@ -196,6 +196,10 @@ async function cloudSave(key, value) {
 function applyCloudValue(key, value) {
   cloud.applying = true;
   let nextValue = value;
+  if (key === "oxmo:infodia" && !value && state.infodia) {
+    cloud.applying = false;
+    return;
+  }
   if (key === "oxmo:lotes") {
     const incoming = Array.isArray(value) ? value : [];
     nextValue = incoming.filter(l => !isInfodiaProductionLote(l));
@@ -213,7 +217,7 @@ function applyCloudValue(key, value) {
   if (key === "oxmo:comunes") state.comunes = value || [];
   if (key === "oxmo:siloNiveles") state.siloNiveles = nextValue || {};
   if (key === "oxmo:siloHistorial") state.siloHistorial = value || [];
-  if (key === "oxmo:infodia") state.infodia = value || null;
+  if (key === "oxmo:infodia") state.infodia = value || state.infodia || null;
   if (key === "oxmo:usuarios") state.usuarios = Array.isArray(value) ? value.map(normalizarUsuario) : DEFAULT_USUARIOS;
   if (key === "oxmo:userStats") state.userStats = value || {};
   if (key === "oxmo:avisos") state.avisos = Array.isArray(value) ? value : [];
@@ -4263,6 +4267,252 @@ function bindSilos() {
       render();
     }
   });
+}
+
+// --- Ajustes finales 2026-06-14: etiquetas autoajustables, Infodia persistente y matriz de mezclas ---
+function etiquetaFit(id) {
+  const len = String(id || "").length;
+  if (len > 28) return { idPt: 12, idMaxMm: 15, qrMm: 25 };
+  if (len > 22) return { idPt: 14, idMaxMm: 17, qrMm: 27 };
+  if (len > 16) return { idPt: 17, idMaxMm: 19, qrMm: 29 };
+  return { idPt: 23, idMaxMm: 22, qrMm: 32 };
+}
+
+function etiquetaCSS(publicMode = false) {
+  return `<style>
+    @page{size:100mm 150mm;margin:0}
+    *{box-sizing:border-box}
+    body{margin:0;background:${publicMode ? "#f4f6f8" : "#eee"};font-family:Arial,Helvetica,sans-serif;color:#111}
+    .no-print{position:fixed;right:12px;top:12px;z-index:5}.no-print button{font-weight:900;font-size:13px;padding:8px 12px}
+    .public-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:10px}
+    .label-page{width:100mm;height:150mm;page-break-after:always;display:flex;align-items:center;justify-content:center;padding:3.5mm;background:#fff}
+    .label{width:92mm;height:142mm;border:1.2mm solid #111;border-radius:3mm;padding:5mm;display:flex;flex-direction:column;overflow:hidden;background:#fff}
+    .top{display:grid;grid-template-columns:39mm 1fr;gap:3mm;align-items:start;border-bottom:.45mm solid #111;padding-bottom:3mm;flex:0 0 auto}
+    .logo{width:36mm;max-height:20mm;object-fit:contain;object-position:left center}
+    .brand{text-align:right}.brand b{font-size:11pt;letter-spacing:2.2pt}.brand small{display:block;font-size:7pt;margin-top:1.5mm}
+    .lot-id{font-family:Consolas,'Courier New',monospace;font-weight:900;line-height:1.05;text-align:center;letter-spacing:.5pt;overflow-wrap:anywhere;word-break:break-word;display:flex;align-items:center;justify-content:center;margin:3mm 0 2.3mm;flex:0 0 auto}
+    .class-box{border:.45mm solid var(--accent);color:var(--accent);font-weight:900;text-align:center;border-radius:2mm;font-size:16pt;letter-spacing:.7pt;padding:2.2mm 1mm;margin-bottom:2.7mm;flex:0 0 auto}
+    .chem{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2mm;margin-bottom:2.8mm;flex:0 0 auto}
+    .cell{border:.35mm solid #222;border-radius:1.4mm;text-align:center;padding:1.8mm 1mm}.cell small{font-size:6.5pt;font-weight:800;display:block}.cell b{font-family:Consolas,'Courier New',monospace;font-size:13.5pt}
+    .mass{border:.35mm solid #222;border-radius:1.4mm;text-align:center;padding:2mm 1mm;margin-bottom:3mm;flex:0 0 auto}.mass small{font-size:6.5pt;font-weight:800;display:block}.mass b{font-size:12pt}
+    .qr{display:block;margin:auto auto 1mm;object-fit:contain;flex:0 0 auto}
+    .foot{border-top:.35mm solid #111;text-align:center;font-size:6pt;padding-top:1mm;white-space:nowrap;flex:0 0 auto}
+    @media print{body{background:#fff}.no-print{display:none}.label-page{padding:0;margin:0;width:100mm;height:150mm}}
+  </style>`;
+}
+
+function etiquetaLabelHTML(data, qrUrl) {
+  const fit = etiquetaFit(data.id);
+  const accent = data.color || clasificar({ cu: parseNum(data.cu), mo: parseNum(data.mo), s: parseNum(data.s) }).color || "#c87333";
+  const qr = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(qrUrl)}&qzone=1`;
+  return `<section class="label-page">
+    <div class="label" style="--accent:${accent}">
+      <div class="top">
+        <img class="logo" src="./molyb-logo.webp" alt="Molyb">
+        <div class="brand"><b>OXMO CONTROL</b><small>${esc(data.fecha || hoy())}</small></div>
+      </div>
+      <div class="lot-id" style="font-size:${fit.idPt}pt;max-height:${fit.idMaxMm}mm">${esc(data.id || "SIN ID")}</div>
+      <div class="class-box">${esc(String(data.mat || "SIN CLASIFICAR").toUpperCase())}</div>
+      <div class="chem">
+        <div class="cell"><small>CU</small><b>${esc(data.cu || "-")}%</b></div>
+        <div class="cell"><small>MO</small><b>${esc(data.mo || "-")}%</b></div>
+        <div class="cell"><small>S</small><b>${esc(data.s || "-")}%</b></div>
+      </div>
+      <div class="mass"><small>MASA</small><b>${esc(data.masa || "-")}</b></div>
+      <img class="qr" style="width:${fit.qrMm}mm;height:${fit.qrMm}mm" src="${qr}" alt="QR ${esc(data.id)}">
+      <div class="foot">Zebra ZT230 - Etiqueta 100 x 150 mm - 300 dpi</div>
+    </div>
+  </section>`;
+}
+
+function etiquetaPublicaHTML(data) {
+  if (!data || !data.id) return `<style>body{font-family:Arial;background:#f4f6f8;padding:30px}</style><h1>Etiqueta no encontrada</h1><p>El QR no trae datos suficientes para reconstruir la etiqueta.</p>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Etiqueta ${esc(data.id)}</title>${etiquetaCSS(true)}</head><body><div class="public-wrap">${etiquetaLabelHTML(data, location.href)}</div></body></html>`;
+}
+
+function printLabels() {
+  const ids = state.etiquetaSel || [];
+  if (!ids.length) return;
+  const items = ids.map(id => {
+    const l = state.lotes.find(x => x.id === id);
+    if (!l) return "";
+    const c = clasificar(l);
+    const data = {
+      id: l.id,
+      mat: c.clase,
+      color: c.color,
+      masa: kgToTon(l.masa, 2),
+      cu: l.cu ? fmt(l.cu, 3).replace(/\.?0+$/, "") : "-",
+      mo: l.mo ? fmt(l.mo, 3).replace(/\.?0+$/, "") : "-",
+      s: l.s ? fmt(l.s, 4).replace(/\.?0+$/, "") : "-",
+      fecha: l.fecha || hoy(),
+    };
+    const labelParams = new URLSearchParams(data);
+    const qrUrl = `${PUBLIC_APP_URL}etiqueta.html?${labelParams.toString()}`;
+    return etiquetaLabelHTML(data, qrUrl);
+  }).join("");
+  const w = window.open("", "_blank");
+  if (!w) { alert("Permite ventanas emergentes para abrir la vista previa de etiquetas."); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas OXMO</title>${etiquetaCSS()}</head><body><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div>${items}</body></html>`);
+  w.document.close();
+}
+
+function mezclaScoreEstado(st, objetivo) {
+  if (!st.sacks) return Infinity;
+  const cu = st.cuMass / st.sacks;
+  const mo = st.moMass / st.sacks;
+  const s = st.sMass / st.sacks;
+  const masaKg = st.sacks * 1000;
+  const cuBand = Math.max(0.012, Math.abs(objetivo.cu) * 0.035);
+  const moBand = 0.10;
+  const sBand = Math.max(0.0012, Math.abs(objetivo.s) * 0.20);
+  const cuNorm = Math.abs(cu - objetivo.cu) / cuBand;
+  const moShort = Math.max(0, objetivo.mo - mo);
+  const moNorm = (moShort / moBand) + Math.abs(mo - objetivo.mo) / 6;
+  const sOver = Math.max(0, s - objetivo.s);
+  const sNorm = (sOver / sBand) + Math.abs(s - objetivo.s) / 0.07;
+  const classPenalty = (objetivo.cu > 0.5) === (cu > 0.5) ? 0 : 20;
+  const massPenalty = Math.abs(masaKg - objetivo.masa) / 1000 * 7;
+  return cuNorm * 22 + moNorm * 10 + sNorm * 15 + classPenalty + massPenalty - st.fueraSacks * 0.08;
+}
+
+function estadoAMezcla(st, objetivo) {
+  const items = st.items.map(x => ({ lote: x.lote, kg: x.sacks * 1000 }));
+  const mix = mezclaDe(items);
+  const diffKg = Math.abs(mix.masaKg - objetivo.masa);
+  const cuDiff = Math.abs(mix.cu - objetivo.cu);
+  const moShort = Math.max(0, objetivo.mo - mix.mo);
+  const sOver = Math.max(0, mix.s - objetivo.s);
+  const fueraKg = items.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + x.kg, 0);
+  const exacta = diffKg < 0.001;
+  const cumpleObjetivo = exacta && cuDiff <= 0.035 && moShort <= 0 && sOver <= 0;
+  const score = mezclaScoreEstado(st, objetivo);
+  mix.ok = cumpleObjetivo;
+  return { items, mix, score, chemPenalty: score, diffKg, fueraKg, exacta, cumpleObjetivo, cuDiff, moShort, sOver };
+}
+
+function recortarBeam(lista, objetivo, limite = 80) {
+  const seen = new Set();
+  return lista
+    .sort((a, b) => mezclaScoreEstado(a, objetivo) - mezclaScoreEstado(b, objetivo))
+    .filter(st => {
+      const firma = st.items.map(x => `${x.lote.id}:${x.sacks}`).sort().join("|");
+      if (seen.has(firma)) return false;
+      seen.add(firma);
+      return true;
+    })
+    .slice(0, limite);
+}
+
+function evaluarMezclaObjetivo(items, objetivo, firmas, opciones) {
+  if (!items.length || items.some(x => x.kg <= 0)) return;
+  const sacks = items.reduce((a, x) => a + Math.round(x.kg / 1000), 0);
+  if (!sacks || sacks > 40) return;
+  const st = {
+    items: items.map(x => ({ lote: x.lote, sacks: Math.round(x.kg / 1000) })),
+    sacks,
+    cuMass: items.reduce((a, x) => a + Number(x.lote.cu || 0) * Math.round(x.kg / 1000), 0),
+    moMass: items.reduce((a, x) => a + Number(x.lote.mo || 0) * Math.round(x.kg / 1000), 0),
+    sMass: items.reduce((a, x) => a + Number(x.lote.s || 0) * Math.round(x.kg / 1000), 0),
+    fueraSacks: items.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + Math.round(x.kg / 1000), 0),
+  };
+  const op = estadoAMezcla(st, objetivo);
+  const firma = op.items.map(x => `${x.lote.id}:${Math.round(x.kg)}`).sort().join("|");
+  if (firmas.has(firma)) return;
+  firmas.add(firma);
+  opciones.push(op);
+}
+
+function buscarMejoresMezclas2() {
+  const objetivo = objetivoMezcla();
+  const selectedIds = new Set(state.mix.sel || []);
+  const inventario = state.lotes
+    .filter(l => hasAnalysis(l) && l.estado !== "Pendiente" && Number(l.masa || 0) >= 1000)
+    .filter(l => state.mix.sector === "Todos" || l.sector === state.mix.sector)
+    .map(l => ({ ...l, sacks: Math.min(40, Math.floor(Number(l.masa || 0) / 1000)) }))
+    .filter(l => l.sacks > 0);
+  const selected = selectedIds.size ? inventario.filter(l => selectedIds.has(l.id)) : [];
+  const targetHigh = objetivo.cu > 0.5;
+  const relevancia = l => {
+    const clase = clasificar(l).clase;
+    return Math.abs(Number(l.cu || 0) - objetivo.cu) * 180
+      + Math.max(0, objetivo.mo - Number(l.mo || 0)) * 5
+      + Math.max(0, Number(l.s || 0) - objetivo.s) * 450
+      + ((Number(l.cu || 0) > 0.5) === targetHigh ? 0 : 12)
+      - (clase === "Fuera Esp" ? 3 : 0);
+  };
+  const pool = [...(selected.length ? selected : inventario)]
+    .sort((a, b) => relevancia(a) - relevancia(b))
+    .slice(0, selected.length ? 30 : 24);
+  const maxSacks = Math.min(40, Math.max(1, Math.round(objetivo.masa / 1000)));
+  let beams = Array.from({ length: maxSacks + 1 }, () => []);
+  beams[0] = [{ items: [], sacks: 0, cuMass: 0, moMass: 0, sMass: 0, fueraSacks: 0 }];
+
+  for (const lote of pool) {
+    const next = beams.map(arr => arr.slice());
+    for (let used = 0; used <= maxSacks; used++) {
+      for (const st of beams[used]) {
+        const maxAdd = Math.min(lote.sacks, maxSacks - used);
+        for (let q = 1; q <= maxAdd; q++) {
+          const ns = used + q;
+          next[ns].push({
+            items: [...st.items, { lote, sacks: q }],
+            sacks: ns,
+            cuMass: st.cuMass + Number(lote.cu || 0) * q,
+            moMass: st.moMass + Number(lote.mo || 0) * q,
+            sMass: st.sMass + Number(lote.s || 0) * q,
+            fueraSacks: st.fueraSacks + (clasificar(lote).clase === "Fuera Esp" ? q : 0),
+          });
+        }
+      }
+    }
+    beams = next.map(arr => recortarBeam(arr, objetivo, 90));
+  }
+
+  const ordenMasas = [maxSacks];
+  for (let d = 1; d <= 5; d++) {
+    if (maxSacks - d >= 1) ordenMasas.push(maxSacks - d);
+    if (maxSacks + d <= beams.length - 1) ordenMasas.push(maxSacks + d);
+  }
+  const opciones = ordenMasas.flatMap(s => beams[s] || []).map(st => estadoAMezcla(st, objetivo));
+  const exactas = opciones.filter(o => o.exacta);
+  const base = exactas.length ? exactas : opciones;
+  const seen = new Set();
+  return base
+    .sort((a, b) =>
+      a.cuDiff - b.cuDiff ||
+      a.moShort - b.moShort ||
+      a.sOver - b.sOver ||
+      a.diffKg - b.diffKg ||
+      a.score - b.score ||
+      b.fueraKg - a.fueraKg
+    )
+    .filter(o => {
+      const firma = o.items.map(x => `${x.lote.id}:${Math.round(x.kg)}`).sort().join("|");
+      if (seen.has(firma)) return false;
+      seen.add(firma);
+      return true;
+    })
+    .slice(0, 10);
+}
+
+function mezclaOpcionHTML(op, idx) {
+  const color = C.green;
+  const estado = op.cumpleObjetivo ? "CUMPLE" : (op.exacta ? "MAS CERCANA" : `APROX. ${(op.diffKg / 1000).toFixed(1)} t`);
+  const masaInfo = op.exacta
+    ? `Masa exacta: ${(op.mix.masaKg / 1000).toFixed(2)} t`
+    : `Masa aproximada: ${(op.mix.masaKg / 1000).toFixed(2)} t - diferencia ${(op.diffKg / 1000).toFixed(2)} t`;
+  return `<div class="card" style="border-left:4px solid ${color};margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div>
+        <b style="color:${color}">Opcion ${idx + 1} - ${op.mix.clase}</b>
+        <div style="color:var(--txt2);font-size:10px">${masaInfo}</div>
+        <div style="color:var(--txt2);font-size:10px">Diferencia Cu: ${op.cuDiff.toFixed(3)} · Fuera de especificacion usado: ${(op.fueraKg / 1000).toFixed(2)} t</div>
+      </div>
+      <div class="mono" style="font-weight:900;color:${op.cumpleObjetivo ? C.green : C.yellow}">${estado}</div>
+    </div>
+    ${mezclaDetalleHTML(op)}
+  </div>`;
 }
 
 syncInventarioACP();
