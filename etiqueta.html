@@ -13,26 +13,21 @@
         font-family: Arial, sans-serif;
         color: #111;
       }
-      .wrap {
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 18px;
-      }
+      .wrap { min-height: 100vh; display: grid; place-items: center; padding: 12px; }
       .label-page {
         width: 100mm;
         height: 150mm;
-        padding: 4mm;
+        padding: 2mm;
         background: #fff;
         box-shadow: 0 12px 34px #0003;
         overflow: hidden;
       }
       .label {
-        width: 92mm;
-        height: 142mm;
+        width: 96mm;
+        height: 146mm;
         border: 1mm solid #111;
         border-radius: 3mm;
-        padding: 4.5mm;
+        padding: 4mm 5mm 2.6mm;
         display: flex;
         flex-direction: column;
         overflow: hidden;
@@ -43,10 +38,11 @@
         gap: 4mm;
         align-items: flex-start;
         border-bottom: .45mm solid #111;
-        padding-bottom: 2.5mm;
+        padding-bottom: 2mm;
       }
       header img {
-        width: 28mm;
+        width: 38mm;
+        max-height: 14mm;
         height: auto;
         object-fit: contain;
       }
@@ -67,37 +63,39 @@
         display: flex;
         flex-direction: column;
         align-items: stretch;
-        padding-top: 3mm;
+        padding-top: 2mm;
         min-height: 0;
       }
       .lot-id {
         font-family: Consolas, monospace;
-        font-size: 24pt;
+        font-size: clamp(14pt, var(--id-size, 22pt), 22pt);
         font-weight: 900;
         text-align: center;
-        line-height: 1;
-        margin-bottom: 2.5mm;
+        line-height: 1.02;
+        margin-bottom: 2.2mm;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
       .material {
         border: .55mm solid var(--accent);
         color: var(--accent);
         border-radius: 2mm;
-        padding: 2mm;
+        padding: 1.7mm;
         font-size: 14pt;
         font-weight: 900;
         text-align: center;
-        margin-bottom: 3mm;
+        margin-bottom: 2.5mm;
       }
       .chem {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 2mm;
-        margin-bottom: 3mm;
+        margin-bottom: 2.5mm;
       }
       .chem div, .meta div {
         border: .35mm solid #222;
         border-radius: 1.5mm;
-        padding: 1.8mm;
+        padding: 1.5mm;
         text-align: center;
       }
       .chem b, .meta b {
@@ -116,25 +114,26 @@
         display: grid;
         grid-template-columns: 1fr;
         gap: 2mm;
-        margin-bottom: 3mm;
+        margin-bottom: 2.2mm;
       }
       .meta span {
         font-size: 10pt;
         font-weight: 800;
       }
       .qr {
-        width: 34mm;
-        height: 34mm;
+        width: var(--qr-size, 29mm);
+        height: var(--qr-size, 29mm);
         align-self: center;
         image-rendering: pixelated;
-        margin-top: 1mm;
+        margin-top: 0;
+        margin-bottom: .5mm;
         flex: 0 0 auto;
       }
       footer {
         border-top: .35mm solid #111;
         margin-top: auto;
-        padding-top: 1.5mm;
-        font-size: 6pt;
+        padding-top: .7mm;
+        font-size: 5.5pt;
         text-align: center;
         color: #555;
       }
@@ -176,11 +175,14 @@
       } else {
         const qrData = encodeURIComponent(location.href);
         document.documentElement.style.setProperty("--accent", data.color);
+        const idLen = String(data.id || "").length;
+        document.documentElement.style.setProperty("--qr-size", idLen > 24 ? "25mm" : idLen > 18 ? "27mm" : "29mm");
+        document.documentElement.style.setProperty("--id-size", idLen > 24 ? "14pt" : idLen > 18 ? "16pt" : "22pt");
         document.querySelector("#root").innerHTML = `<div class="wrap">
           <section class="label-page">
             <div class="label">
               <header>
-                <img src="./molyb-logo.jpg" alt="Molyb" />
+                <img src="./molyb-logo.webp" alt="Molyb" />
                 <div>
                   <div class="system">OXMO CONTROL</div>
                   <div class="date">${esc(data.fecha)}</div>
