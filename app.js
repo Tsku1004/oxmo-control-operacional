@@ -5276,9 +5276,12 @@ bindAdmin = function() {
 
 
 /* =========================================================
-   GERENTE_DASHBOARD_V2_20260626
-   Dashboard ejecutivo renovado para perfil Gerente.
-   Mezcla estilo panel industrial + ejecutivo con datos reales.
+   GERENTE_DASHBOARD_V3_20260626
+   Dashboard ejecutivo suave para perfil Gerente.
+   Incluye calendario, reloj e indicador de nube.
+   La tendencia usa calcularProduccionDiariaGerencial(), preparada
+   para el cálculo futuro: cargado a silo + descarga - retorno,
+   ponderado por %Mo y densidad del material.
    ========================================================= */
 function isGerente(user = state.user) {
   return String(user?.rol || "").trim().toLowerCase() === "gerente";
@@ -5288,92 +5291,68 @@ function gerenteNumber(n, d = 1) {
   const num = Number(n || 0);
   return num.toLocaleString("es-CL", { minimumFractionDigits: d, maximumFractionDigits: d });
 }
-
-function gerenteInt(n) {
-  return Number(n || 0).toLocaleString("es-CL", { maximumFractionDigits: 0 });
-}
-
+function gerenteInt(n) { return Number(n || 0).toLocaleString("es-CL", { maximumFractionDigits: 0 }); }
 function gerentePct(value, max) {
   const v = Number(value || 0);
   const m = Math.max(Number(max || 0), 1);
   return Math.max(0, Math.min(100, (v / m) * 100));
 }
-
 function gerenteDateShort(fecha) {
   const s = String(fecha || "");
-  if (!s) return "-";
   const [y, m, d] = s.split("-");
-  return y && m && d ? `${d}-${m}` : s.slice(0, 5);
+  return y && m && d ? `${d}-${m}` : (s || "-");
 }
-
 function gerenteCloudLabel() {
-  if (cloud.status === "ready") return "NUBE: SINCRONIZADO";
-  if (cloud.status === "syncing") return "NUBE: SINCRONIZANDO";
-  if (cloud.status === "error") return "NUBE: ERROR";
-  if (cloud.ready) return "NUBE: EN LÍNEA";
+  if (cloud.status === "error nube" || cloud.status === "error") return "NUBE: ERROR";
+  if (cloud.ready || String(cloud.status || "").toLowerCase().includes("sincron")) return "NUBE: SINCRONIZADO";
   return "MODO LOCAL";
 }
-
 function gerenteCloudClass() {
-  if (cloud.status === "error") return "danger";
-  if (cloud.status === "syncing") return "warn";
-  if (cloud.status === "ready" || cloud.ready) return "ok";
+  if (cloud.status === "error nube" || cloud.status === "error") return "danger";
+  if (cloud.ready || String(cloud.status || "").toLowerCase().includes("sincron")) return "ok";
   return "muted";
 }
 
-function gerenteBuildAlerts({ lotes, fuera, pendientesAnalisis, silos, totals, masaTotalKg, masaDisponibleKg }) {
+function calcularProduccionDiariaGerencial(day = {}) {
+  // Fórmula base preparada para la función operacional definitiva:
+  // producción diaria estimada = (cargado a silo + descarga - retorno) * densidad material
+  // fino Mo estimado = producción diaria estimada * (%Mo / 100)
+  const cargadoASiloT = Number(day.cargadoASiloT ?? day.cargaSiloT ?? day.llenadoT ?? day.cargadoT ?? 0);
+  const descargaT = Number(day.descargaT ?? day.descargaSiloT ?? 0);
+  const retornoT = Number(day.retornoT ?? day.retornoSiloT ?? 0);
+  const densidadMaterial = Number(day.densidadMaterial ?? day.densidad ?? 1) || 1;
+  let moPct = Number(day.moPct ?? day.moProm ?? day.mo ?? 0);
+  if (!moPct && Number(day.produccionKg || 0) > 0 && Number(day.kgMo || 0) > 0) {
+    moPct = (Number(day.kgMo || 0) / Number(day.produccionKg || 0)) * 100;
+  }
+  const movimientoBaseT = Math.max(0, cargadoASiloT + descargaT - retornoT);
+  const produccionDiariaT = movimientoBaseT > 0
+    ? movimientoBaseT * densidadMaterial
+    : Number(day.produccionKg || 0) / 1000;
+  const finoMoEstimadoT = moPct > 0 ? produccionDiariaT * (moPct / 100) : Number(day.kgMo || 0) / 1000;
+  return {
+    fecha: day.fecha || "",
+    cargadoASiloT,
+    descargaT,
+    retornoT,
+    densidadMaterial,
+    moPct,
+    produccionDiariaT,
+    finoMoEstimadoT,
+  };
+}
+
+function gerenteBuildAlerts({ fuera, pendientesAnalisis, masaTotalKg, masaDisponibleKg }) {
   const alerts = [];
-  (silos || []).filter(s => Number(s.value || 0) >= 90).slice(0, 2).forEach(s => {
-    alerts.push({
-      level: "danger",
-      title: `${s.label} sobre 90% de capacidad`,
-      text: `Nivel actual ${gerenteNumber(s.value, 1)}% · revisar descarga o redistribución.`,
-      when: "Ahora",
-    });
-  });
   if ((fuera || []).length) {
     const masaFuera = fuera.reduce((a, l) => a + Number(l.masa || 0), 0);
-    alerts.push({
-      level: "warn",
-      title: `${fuera.length} lote(s) fuera de especificación`,
-      text: `Masa comprometida: ${kgToTon(masaFuera, 2)}. Priorizar revisión química y mezcla.`,
-      when: "Hoy",
-    });
+    alerts.push({ level: "warn", title: `${fuera.length} lote(s) fuera de especificación`, text: `Masa comprometida: ${kgToTon(masaFuera, 2)}. Priorizar revisión química y plan de recuperación.`, when: "Hoy" });
   }
-  if (pendientesAnalisis > 0) {
-    alerts.push({
-      level: "warn",
-      title: `${pendientesAnalisis} lote(s) pendientes de análisis`,
-      text: "La clasificación podría variar cuando se carguen resultados de laboratorio.",
-      when: "Lab",
-    });
-  }
-  if (Number(totals?.descargaT || 0) > Number(totals?.llenadoT || 0) * 1.15 && Number(totals?.llenadoT || 0) > 0) {
-    alerts.push({
-      level: "info",
-      title: "Descarga de silos sobre el llenado acumulado",
-      text: `Descarga ${gerenteNumber(totals.descargaT, 2)} t vs llenado ${gerenteNumber(totals.llenadoT, 2)} t.`,
-      when: "Infodia",
-    });
-  }
+  if (pendientesAnalisis > 0) alerts.push({ level: "info", title: `${pendientesAnalisis} lote(s) sin análisis`, text: "La clasificación puede cambiar cuando se cargue laboratorio.", when: "Lab" });
   const disponibilidad = masaTotalKg ? (masaDisponibleKg / masaTotalKg) * 100 : 0;
-  if (disponibilidad < 60) {
-    alerts.push({
-      level: "info",
-      title: "Disponibilidad bajo 60%",
-      text: `Inventario disponible en ${gerenteNumber(disponibilidad, 1)}% del total.`,
-      when: "KPI",
-    });
-  }
-  if (!alerts.length) {
-    alerts.push({
-      level: "ok",
-      title: "Sin alertas críticas",
-      text: "Los principales indicadores se encuentran dentro de los rangos definidos.",
-      when: "Ahora",
-    });
-  }
-  return alerts.slice(0, 5);
+  if (disponibilidad < 60) alerts.push({ level: "info", title: "Disponibilidad bajo 60%", text: `Inventario disponible en ${gerenteNumber(disponibilidad, 1)}% del total.`, when: "KPI" });
+  if (!alerts.length) alerts.push({ level: "ok", title: "Sin alertas críticas", text: "Los indicadores ejecutivos se mantienen dentro del rango esperado.", when: "Ahora" });
+  return alerts.slice(0, 4);
 }
 
 function gerenteDashboardData() {
@@ -5389,33 +5368,28 @@ function gerenteDashboardData() {
   const claseMap = { "Bajo Cobre": [], "Alto Cobre": [], "Fuera Esp": [], "Pendiente": [] };
   lotes.forEach(l => {
     const cl = hasAnalysis(l) ? clasificar(l).clase : "Pendiente";
-    if (!claseMap[cl]) claseMap[cl] = [];
-    claseMap[cl].push(l);
+    (claseMap[cl] || claseMap["Pendiente"]).push(l);
   });
   const classRows = [
     { label: "Bajo Cobre", color: C.cyan, lots: claseMap["Bajo Cobre"] || [] },
     { label: "Alto Cobre", color: C.green, lots: claseMap["Alto Cobre"] || [] },
     { label: "Fuera Esp", color: C.copper, lots: claseMap["Fuera Esp"] || [] },
-    { label: "Pendiente", color: "#92a5bf", lots: claseMap["Pendiente"] || [] },
-  ].map(r => ({
-    ...r,
-    masaKg: r.lots.reduce((a, l) => a + Number(l.masa || 0), 0),
-    count: r.lots.length,
-  }));
+    { label: "Pendiente", color: "#9aacc2", lots: claseMap["Pendiente"] || [] },
+  ].map(r => ({ ...r, masaKg: r.lots.reduce((a, l) => a + Number(l.masa || 0), 0), count: r.lots.length }));
   const fuera = classRows.find(r => r.label === "Fuera Esp")?.lots || [];
-
   const info = state.infodia || {};
   const days = [...(info.days || [])].sort((a, b) => fechaOrdenMs(a.fecha) - fechaOrdenMs(b.fecha));
   const totals = info.totals || recalcularTotalesInfodia(days);
-  const trend30 = days.slice(-30).map(d => ({
-    fecha: d.fecha,
-    produccionT: Number(d.produccionKg || 0) / 1000,
-    consumoT: Number(d.descargaT || 0),
-    llenadoT: Number(d.llenadoT || 0),
-    finoMoT: Number(d.kgMo || 0) / 1000,
-  }));
-  const prod7 = trend30.slice(-7).map(d => ({ label: d.fecha, value: d.produccionT }));
-
+  const trend30 = days.slice(-30).map(d => {
+    const calc = calcularProduccionDiariaGerencial(d);
+    return {
+      fecha: d.fecha,
+      produccionDiariaT: calc.produccionDiariaT,
+      finoMoEstimadoT: calc.finoMoEstimadoT,
+      consumoT: Number(d.descargaT || 0),
+      ritmoInvT: Math.max(0, Number(calc.cargadoASiloT || 0) - Number(calc.retornoT || 0)),
+    };
+  });
   const sectores = allSectores().map(s => {
     const rows = lotes.filter(l => l.sector === s);
     const masaKg = rows.reduce((a, l) => a + Number(l.masa || 0), 0);
@@ -5425,58 +5399,12 @@ function gerenteDashboardData() {
     const sAvg = analyzedRows.length ? analyzedRows.reduce((a, l) => a + Number(l.s || 0), 0) / analyzedRows.length : 0;
     return { label: s, rows, masaKg, masaT: masaKg / 1000, count: rows.length, cuAvg, moAvg, sAvg };
   }).filter(x => x.count > 0 || x.masaKg > 0).sort((a, b) => b.masaKg - a.masaKg);
-
-  const estados = ["Disponible", "Pendiente", "Bloqueado", "Fuera Esp"].map(e => ({
-    label: e,
-    count: lotes.filter(l => l.estado === e).length,
-    masaKg: lotes.filter(l => l.estado === e).reduce((a, l) => a + Number(l.masa || 0), 0),
-  })).filter(x => x.count > 0 || x.masaKg > 0).map(x => ({ ...x, masaT: x.masaKg / 1000 }));
-
-  const silos = sortedSiloEntries().map(([id, s]) => ({
-    label: id,
-    value: Number(s.nivel || 0),
-    masaT: Number(s.masa || 0),
-  })).slice(0, 8);
-
   const cumplimiento = analizados.length ? ((analizados.length - fuera.length) / analizados.length) * 100 : 100;
   const masaFueraKg = fuera.reduce((a, l) => a + Number(l.masa || 0), 0);
-  const masaAltaCuKg = classRows.find(r => r.label === "Alto Cobre")?.masaKg || 0;
-  const masaBajaCuKg = classRows.find(r => r.label === "Bajo Cobre")?.masaKg || 0;
-
-  const alerts = gerenteBuildAlerts({
-    lotes,
-    fuera,
-    pendientesAnalisis,
-    silos,
-    totals,
-    masaTotalKg,
-    masaDisponibleKg,
-  });
-
+  const alerts = gerenteBuildAlerts({ fuera, pendientesAnalisis, masaTotalKg, masaDisponibleKg });
   return {
-    lotes,
-    disp,
-    retenidos,
-    fuera,
-    masaTotalKg,
-    masaDisponibleKg,
-    masaRetenidaKg,
-    finoMoKg,
-    info,
-    days,
-    totals,
-    trend30,
-    prod7,
-    sectores,
-    estados,
-    silos,
-    classRows,
-    alerts,
-    cumplimiento,
-    pendientesAnalisis,
-    masaFueraKg,
-    masaAltaCuKg,
-    masaBajaCuKg,
+    lotes, disp, retenidos, fuera, masaTotalKg, masaDisponibleKg, masaRetenidaKg, finoMoKg,
+    info, days, totals, trend30, sectores, classRows, cumplimiento, pendientesAnalisis, masaFueraKg, alerts,
     updatedAt: new Date().toLocaleString("es-CL"),
     lastDate: trend30.at(-1)?.fecha || (days.at(-1)?.fecha || "Sin Infodia"),
   };
@@ -5485,368 +5413,142 @@ function gerenteDashboardData() {
 function gerenteSpark(values, color = C.blueLight) {
   const data = (values || []).map(v => Number(v || 0));
   if (!data.length) return "";
-  const max = Math.max(...data, 1);
-  const min = Math.min(...data, 0);
-  const w = 260, h = 46;
+  const max = Math.max(...data, 1), min = Math.min(...data, 0), w = 240, h = 42;
   const range = Math.max(max - min, 1);
   const pts = data.map((v, i) => {
     const x = (i / Math.max(data.length - 1, 1)) * w;
     const y = h - ((v - min) / range) * (h - 6) - 3;
     return `${x.toFixed(2)},${y.toFixed(2)}`;
   }).join(" ");
-  return `<svg class="exec-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></polyline>
-  </svg>`;
+  return `<svg class="exec-soft-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`;
 }
 
-function gerenteKpiHTML(label, value, sub, color = C.blueLight, sparkValues = []) {
-  return `<div class="exec2-kpi" style="--accent:${color}">
-    <div class="exec2-kpi-top">
-      <div class="exec2-kpi-label">${esc(label)}</div>
-      <div class="exec2-kpi-icon"></div>
-    </div>
-    <div class="exec2-kpi-value">${esc(value)}</div>
-    <div class="exec2-kpi-sub">${esc(sub || "")}</div>
-    ${sparkValues.length ? `<div class="exec2-kpi-spark">${gerenteSpark(sparkValues, color)}</div>` : ``}
+function gerenteKpiHTML(label, value, sub, color = C.blueLight, icon = "◆", sparkValues = []) {
+  return `<div class="exec-soft-kpi" style="--accent:${color}">
+    <div class="exec-soft-kpi-head"><div class="exec-soft-icon">${icon}</div><div class="exec-soft-kpi-label">${esc(label)}</div></div>
+    <div class="exec-soft-kpi-value">${esc(value)}</div>
+    <div class="exec-soft-kpi-sub">${esc(sub || "")}</div>
+    <div class="exec-soft-kpi-spark">${sparkValues.length ? gerenteSpark(sparkValues, color) : ""}</div>
   </div>`;
 }
 
 function gerenteChartSVG(rows) {
-  if (!(rows || []).length) return `<div class="exec-empty">Sin datos de Infodia para construir la tendencia.</div>`;
-  const w = 760, h = 310, pad = 34;
-  const prod = rows.map(r => Number(r.produccionT || 0));
+  if (!(rows || []).length) return `<div class="exec-empty">Sin Infodia para construir producción diaria.</div>`;
+  const w = 760, h = 300, pad = 34;
+  const prod = rows.map(r => Number(r.produccionDiariaT || 0));
   const cons = rows.map(r => Number(r.consumoT || 0));
-  const inv = rows.map((r, i) => rows.slice(Math.max(0, i - 4), i + 1).reduce((a, x) => a + Number(x.produccionT || 0), 0));
-  const max = Math.max(1, ...prod, ...cons, ...inv);
-  const mk = (arr) => arr.map((v, i) => {
-    const x = pad + (i / Math.max(arr.length - 1, 1)) * (w - pad * 2);
-    const y = h - pad - (v / max) * (h - pad * 2);
-    return [x, y];
-  });
-  const prodPts = mk(prod), consPts = mk(cons), invPts = mk(inv);
+  const fino = rows.map(r => Number(r.finoMoEstimadoT || 0));
+  const max = Math.max(1, ...prod, ...cons, ...fino);
+  const mk = arr => arr.map((v, i) => [pad + (i / Math.max(arr.length - 1, 1)) * (w - pad * 2), h - pad - (v / max) * (h - pad * 2)]);
+  const prodPts = mk(prod), consPts = mk(cons), finoPts = mk(fino);
   const line = pts => pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
   const area = pts => `M ${pad} ${h-pad} L ` + pts.map(p => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L ") + ` L ${w-pad} ${h-pad} Z`;
   const grid = Array.from({ length: 5 }, (_, i) => {
     const y = pad + i * ((h - pad * 2) / 4);
     const label = gerenteInt(max * (1 - i / 4));
-    return `<g><line x1="${pad}" y1="${y}" x2="${w-pad}" y2="${y}" stroke="#173152" stroke-width="1" />
-      <text x="6" y="${y + 4}" fill="#6a8faf" font-size="11">${label}</text></g>`;
+    return `<g><line x1="${pad}" y1="${y}" x2="${w-pad}" y2="${y}" stroke="#1b3554" stroke-width="1" stroke-dasharray="4 4"/><text x="6" y="${y+4}" fill="#8aa4bf" font-size="11">${label}</text></g>`;
   }).join("");
-  const xLabels = rows.filter((_, i) => i % Math.ceil(rows.length / 6) === 0 || i === rows.length - 1).map((r, i, arr) => {
+  const xLabels = rows.filter((_, i) => i % Math.ceil(rows.length / 7) === 0 || i === rows.length - 1).map(r => {
     const idx = rows.indexOf(r);
     const x = pad + (idx / Math.max(rows.length - 1, 1)) * (w - pad * 2);
-    return `<text x="${x}" y="${h-8}" text-anchor="middle" fill="#6a8faf" font-size="11">${esc(gerenteDateShort(r.fecha))}</text>`;
+    return `<text x="${x}" y="${h-8}" text-anchor="middle" fill="#8aa4bf" font-size="11">${esc(gerenteDateShort(r.fecha))}</text>`;
   }).join("");
-  return `<svg class="exec2-chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-    <defs>
-      <linearGradient id="gradProd" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#19c8ff" stop-opacity="0.48"/><stop offset="100%" stop-color="#19c8ff" stop-opacity="0.04"/></linearGradient>
-      <linearGradient id="gradCons" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#47e28f" stop-opacity="0.22"/><stop offset="100%" stop-color="#47e28f" stop-opacity="0.02"/></linearGradient>
-    </defs>
-    ${grid}
-    <path d="${area(prodPts)}" fill="url(#gradProd)" stroke="none"></path>
-    <path d="${area(consPts)}" fill="url(#gradCons)" stroke="none"></path>
+  return `<svg class="exec-soft-chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <defs><linearGradient id="softProd" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#19c8ff" stop-opacity="0.40"/><stop offset="100%" stop-color="#19c8ff" stop-opacity="0.02"/></linearGradient><linearGradient id="softCons" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#00e5a0" stop-opacity="0.22"/><stop offset="100%" stop-color="#00e5a0" stop-opacity="0.02"/></linearGradient></defs>
+    ${grid}<path d="${area(prodPts)}" fill="url(#softProd)"></path><path d="${area(consPts)}" fill="url(#softCons)"></path>
     <polyline points="${line(prodPts)}" fill="none" stroke="#19c8ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
-    <polyline points="${line(consPts)}" fill="none" stroke="#47e28f" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"></polyline>
-    <polyline points="${line(invPts)}" fill="none" stroke="#5fa2ff" stroke-width="2" stroke-dasharray="6 5" stroke-linecap="round"></polyline>
+    <polyline points="${line(consPts)}" fill="none" stroke="#00e5a0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    <polyline points="${line(finoPts)}" fill="none" stroke="#5fa2ff" stroke-width="2" stroke-dasharray="6 6" stroke-linecap="round"></polyline>
     ${xLabels}
   </svg>`;
 }
 
 function gerenteTrendCardHTML(d) {
-  const rows = d.trend30;
-  return `<div class="exec2-card exec2-span-2">
-    <div class="exec2-card-head">
-      <div>
-        <div class="exec2-card-title">Tendencia operacional</div>
-        <div class="exec2-card-sub">Producción, consumo y ritmo inventario · últimos 30 días</div>
-      </div>
-      <div class="exec2-legend">
-        <span><i style="background:${C.cyan}"></i>Producción (t)</span>
-        <span><i style="background:${C.green}"></i>Consumo (t)</span>
-        <span><i class="line-dash"></i>Ritmo inv.</span>
-      </div>
-    </div>
-    <div class="exec2-chart-wrap">${gerenteChartSVG(rows)}</div>
+  return `<div class="exec-soft-card exec-soft-chart-card">
+    <div class="exec-soft-card-head"><div><div class="exec-soft-card-title">Tendencia operacional</div><div class="exec-soft-card-sub">Producción diaria estimada · consumo · fino Mo estimado</div></div><div class="exec-soft-legend"><span><i style="background:${C.cyan}"></i>Producción diaria</span><span><i style="background:${C.green}"></i>Consumo</span><span><i class="dash"></i>Fino Mo</span></div></div>
+    <div class="exec-soft-chart-wrap">${gerenteChartSVG(d.trend30)}</div>
   </div>`;
 }
 
 function gerenteDonutHTML(d) {
   const total = Math.max(1, d.classRows.reduce((a, r) => a + Number(r.masaKg || 0), 0));
   let acc = 0;
-  const segs = d.classRows.map(r => {
-    const start = (acc / total) * 100;
-    acc += Number(r.masaKg || 0);
-    const end = (acc / total) * 100;
-    return `${r.color} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
-  }).join(', ');
-  return `<div class="exec2-card">
-    <div class="exec2-card-head"><div class="exec2-card-title">Distribución por clasificación</div></div>
-    <div class="exec2-donut-layout">
-      <div class="exec2-donut" style="background:conic-gradient(${segs})">
-        <div class="exec2-donut-hole">
-          <b>${kgToTon(d.masaTotalKg, 1)}</b>
-          <span>Total</span>
-        </div>
-      </div>
-      <div class="exec2-donut-legend">
-        ${d.classRows.map(r => {
-          const pct = d.masaTotalKg ? (r.masaKg / d.masaTotalKg) * 100 : 0;
-          return `<div class="exec2-legend-row"><i style="background:${r.color}"></i><span>${esc(r.label)}</span><b>${kgToTon(r.masaKg, 1)}</b><small>${gerenteNumber(pct, 1)}%</small></div>`;
-        }).join('')}
-      </div>
-    </div>
-  </div>`;
+  const segs = d.classRows.map(r => { const s = (acc / total) * 100; acc += Number(r.masaKg || 0); const e = (acc / total) * 100; return `${r.color} ${s.toFixed(2)}% ${e.toFixed(2)}%`; }).join(', ');
+  return `<div class="exec-soft-card exec-soft-donut-card"><div class="exec-soft-card-head"><div class="exec-soft-card-title">Distribución por clasificación</div></div><div class="exec-soft-donut-layout"><div class="exec-soft-donut" style="background:conic-gradient(${segs})"><div><b>${kgToTon(d.masaTotalKg, 1)}</b><span>Total</span></div></div><div class="exec-soft-donut-legend">${d.classRows.map(r => { const pct = d.masaTotalKg ? (r.masaKg / d.masaTotalKg) * 100 : 0; return `<div><i style="background:${r.color}"></i><span>${esc(r.label)}</span><b>${kgToTon(r.masaKg, 1)}</b><small>${gerenteNumber(pct, 1)}%</small></div>`; }).join('')}</div></div><div class="exec-soft-footnote">ⓘ Valores en toneladas métricas (t)</div></div>`;
 }
 
-function gerenteSectorBarsHTML(rows) {
-  const max = Math.max(1, ...rows.map(r => Number(r.masaT || 0)));
-  return `<div class="exec2-card">
-    <div class="exec2-card-head"><div class="exec2-card-title">Masa por sector</div><div class="exec2-card-sub">Toneladas actuales</div></div>
-    <div class="exec2-hbars">
-      ${rows.length ? rows.slice(0, 7).map(r => `<div class="exec2-hbar-row">
-        <div class="exec2-hbar-head"><span>${esc(r.label)}</span><b>${gerenteNumber(r.masaT, 2)} t</b></div>
-        <div class="exec2-hbar"><span style="--w:${gerentePct(r.masaT, max)}%"></span></div>
-      </div>`).join('') : `<div class="exec-empty">Sin sectores con masa.</div>`}
-    </div>
-  </div>`;
+function gerenteCalendarHTML() {
+  const now = new Date();
+  const monthName = now.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+  const y = now.getFullYear(), m = now.getMonth();
+  const first = new Date(y, m, 1);
+  const last = new Date(y, m + 1, 0).getDate();
+  const start = (first.getDay() + 6) % 7;
+  const cells = Array.from({ length: start }, () => `<span></span>`).concat(Array.from({ length: last }, (_, i) => {
+    const d = i + 1;
+    return `<span class="${d === now.getDate() ? 'active' : ''}">${d}</span>`;
+  })).join('');
+  return `<div class="exec-soft-side-card"><div class="exec-soft-side-title">${esc(monthName.charAt(0).toUpperCase() + monthName.slice(1))}</div><div class="exec-soft-week"><b>Lun</b><b>Mar</b><b>Mié</b><b>Jue</b><b>Vie</b><b>Sáb</b><b>Dom</b></div><div class="exec-soft-cal">${cells}</div></div>`;
 }
 
-function gerenteEstadoLotesHTML(d) {
-  const total = Math.max(1, d.lotes.length);
-  const rows = [
-    { label: 'Conformes', count: d.classRows.filter(r => r.label !== 'Fuera Esp' && r.label !== 'Pendiente').reduce((a, r) => a + r.count, 0), color: C.green },
-    { label: 'Retenidos', count: d.retenidos.length, color: C.yellow },
-    { label: 'Fuera Esp.', count: d.fuera.length, color: C.red },
-    { label: 'Pendiente', count: d.pendientesAnalisis, color: '#92a5bf' },
-  ];
-  let acc = 0;
-  const segs = rows.map(r => {
-    const start = (acc / total) * 100;
-    acc += Number(r.count || 0);
-    const end = (acc / total) * 100;
-    return `${r.color} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
-  }).join(', ');
-  return `<div class="exec2-card">
-    <div class="exec2-card-head"><div class="exec2-card-title">Estado de lotes</div></div>
-    <div class="exec2-mini-donut-wrap">
-      <div class="exec2-mini-donut" style="background:conic-gradient(${segs})"><div class="exec2-mini-hole"><b>${gerenteInt(total)}</b><span>Lotes</span></div></div>
-      <div class="exec2-mini-list">
-        ${rows.map(r => `<div class="exec2-mini-row"><i style="background:${r.color}"></i><span>${r.label}</span><b>${gerenteInt(r.count)}</b><small>${gerenteNumber((r.count/total)*100,1)}%</small></div>`).join('')}
-      </div>
-    </div>
-  </div>`;
-}
-
-function gerenteGaugeHTML(value) {
-  const v = Math.max(0, Math.min(100, Number(value || 0)));
-  return `<div class="exec2-card">
-    <div class="exec2-card-head"><div class="exec2-card-title">Cumplimiento de especificación</div></div>
-    <div class="exec2-gauge-wrap">
-      <div class="exec2-gauge"><span style="--v:${v}%"></span></div>
-      <div class="exec2-gauge-value">${gerenteNumber(v, 1)}%</div>
-      <div class="exec2-card-sub">Lotes analizados que no están fuera de especificación</div>
-    </div>
-  </div>`;
-}
-
-function gerenteFinoMoHTML(d) {
-  const meta = 9500;
-  const actual = Number(d.totals.kgMo || d.finoMoKg || 0) / 1000;
-  const pct = meta ? Math.min(100, (actual / meta) * 100) : 0;
-  const spark = d.trend30.slice(-12).map(x => x.finoMoT || 0);
-  return `<div class="exec2-card">
-    <div class="exec2-card-title">Fino Mo acumulado</div>
-    <div class="exec2-big-number">${gerenteNumber(actual, 1)} t</div>
-    <div class="exec2-card-sub">Meta anual: ${gerenteInt(meta)} t · avance ${gerenteNumber(pct, 1)}%</div>
-    <div class="exec2-progress"><span style="--w:${pct}%"></span></div>
-    <div class="exec2-mini-spark">${gerenteSpark(spark, C.blueLight)}</div>
-  </div>`;
-}
-
-function gerenteSilosHTML(rows) {
-  return `<div class="exec2-card exec2-span-2">
-    <div class="exec2-card-head"><div class="exec2-card-title">Niveles de silos</div><div class="exec2-card-sub">Porcentaje de capacidad</div></div>
-    <div class="exec2-silos-grid">
-      ${rows.length ? rows.map(r => `<div class="exec2-silo-card">
-        <div class="exec2-silo-name">${esc(r.label)}</div>
-        <div class="exec2-silo-pct">${gerenteNumber(r.value, 0)}%</div>
-        <div class="exec2-silo-graphic"><span style="--h:${Math.max(4, Math.min(100, Number(r.value || 0)))}%;--accent:${Number(r.value || 0) >= 90 ? C.red : Number(r.value || 0) >= 70 ? C.yellow : C.green}"></span></div>
-        <div class="exec2-silo-masa">${gerenteNumber(r.masaT || 0, 2)} t</div>
-      </div>`).join('') : `<div class="exec-empty">Sin niveles de silos cargados.</div>`}
-    </div>
-  </div>`;
-}
-
-function gerenteResumenTableHTML(rows) {
-  return `<div class="exec2-card exec2-span-2">
-    <div class="exec2-card-head"><div class="exec2-card-title">Resumen ejecutivo por sector</div></div>
-    <div class="exec2-table-wrap">
-      <table class="exec2-table">
-        <thead><tr><th>Sector</th><th>Lotes</th><th>Masa (t)</th><th>%Cu prom</th><th>%Mo prom</th><th>%S prom</th></tr></thead>
-        <tbody>
-          ${rows.length ? rows.slice(0, 8).map(r => `<tr>
-            <td>${esc(r.label)}</td>
-            <td>${gerenteInt(r.count)}</td>
-            <td>${gerenteNumber(r.masaT, 2)}</td>
-            <td>${gerenteNumber(r.cuAvg, 2)}</td>
-            <td>${gerenteNumber(r.moAvg, 2)}</td>
-            <td>${gerenteNumber(r.sAvg, 3)}</td>
-          </tr>`).join('') : `<tr><td colspan="6" class="exec-empty-cell">Sin sectores registrados.</td></tr>`}
-        </tbody>
-      </table>
-    </div>
-  </div>`;
-}
-
-function gerenteAlertasHTML(rows) {
-  return `<div class="exec2-card">
-    <div class="exec2-card-head"><div class="exec2-card-title">Alertas y observaciones</div></div>
-    <div class="exec2-alerts">
-      ${rows.map(r => `<div class="exec2-alert ${esc(r.level)}">
-        <div class="exec2-alert-main">
-          <strong>${esc(r.title)}</strong>
-          <p>${esc(r.text)}</p>
-        </div>
-        <small>${esc(r.when)}</small>
-      </div>`).join('')}
-    </div>
-  </div>`;
+function gerenteClockHTML() {
+  const now = new Date();
+  return `<div class="exec-soft-side-card exec-soft-clock"><div class="exec-soft-clock-face"><span></span></div><div><b>${esc(now.toLocaleTimeString('es-CL'))}</b><p>${esc(now.toLocaleDateString('es-CL', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }))}</p></div></div>`;
 }
 
 function gerenteDashboardHTML() {
   const d = gerenteDashboardData();
   const disponibilidad = d.masaTotalKg ? (d.masaDisponibleKg / d.masaTotalKg) * 100 : 0;
-  const sparkProd = d.trend30.slice(-12).map(x => x.produccionT || 0);
+  const sparkProd = d.trend30.slice(-12).map(x => x.produccionDiariaT || 0);
   const sparkCons = d.trend30.slice(-12).map(x => x.consumoT || 0);
-  const sparkInv = d.trend30.slice(-12).map(x => x.llenadoT || 0);
-  return `<section class="exec2-dashboard">
-    <div class="exec2-hero box">
-      <div>
-        <div class="exec2-eyebrow">Dashboard gerencial</div>
-        <h1>Resumen ejecutivo OXMO</h1>
-        <p>Vista informativa orientada a gerencia. Consolida inventario, clasificación, silos, producción, consumos y alertas sin exponer la operación técnica detallada.</p>
+  return `<section class="exec-soft-shell">
+    <aside class="exec-soft-sidebar"><div class="exec-soft-logo"><div></div><b>MOLYB</b></div><nav><button class="active">⌂ Resumen</button><button>▣ Inventario</button><button>↗ Producción</button><button>⇣ Consumo</button><button>⚠ Alertas</button><button>▤ Reportes</button></nav><button class="exec-soft-profile" data-tab="perfil">☻ Mi Perfil</button></aside>
+    <main class="exec-soft-main"><div class="exec-soft-top"><div></div><div class="exec-soft-top-actions"><span class="exec-soft-cloud ${gerenteCloudClass()}">${gerenteCloudLabel()}</span><span class="exec-soft-role">Gerente</span><button id="myPassBtn">Mi clave</button><button id="logoutBtn">Salir</button></div></div>
+      <div class="exec-soft-layout">
+        <div class="exec-soft-content">
+          <div class="exec-soft-hero"><div><h1>Control Operacional Molyb</h1><p>Vista informativa orientada a gerencia. Consolida inventario, clasificación, producción, consumos y alertas sin exponer la operación técnica detallada.</p></div></div>
+          <div class="exec-soft-kpis">
+            ${gerenteKpiHTML('Inventario total', kgToTon(d.masaTotalKg, 2), `${d.lotes.length} lotes registrados`, C.blueLight, '◈', d.sectores.map(s => s.masaT))}
+            ${gerenteKpiHTML('Masa disponible', kgToTon(d.masaDisponibleKg, 2), `${gerenteNumber(disponibilidad, 1)}% del total`, C.green, '◎', sparkProd)}
+            ${gerenteKpiHTML('Masa retenida', kgToTon(d.masaRetenidaKg, 2), `${d.retenidos.length} lotes retenidos`, C.yellow, '▣', d.classRows.map(s => s.masaKg/1000))}
+            ${gerenteKpiHTML('Fuera especificación', kgToTon(d.masaFueraKg, 2), `${d.fuera.length} lote(s) afectados`, C.red, '△', d.classRows.map(s => s.masaKg/1000))}
+            ${gerenteKpiHTML('Producción del mes', kgToTon(d.totals.produccionKg || 0, 2), `${d.totals.lotes || 0} registros Infodia`, C.green, '▥', sparkProd)}
+            ${gerenteKpiHTML('Consumo / descarga', `${gerenteNumber(d.totals.descargaT || 0, 2)} t`, 'Acumulado desde Infodia', C.copper, '⇣', sparkCons)}
+          </div>
+          <div class="exec-soft-panels">${gerenteTrendCardHTML(d)}${gerenteDonutHTML(d)}</div>
+          <div class="exec-soft-update">• Última actualización: ${esc(d.updatedAt)}</div>
+        </div>
+        <aside class="exec-soft-side">${gerenteCalendarHTML()}${gerenteClockHTML()}<div class="exec-soft-side-card"><div class="exec-soft-side-title">Observaciones</div>${d.alerts.map(a => `<div class="exec-soft-alert ${a.level}"><b>${esc(a.title)}</b><p>${esc(a.text)}</p></div>`).join('')}</div></aside>
       </div>
-      <div class="exec2-hero-meta">
-        <span>Último día: <b>${esc(d.lastDate)}</b></span>
-        <span>Actualizado: <b>${esc(d.updatedAt)}</b></span>
-      </div>
-    </div>
-
-    <div class="exec2-kpis">
-      ${gerenteKpiHTML('Inventario total', kgToTon(d.masaTotalKg, 2), `${d.lotes.length} lotes registrados`, C.blueLight, d.sectores.map(s => s.masaT))}
-      ${gerenteKpiHTML('Masa disponible', kgToTon(d.masaDisponibleKg, 2), `${gerenteNumber(disponibilidad, 1)}% del total`, C.green, sparkInv)}
-      ${gerenteKpiHTML('Masa retenida', kgToTon(d.masaRetenidaKg, 2), `${d.retenidos.length} lotes retenidos`, C.yellow, d.estados.map(s => s.masaT))}
-      ${gerenteKpiHTML('Fuera especificación', kgToTon(d.masaFueraKg, 2), `${d.fuera.length} lote(s) afectados`, C.red, d.classRows.map(s => s.masaKg/1000))}
-      ${gerenteKpiHTML('Producción del mes', kgToTon(d.totals.produccionKg || 0, 2), `${d.totals.lotes || 0} registros Infodia`, C.green, sparkProd)}
-      ${gerenteKpiHTML('Consumo / descarga', `${gerenteNumber(d.totals.descargaT || 0, 2)} t`, 'Acumulado desde Infodia', C.copper, sparkCons)}
-    </div>
-
-    <div class="exec2-grid">
-      ${gerenteTrendCardHTML(d)}
-      ${gerenteDonutHTML(d)}
-      ${gerenteSectorBarsHTML(d.sectores)}
-      ${gerenteEstadoLotesHTML(d)}
-      ${gerenteGaugeHTML(d.cumplimiento)}
-      ${gerenteFinoMoHTML(d)}
-      ${gerenteSilosHTML(d.silos)}
-      ${gerenteResumenTableHTML(d.sectores)}
-      ${gerenteAlertasHTML(d.alerts)}
-    </div>
+    </main>
   </section>`;
 }
 
 function gerenteShellHTML() {
-  return `<header class="topbar gerente-topbar exec2-topbar">
-    <div class="brand exec2-brand" style="justify-content:flex-start;margin:0">
-      <div class="brand-mark" style="height:38px"></div>
-      <div>
-        <div style="font-weight:900;letter-spacing:3px">CONTROL OPERACIONAL</div>
-        <div class="brand-sub">OXMO · DASHBOARD GERENCIAL</div>
-      </div>
-    </div>
-    <div class="top-user-center">
-      <div class="top-user-role">GERENTE</div>
-      <div class="top-user-name">${esc(state.user?.nombre || 'Gerente')}</div>
-    </div>
-    <div class="top-actions exec2-top-actions">
-      <div class="exec2-status ${gerenteCloudClass()}">${gerenteCloudLabel()}</div>
-      <div style="text-align:right">
-        <div class="mono" style="color:var(--green);font-size:13px;font-weight:800">${new Date().toLocaleTimeString('es-CL')}</div>
-        <div style="color:var(--txt2);font-size:10px;letter-spacing:1px">${hoy()}</div>
-      </div>
-      <button class="btn" id="myPassBtn">MI CLAVE</button>
-      <button class="btn danger" id="logoutBtn">SALIR</button>
-    </div>
-  </header>
-  <main class="main gerente-main exec2-main">
-    <nav class="tabs gerente-tabs">
-      <button class="tab ${state.tab === 'gerencial' ? 'active' : ''}" data-tab="gerencial">Dashboard</button>
-      <button class="tab ${state.tab === 'perfil' ? 'active' : ''}" data-tab="perfil">Mi perfil</button>
-    </nav>
-    <section id="tabView">${state.tab === 'perfil' ? perfilUsuarioHTML() : gerenteDashboardHTML()}</section>
-  </main>
-  <footer class="footer"><span>OXMO CONTROL · Vista gerencial</span><span>SOLO LECTURA</span></footer>`;
+  return `<main class="exec-soft-root"><section id="tabView">${state.tab === 'perfil' ? perfilUsuarioHTML() : gerenteDashboardHTML()}</section></main>`;
 }
 
 const shellHTMLAnteriorGerente = shellHTML;
-shellHTML = function() {
-  if (isGerente()) return gerenteShellHTML();
-  return shellHTMLAnteriorGerente();
-};
-
+shellHTML = function() { if (isGerente()) return gerenteShellHTML(); return shellHTMLAnteriorGerente(); };
 const canViewTabAnteriorGerente = canViewTab;
-canViewTab = function(id, user = state.user) {
-  if (isGerente(user)) return ['gerencial', 'perfil'].includes(id);
-  return canViewTabAnteriorGerente(id, user);
-};
-
+canViewTab = function(id, user = state.user) { if (isGerente(user)) return ['gerencial','perfil'].includes(id); return canViewTabAnteriorGerente(id, user); };
 const visibleTabsAnteriorGerente = visibleTabs;
-visibleTabs = function() {
-  if (isGerente()) return [['gerencial', 'Dashboard'], ['perfil', 'Mi perfil']];
-  return visibleTabsAnteriorGerente();
-};
-
+visibleTabs = function() { if (isGerente()) return [['gerencial','Dashboard'],['perfil','Mi perfil']]; return visibleTabsAnteriorGerente(); };
 const tabHTMLAnteriorGerente = tabHTML;
-tabHTML = function() {
-  if (isGerente() && state.tab === 'gerencial') return gerenteDashboardHTML();
-  if (isGerente() && state.tab === 'perfil') return perfilUsuarioHTML();
-  return tabHTMLAnteriorGerente();
-};
-
+tabHTML = function() { if (isGerente() && state.tab === 'gerencial') return gerenteDashboardHTML(); if (isGerente() && state.tab === 'perfil') return perfilUsuarioHTML(); return tabHTMLAnteriorGerente(); };
 const bindTabAnteriorGerente = bindTab;
-bindTab = function() {
-  if (isGerente()) {
-    if (state.tab === 'perfil') bindPerfilUsuario();
-    return;
-  }
-  bindTabAnteriorGerente();
-};
-
+bindTab = function() { if (isGerente()) { if (state.tab === 'perfil') bindPerfilUsuario(); return; } bindTabAnteriorGerente(); };
 const bindShellAnteriorGerente = bindShell;
 bindShell = function() {
   if (!isGerente()) return bindShellAnteriorGerente();
-  document.querySelector('#logoutBtn')?.addEventListener('click', () => {
-    cerrarSesionUsuario();
-    state.user = null;
-    save('oxmo:user', null);
-    render();
-  });
+  document.querySelector('#logoutBtn')?.addEventListener('click', () => { cerrarSesionUsuario(); state.user = null; save('oxmo:user', null); render(); });
   document.querySelector('#myPassBtn')?.addEventListener('click', () => state.user && openPassModal(state.user.u));
-  document.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', () => {
-    state.tab = btn.dataset.tab;
-    render();
-  }));
+  document.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', () => { state.tab = btn.dataset.tab; render(); }));
   aplicarMayusculasFinal();
   bindTab();
 };
-
 const renderAnteriorGerente = render;
-render = function() {
-  if (state.user && isGerente() && !['gerencial', 'perfil'].includes(state.tab)) {
-    state.tab = 'gerencial';
-  }
-  return renderAnteriorGerente();
-};
+render = function() { if (state.user && isGerente() && !['gerencial','perfil'].includes(state.tab)) state.tab = 'gerencial'; return renderAnteriorGerente(); };
 
 syncInventarioACP();
 repararIdsLotesManuales();
