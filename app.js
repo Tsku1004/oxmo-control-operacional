@@ -5980,3 +5980,414 @@ function printLabels() {
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas OXMO</title>${etiquetaCSS(false)}</head><body><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div>${items}</body></html>`);
   w.document.close();
 }
+
+/* =========================================================
+   AREA_CELULA_V2_20260626
+   - Inventario segmentado por área/célula
+   - Roles globales: Jefe de planta, Super intendente, Gerente, Administrador
+   - Inventario histórico sin área => Envase
+   - Área de usuario editable solo por Administrador con lista desplegable
+   ========================================================= */
+const AREA_CELULA_DEFAULT = "Envase";
+const ROLES_AREA_GLOBAL = new Set(["administrador", "gerente", "jefe de planta", "super intendente", "superintendente"]);
+
+function normalizarTextoArea(v) {
+  return String(v || "").trim();
+}
+
+function areaTrabajoDefault() { return AREA_CELULA_DEFAULT; }
+
+function areaTrabajoUsuario(user = state.user) {
+  return normalizarTextoArea(user?.area || user?.areaCelula) || AREA_CELULA_DEFAULT;
+}
+
+function areaTrabajoEsGlobal(user = state.user) {
+  const rol = String(user?.rol || "").trim().toLowerCase();
+  return ROLES_AREA_GLOBAL.has(rol) || isAdmin(user) || isGerente(user);
+}
+
+function areaTrabajoLote(lote = {}) {
+  const explicit = normalizarTextoArea(lote.areaCelula || lote.areaTrabajo || lote.area);
+  if (explicit) return explicit;
+  const creador = (state.usuarios || []).map(normalizarUsuario).find(u => u.u === String(lote.createdBy || "").trim().toLowerCase());
+  return creador ? areaTrabajoUsuario(creador) : AREA_CELULA_DEFAULT;
+}
+
+function areasTrabajoCatalogo() {
+  const areas = [
+    AREA_CELULA_DEFAULT,
+    ...(state.usuarios || []).map(u => normalizarUsuario(u).area).filter(Boolean),
+    ...(state.lotes || []).map(l => areaTrabajoLote(l)).filter(Boolean),
+  ];
+  return [...new Set(areas.map(normalizarTextoArea).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function areaTrabajoCatalogo() { return areasTrabajoCatalogo(); }
+
+function areaTrabajoOptionsHTML(selected = "", { includeAdd = false } = {}) {
+  const sel = normalizarTextoArea(selected) || AREA_CELULA_DEFAULT;
+  const options = areasTrabajoCatalogo();
+  if (sel && !options.includes(sel)) options.push(sel);
+  return options.map(a => `<option value="${esc(a)}" ${a === sel ? "selected" : ""}>${esc(a)}</option>`).join("")
+    + (includeAdd ? `<option value="__add__">+ Añadir área / célula...</option>` : "");
+}
+
+function lotesPorAreaTrabajo(lotes = state.lotes, user = state.user) {
+  const source = Array.isArray(lotes) ? lotes : [];
+  if (areaTrabajoEsGlobal(user)) return source;
+  const area = areaTrabajoUsuario(user);
+  return source.filter(l => areaTrabajoLote(l) === area);
+}
+
+function migrarAreaCelulaV2() {
+  let changedUsers = false;
+  state.usuarios = (state.usuarios || []).map(u => {
+    const nu = normalizarUsuario(u);
+    if (!normalizarTextoArea(nu.area)) {
+      changedUsers = true;
+      return { ...nu, area: AREA_CELULA_DEFAULT, areaCelula: AREA_CELULA_DEFAULT };
+    }
+    if (!normalizarTextoArea(nu.areaCelula)) {
+      changedUsers = true;
+      return { ...nu, areaCelula: nu.area };
+    }
+    return nu;
+  });
+  if (state.user && !normalizarTextoArea(state.user.area)) {
+    state.user = normalizarUsuario({ ...state.user, area: AREA_CELULA_DEFAULT, areaCelula: AREA_CELULA_DEFAULT });
+    save("oxmo:user", state.user);
+  }
+  let changedLotes = false;
+  state.lotes = (state.lotes || []).map(l => {
+    const area = normalizarTextoArea(l.areaCelula || l.areaTrabajo || l.area);
+    if (area) return { ...l, areaCelula: area, areaTrabajo: area };
+    changedLotes = true;
+    return { ...l, areaCelula: AREA_CELULA_DEFAULT, areaTrabajo: AREA_CELULA_DEFAULT };
+  });
+  if (changedUsers) saveUsuarios();
+  if (changedLotes) save("oxmo:lotes", state.lotes);
+}
+
+function areaBadgeHTML(area, subtle = false) {
+  return `<span class="area-chip ${subtle ? "subtle" : ""}">${esc(area || AREA_CELULA_DEFAULT)}</span>`;
+}
+
+const normalizarUsuarioAreaV2 = normalizarUsuario;
+normalizarUsuario = function(u) {
+  const base = normalizarUsuarioAreaV2(u || {});
+  const area = normalizarTextoArea(u?.area || u?.areaCelula || base.area) || AREA_CELULA_DEFAULT;
+  return { ...base, area, areaCelula: area };
+};
+
+const canEditLotAreaV2 = canEditLot;
+canEditLot = function(l, user = state.user) {
+  if (!l || !user) return false;
+  if (!areaTrabajoEsGlobal(user) && areaTrabajoLote(l) !== areaTrabajoUsuario(user)) return false;
+  return canEditLotAreaV2(l, user);
+};
+
+function renderAreaSelectHTML({ id = "", name = "", value = "", dataAttr = "", includeAdd = false, disabled = false } = {}) {
+  const attrId = id ? `id="${esc(id)}"` : "";
+  const attrName = name ? `name="${esc(name)}"` : "";
+  const attrData = dataAttr ? `${dataAttr}` : "";
+  return `<select ${attrId} ${attrName} class="input area-select" data-keep-case="true" ${attrData} ${disabled ? "disabled" : ""}>${areaTrabajoOptionsHTML(value, { includeAdd })}</select>`;
+}
+
+adminUsersHTML = function(rows) {
+  const usuarios = rows.map(r => normalizarUsuario(r.u || r));
+  const roleOptions = ROLES_USUARIO.map(r => `<option>${esc(r)}</option>`).join("");
+  const areas = areasTrabajoCatalogo();
+  return `
+    <div class="area-admin-shell">
+      <div class="area-admin-card create-user-card">
+        <div class="section-title">Crear cuenta</div>
+        <div class="area-help">Cada usuario queda asociado a un área/célula. Los roles operativos solo verán inventario de su área.</div>
+        <div class="field"><label>Usuario</label><input id="newUserU" class="input" data-keep-case="true" placeholder="ej: turno_a"></div>
+        <div class="field"><label>Nombre</label><input id="newUserNombre" class="input" data-keep-case="true" placeholder="Nombre visible"></div>
+        <div class="field"><label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial"></div>
+        <div class="field"><label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select></div>
+        <div class="field"><label>Cargo</label><input id="newUserCargo" class="input" data-keep-case="true" placeholder="Opcional"></div>
+        <div class="field"><label>Área / célula</label>${renderAreaSelectHTML({ id: "newUserArea", value: AREA_CELULA_DEFAULT, includeAdd: true })}</div>
+        <div class="field" id="newUserAreaAddWrap" style="display:none"><label>Nueva área / célula</label><input id="newUserAreaAdd" class="input" data-keep-case="true" placeholder="Ej: Envase B, Logística, Centro Norte"></div>
+        <button class="btn primary" id="crearUsuario" style="width:100%;margin-top:4px">Crear usuario</button>
+      </div>
+      <div class="area-admin-card users-list-card">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:12px">
+          <div>
+            <div class="section-title">Cuentas creadas — ${usuarios.length}</div>
+            <div class="area-help">Áreas activas: ${areas.map(a => areaBadgeHTML(a, true)).join(" ")}</div>
+          </div>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Área / célula</th><th>Contacto</th><th>Estado</th><th>Último uso</th><th>Control</th></tr></thead><tbody>
+          ${usuarios.map(u => {
+            const stat = state.userStats[u.u] || {};
+            return `<tr>
+              <td class="mono" style="color:var(--blue-light);font-weight:900">${esc(u.u)}</td>
+              <td>${esc(u.nombre)}</td>
+              <td>${esc(u.rol)}</td>
+              <td>${areaBadgeHTML(u.area)}</td>
+              <td style="color:var(--txt2);font-size:11px">${usuarioContactoResumen(u)}</td>
+              <td style="color:${u.activo !== false ? C.green : C.red}">● ${u.activo !== false ? "Activo" : "Deshabilitado"}</td>
+              <td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td>
+              <td><div class="mini-actions">
+                <button class="icon-btn" data-admin-edit="${esc(u.u)}">Editar</button>
+                ${u.u !== "admin" && u.u !== userKey() ? `<button class="icon-btn" data-admin-toggle="${esc(u.u)}">${u.activo !== false ? "Pausar" : "Activar"}</button><button class="icon-btn" data-admin-del="${esc(u.u)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button>` : ""}
+              </div></td>
+            </tr>`;
+          }).join("")}
+        </tbody></table></div>
+      </div>
+    </div>
+    ${adminUserModalHTML()}
+  `;
+};
+
+adminUserModalHTML = function() {
+  const user = normalizarUsuario(state.usuarios.find(u => u.u === state.adminEditUser));
+  if (!user?.u) return "";
+  const stat = state.userStats[user.u] || {};
+  const roles = ROLES_USUARIO.map(r => `<option ${user.rol === r ? "selected" : ""}>${esc(r)}</option>`).join("");
+  return `<div class="modal-backdrop" data-admin-user-modal>
+    <div class="modal-card user-modal-card area-user-modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px">
+        <div>
+          <div class="section-title">Editar usuario</div>
+          <h2 style="margin:4px 0 0">${esc(user.nombre)}</h2>
+          <div style="color:var(--txt2);font-size:12px;margin-top:4px">Administra cuenta, rol, área/célula y datos personales.</div>
+        </div>
+        <button class="btn ghost" data-admin-edit-close>Cerrar</button>
+      </div>
+
+      <div class="area-modal-banner">
+        <div>
+          <div class="area-modal-title">Área asignada</div>
+          <div class="area-modal-text">Este dato define qué inventario puede ver el usuario.</div>
+        </div>
+        ${areaBadgeHTML(user.area)}
+      </div>
+
+      <div class="profile-grid">
+        <div class="field"><label>Usuario</label><input class="input" data-keep-case="true" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
+        <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
+        <div class="field"><label>Contraseña visible</label><input class="input" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p)}"></div>
+        <div class="field"><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
+        <div class="field"><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
+        <div class="field"><label>Creado</label><input class="input" readonly value="${esc(user.creado || "-")}"></div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title" style="margin-bottom:10px">Datos laborales y contacto</div>
+        <div class="profile-grid">
+          <div class="field"><label>Cargo</label><input class="input" data-keep-case="true" data-admin-edit-cargo value="${valorPerfil(user, "cargo")}"></div>
+          <div class="field"><label>Área / célula</label>${renderAreaSelectHTML({ value: user.area, includeAdd: true, dataAttr: "data-admin-edit-area" })}</div>
+          <div class="field" data-admin-edit-area-add-wrap style="display:none"><label>Nueva área / célula</label><input class="input" data-keep-case="true" data-admin-edit-area-add placeholder="Ej: Envase B, Logística, Centro Norte"></div>
+          <div class="field"><label>Turno</label><input class="input" data-keep-case="true" data-admin-edit-turno value="${valorPerfil(user, "turno")}"></div>
+          <div class="field"><label>Teléfono</label><input class="input" data-keep-case="true" data-admin-edit-telefono value="${valorPerfil(user, "telefono")}"></div>
+          <div class="field"><label>Correo</label><input class="input" data-keep-case="true" type="email" data-admin-edit-correo value="${valorPerfil(user, "correo")}"></div>
+          <div class="field"><label>Dirección</label><input class="input" data-keep-case="true" data-admin-edit-direccion value="${valorPerfil(user, "direccion")}"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title" style="margin-bottom:10px;color:${C.red}">Emergencia</div>
+        <div class="profile-grid">
+          <div class="field"><label>Contacto emergencia</label><input class="input" data-keep-case="true" data-admin-edit-emerg-nombre value="${valorPerfil(user, "contactoEmergenciaNombre")}"></div>
+          <div class="field"><label>Relación</label><input class="input" data-keep-case="true" data-admin-edit-emerg-relacion value="${valorPerfil(user, "contactoEmergenciaRelacion")}"></div>
+          <div class="field"><label>Teléfono emergencia</label><input class="input" data-keep-case="true" data-admin-edit-emerg-telefono value="${valorPerfil(user, "contactoEmergenciaTelefono")}"></div>
+          <div class="field"><label>Observaciones</label><textarea class="input" data-keep-case="true" data-admin-edit-observaciones rows="3">${valorPerfil(user, "observacionesContacto")}</textarea></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title">Uso del sistema</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;color:var(--txt2);font-size:12px;margin-top:8px">
+          <div>Último uso: <b>${esc(stat.lastSeen || "-")}</b></div>
+          <div>Tiempo de uso: <b>${esc(formatDuration(tiempoUsuarioMs(user.u)))}</b></div>
+        </div>
+      </div>
+      <button class="btn primary" data-admin-edit-save style="width:100%;margin-top:12px">Guardar cambios</button>
+    </div>
+  </div>`;
+};
+
+perfilUsuarioHTML = function() {
+  const u = normalizarUsuario(state.usuarios.find(x => x.u === state.user?.u) || state.user || {});
+  return `
+    <div class="box profile-soft-box">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px">
+        <div>
+          <div class="section-title">Mi perfil</div>
+          <div style="font-size:20px;font-weight:900;color:var(--txt)">${esc(u.nombre)}</div>
+          <div style="color:var(--txt2);font-size:12px;margin-top:6px">Puedes actualizar tus datos de contacto. El área/célula queda bloqueada y la modifica solo el Administrador.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="tag" style="color:${C.cyan};background:#00d4ff22;border-color:#00d4ff55">${esc(u.rol)}</span>${areaBadgeHTML(u.area)}</div>
+      </div>
+      <form id="perfilUsuarioForm" class="profile-form">
+        <div class="profile-grid">
+          <div class="field"><label>Usuario</label><input class="input" readonly value="${esc(u.u)}"></div>
+          <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" name="nombre" value="${esc(u.nombre)}"></div>
+          <div class="field"><label>Cargo</label><input class="input" data-keep-case="true" name="cargo" value="${valorPerfil(u, "cargo")}" placeholder="Ej: Operador Envase"></div>
+          <div class="field"><label>Área / célula</label>${renderAreaSelectHTML({ value: u.area, disabled: true })}<input type="hidden" name="area" value="${esc(u.area)}"></div>
+          <div class="field"><label>Turno</label><input class="input" data-keep-case="true" name="turno" value="${valorPerfil(u, "turno")}" placeholder="Ej: Turno A / 7x7"></div>
+          <div class="field"><label>Teléfono personal</label><input class="input" data-keep-case="true" name="telefono" value="${valorPerfil(u, "telefono")}" placeholder="+56 9 ...."></div>
+          <div class="field"><label>Correo</label><input class="input" data-keep-case="true" type="email" name="correo" value="${valorPerfil(u, "correo")}" placeholder="correo@empresa.cl"></div>
+          <div class="field"><label>Dirección</label><input class="input" data-keep-case="true" name="direccion" value="${valorPerfil(u, "direccion")}" placeholder="Dirección de contacto"></div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <div class="section-title" style="margin-bottom:10px;color:${C.red}">Contacto de emergencia</div>
+          <div class="profile-grid">
+            <div class="field"><label>Nombre contacto</label><input class="input" data-keep-case="true" name="contactoEmergenciaNombre" value="${valorPerfil(u, "contactoEmergenciaNombre")}" placeholder="Nombre y apellido"></div>
+            <div class="field"><label>Relación</label><input class="input" data-keep-case="true" name="contactoEmergenciaRelacion" value="${valorPerfil(u, "contactoEmergenciaRelacion")}" placeholder="Ej: Madre / Pareja / Hermano"></div>
+            <div class="field"><label>Teléfono emergencia</label><input class="input" data-keep-case="true" name="contactoEmergenciaTelefono" value="${valorPerfil(u, "contactoEmergenciaTelefono")}" placeholder="+56 9 ...."></div>
+            <div class="field"><label>Observaciones</label><textarea class="input" data-keep-case="true" name="observacionesContacto" rows="3" placeholder="Alergias, restricciones o notas relevantes">${valorPerfil(u, "observacionesContacto")}</textarea></div>
+          </div>
+        </div>
+        <button class="btn primary" style="width:100%;margin-top:14px">Guardar mi perfil</button>
+      </form>
+    </div>
+  `;
+};
+
+bindAdmin = function() {
+  document.querySelectorAll("[data-admin-view]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminView = btn.dataset.adminView;
+    render();
+  }));
+  const toggleAddWrap = (sel, wrap) => {
+    if (!sel || !wrap) return;
+    const run = () => { wrap.style.display = sel.value === "__add__" ? "block" : "none"; };
+    sel.addEventListener("change", run);
+    run();
+  };
+  toggleAddWrap(document.querySelector("#newUserArea"), document.querySelector("#newUserAreaAddWrap"));
+  toggleAddWrap(document.querySelector("[data-admin-edit-area]"), document.querySelector("[data-admin-edit-area-add-wrap]"));
+
+  document.querySelector("#crearUsuario")?.addEventListener("click", () => {
+    const u = (document.querySelector("#newUserU")?.value || "").trim().toLowerCase();
+    const nombre = (document.querySelector("#newUserNombre")?.value || "").trim();
+    const p = document.querySelector("#newUserPass")?.value || "";
+    const rol = document.querySelector("#newUserRol")?.value || "Operador";
+    const cargo = (document.querySelector("#newUserCargo")?.value || "").trim();
+    const areaSel = (document.querySelector("#newUserArea")?.value || "").trim();
+    const areaNueva = (document.querySelector("#newUserAreaAdd")?.value || "").trim();
+    const area = areaSel === "__add__" ? areaNueva : areaSel;
+    if (!u || !nombre || !p) return alert("Completa usuario, nombre y contraseña.");
+    if (!area) return alert("Selecciona el área / célula del usuario.");
+    if (areaSel === "__add__" && !areaNueva) return alert("Ingresa el nombre de la nueva área / célula.");
+    if (!/^[a-z0-9._-]{3,24}$/.test(u)) return alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
+    if (state.usuarios.some(x => x.u === u)) return alert("Ese usuario ya existe.");
+    const nuevo = normalizarUsuario({ u, nombre, p, rol, cargo, area, areaCelula: area, creado: hoy(), activo: true });
+    state.usuarios.push(nuevo);
+    ensureUserStat(nuevo);
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario creado", u, `${rol} · ${area}`, C.green);
+    render();
+  });
+  document.querySelectorAll("[data-admin-edit]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminEditUser = btn.dataset.adminEdit;
+    render();
+  }));
+  document.querySelectorAll("[data-admin-edit-close]").forEach(btn => btn.addEventListener("click", () => { state.adminEditUser = ""; render(); }));
+  document.querySelector("[data-admin-edit-save]")?.addEventListener("click", () => {
+    const oldU = state.adminEditUser;
+    const old = state.usuarios.find(u => u.u === oldU);
+    if (!old) return;
+    const nextU = old.u === "admin" ? "admin" : (document.querySelector("[data-admin-edit-u]")?.value || "").trim().toLowerCase();
+    const areaSel = (document.querySelector("[data-admin-edit-area]")?.value || "").trim();
+    const areaNueva = (document.querySelector("[data-admin-edit-area-add]")?.value || "").trim();
+    const area = areaSel === "__add__" ? areaNueva : areaSel;
+    const patch = {
+      u: nextU,
+      nombre: (document.querySelector("[data-admin-edit-nombre]")?.value || "").trim(),
+      p: document.querySelector("[data-admin-edit-pass]")?.value || "",
+      rol: document.querySelector("[data-admin-edit-rol]")?.value || "Operador",
+      activo: old.u === "admin" ? true : document.querySelector("[data-admin-edit-activo]")?.value !== "false",
+      cargo: (document.querySelector("[data-admin-edit-cargo]")?.value || "").trim(),
+      area,
+      areaCelula: area,
+      turno: (document.querySelector("[data-admin-edit-turno]")?.value || "").trim(),
+      telefono: (document.querySelector("[data-admin-edit-telefono]")?.value || "").trim(),
+      correo: (document.querySelector("[data-admin-edit-correo]")?.value || "").trim(),
+      direccion: (document.querySelector("[data-admin-edit-direccion]")?.value || "").trim(),
+      contactoEmergenciaNombre: (document.querySelector("[data-admin-edit-emerg-nombre]")?.value || "").trim(),
+      contactoEmergenciaRelacion: (document.querySelector("[data-admin-edit-emerg-relacion]")?.value || "").trim(),
+      contactoEmergenciaTelefono: (document.querySelector("[data-admin-edit-emerg-telefono]")?.value || "").trim(),
+      observacionesContacto: (document.querySelector("[data-admin-edit-observaciones]")?.value || "").trim(),
+    };
+    if (!patch.u || !patch.nombre || !patch.p) return alert("Completa usuario, nombre y contraseña.");
+    if (!patch.area) return alert("Selecciona el área / célula del usuario.");
+    if (areaSel === "__add__" && !areaNueva) return alert("Ingresa el nombre de la nueva área / célula.");
+    if (!/^[a-z0-9._-]{3,24}$/.test(patch.u)) return alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
+    if (patch.u !== oldU && state.usuarios.some(u => u.u === patch.u)) return alert("Ese usuario ya existe.");
+    const next = normalizarUsuario({ ...old, ...patch });
+    state.usuarios = state.usuarios.map(u => u.u === oldU ? next : u);
+    if (patch.u !== oldU && state.userStats[oldU]) {
+      state.userStats[patch.u] = state.userStats[oldU];
+      delete state.userStats[oldU];
+      state.lotes = state.lotes.map(l => l.createdBy === oldU ? { ...l, createdBy: patch.u, createdByName: next.nombre } : l);
+      state.avisos = (state.avisos || []).map(a => a.autor === oldU ? { ...a, autor: patch.u, autorNombre: next.nombre } : a);
+      save("oxmo:lotes", state.lotes);
+      save("oxmo:avisos", state.avisos || []);
+    }
+    if (state.user?.u === oldU) { state.user = next; save("oxmo:user", state.user); }
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario modificado", next.u, `${next.nombre} · ${next.area}`, C.cyan);
+    state.adminEditUser = "";
+    render();
+  });
+  document.querySelectorAll("[data-admin-toggle]").forEach(btn => btn.addEventListener("click", () => {
+    const u = btn.dataset.adminToggle;
+    state.usuarios = state.usuarios.map(x => x.u === u ? { ...x, activo: x.activo === false } : x);
+    saveUsuarios();
+    addHist("Estado de usuario modificado", u, "", C.yellow);
+    render();
+  }));
+  document.querySelectorAll("[data-admin-del]").forEach(btn => btn.addEventListener("click", () => {
+    const u = btn.dataset.adminDel;
+    if (!confirm(`¿Eliminar cuenta ${u}?`)) return;
+    state.usuarios = state.usuarios.filter(x => x.u !== u);
+    delete state.userStats[u];
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario eliminado", u, "", C.red);
+    render();
+  }));
+};
+
+function withScopedLotesHTML(fn) {
+  if (areaTrabajoEsGlobal()) return fn();
+  const original = state.lotes;
+  state.lotes = lotesPorAreaTrabajo(original);
+  try { return fn(); }
+  finally { state.lotes = original; }
+}
+
+const shellHTMLAreaV2 = shellHTML;
+shellHTML = function() {
+  if (!state.user || areaTrabajoEsGlobal()) return shellHTMLAreaV2();
+  return withScopedLotesHTML(shellHTMLAreaV2);
+};
+
+const tabHTMLAreaV2 = tabHTML;
+tabHTML = function() {
+  if (!state.user || areaTrabajoEsGlobal() || state.tab === "admin") return tabHTMLAreaV2();
+  return withScopedLotesHTML(tabHTMLAreaV2);
+};
+
+const registroHTMLAreaV2 = registroHTML;
+registroHTML = function() {
+  if (!state.user || areaTrabajoEsGlobal()) return registroHTMLAreaV2();
+  return withScopedLotesHTML(registroHTMLAreaV2);
+};
+
+const gerenteDashboardDataAreaV2 = gerenteDashboardData;
+gerenteDashboardData = function() {
+  // Gerente siempre ve el total consolidado; esta línea deja explícito el totalizado.
+  return gerenteDashboardDataAreaV2();
+};
+
+migrarAreaCelulaV2();
+render();
+setTimeout(() => { try { migrarAreaCelulaV2(); render(); } catch (e) { console.warn('Área/célula post-sync', e); } }, 2200);
