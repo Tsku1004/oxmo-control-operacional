@@ -5273,3 +5273,287 @@ if (state.infodia) state.infodia = compactInfodiaFinal(state.infodia);
 render();
 initCloud().then(() => setTimeout(resyncCloudSnapshotFinal, 1200));
 
+
+/* =========================================================
+   ETIQUETA ZEBRA ZT230 300 DPI - 100 x 150 mm PROPORCIONAL
+   v20260626-label-pro-v3
+   Reemplaza las versiones anteriores de etiqueta/printLabels.
+   ========================================================= */
+function etiquetaFit(id) {
+  const len = String(id || "").length;
+  if (len > 30) return { idPt: 13, qrMm: 46 };
+  if (len > 24) return { idPt: 14, qrMm: 48 };
+  if (len > 18) return { idPt: 16, qrMm: 50 };
+  return { idPt: 19, qrMm: 52 };
+}
+
+function etiquetaCSS(publicMode = false) {
+  return `<style>
+    @page { size: 100mm 150mm; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100%;
+      background: ${publicMode ? "#fff" : "#eceff3"};
+      color: #000;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .no-print {
+      position: fixed;
+      right: 8mm;
+      top: 6mm;
+      z-index: 20;
+    }
+    .no-print button {
+      font-weight: 900;
+      font-size: 13px;
+      padding: 8px 12px;
+      border: 1px solid #999;
+      background: #fff;
+      cursor: pointer;
+    }
+    .public-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding: 0;
+      background: #fff;
+    }
+    .label-page {
+      width: 100mm;
+      height: 150mm;
+      background: #fff;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      margin: ${publicMode ? "0" : "0 0 8mm 0"};
+      page-break-after: always;
+      break-after: page;
+      overflow: hidden;
+    }
+    .label {
+      width: 96mm;
+      height: 146mm;
+      border: 1.15mm solid #111;
+      border-radius: 3mm;
+      padding: 4.3mm 5.2mm 2.6mm;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #fff;
+    }
+    .label-top {
+      display: grid;
+      grid-template-columns: 38mm 1fr;
+      gap: 3mm;
+      align-items: center;
+      min-height: 19mm;
+      padding-bottom: 2.3mm;
+      border-bottom: .45mm solid #111;
+      flex: 0 0 auto;
+    }
+    .label-logo {
+      width: 36mm;
+      max-height: 15mm;
+      object-fit: contain;
+      object-position: left center;
+      display: block;
+    }
+    .label-brand {
+      text-align: right;
+      min-width: 0;
+    }
+    .label-brand-title {
+      font-weight: 900;
+      font-size: 11pt;
+      letter-spacing: 2.3pt;
+      line-height: 1.05;
+    }
+    .label-brand-title span { display: block; }
+    .label-date {
+      margin-top: 1.4mm;
+      font-size: 7pt;
+      line-height: 1;
+      color: #111;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+    .label-id {
+      min-height: 11mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      margin: 2.5mm 0 2mm;
+      font-family: Consolas, "Courier New", monospace;
+      font-weight: 900;
+      line-height: 1.02;
+      letter-spacing: .3pt;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      flex: 0 0 auto;
+    }
+    .label-class {
+      min-height: 13.5mm;
+      border: .55mm solid var(--accent);
+      color: var(--accent);
+      border-radius: 2mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-weight: 900;
+      font-size: 18pt;
+      line-height: 1;
+      letter-spacing: 1.2pt;
+      padding: 1.7mm 2mm;
+      margin-bottom: 2.5mm;
+      flex: 0 0 auto;
+    }
+    .label-chem {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2mm;
+      margin-bottom: 2.5mm;
+      flex: 0 0 auto;
+    }
+    .label-cell,
+    .label-mass {
+      border: .35mm solid #222;
+      border-radius: 1.5mm;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .label-cell {
+      min-height: 15.5mm;
+      padding: 1.4mm 1mm;
+    }
+    .label-k {
+      display: block;
+      font-size: 6.8pt;
+      line-height: 1;
+      font-weight: 900;
+      margin-bottom: 1mm;
+      letter-spacing: .3pt;
+    }
+    .label-v {
+      display: block;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13.8pt;
+      line-height: 1;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .label-mass {
+      min-height: 12.8mm;
+      padding: 1.4mm 1mm;
+      margin-bottom: 1.2mm;
+      flex: 0 0 auto;
+    }
+    .label-mass .label-v {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 13pt;
+      letter-spacing: .2pt;
+    }
+    .label-qr-area {
+      flex: 1 1 auto;
+      min-height: 50mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5mm 0 1.2mm;
+    }
+    .label-qr {
+      width: var(--qr-size);
+      height: var(--qr-size);
+      display: block;
+      object-fit: contain;
+      image-rendering: pixelated;
+    }
+    .label-foot {
+      border-top: .35mm solid #111;
+      padding-top: .8mm;
+      text-align: center;
+      font-size: 5.8pt;
+      line-height: 1;
+      color: #111;
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+    @media print {
+      html, body { background: #fff; width: 100mm; min-height: 150mm; }
+      .no-print { display: none; }
+      .label-page { margin: 0; box-shadow: none; }
+    }
+  </style>`;
+}
+
+function etiquetaLabelHTML(data, qrUrl) {
+  const fit = etiquetaFit(data.id);
+  const accent = data.color || "#C87533";
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=620x620&margin=1&data=${encodeURIComponent(qrUrl)}`;
+  return `<section class="label-page">
+    <div class="label" style="--accent:${esc(accent)};--qr-size:${fit.qrMm}mm">
+      <div class="label-top">
+        <img class="label-logo" src="./molyb-logo.webp" alt="Molyb">
+        <div class="label-brand">
+          <div class="label-brand-title"><span>OXMO</span><span>CONTROL</span></div>
+          <div class="label-date">${esc(data.fecha || hoy())}</div>
+        </div>
+      </div>
+      <div class="label-id" style="font-size:${fit.idPt}pt">${esc(data.id || "SIN ID")}</div>
+      <div class="label-class">${esc(String(data.mat || "SIN CLASIFICAR").toUpperCase())}</div>
+      <div class="label-chem">
+        <div class="label-cell"><span class="label-k">CU</span><span class="label-v">${esc(data.cu || "-")}%</span></div>
+        <div class="label-cell"><span class="label-k">MO</span><span class="label-v">${esc(data.mo || "-")}%</span></div>
+        <div class="label-cell"><span class="label-k">S</span><span class="label-v">${esc(data.s || "-")}%</span></div>
+      </div>
+      <div class="label-mass"><span class="label-k">MASA</span><span class="label-v">${esc(data.masa || "-")}</span></div>
+      <div class="label-qr-area"><img class="label-qr" src="${qrSrc}" alt="QR ${esc(data.id)}"></div>
+      <div class="label-foot">Zebra ZT230 · Etiqueta 100 × 150 mm · 300 dpi</div>
+    </div>
+  </section>`;
+}
+
+function etiquetaPublicaHTML(data) {
+  if (!data || !data.id) {
+    return `<style>body{font-family:Arial;background:#f4f6f8;padding:30px}</style><h1>Etiqueta no encontrada</h1><p>El QR no trae datos suficientes para reconstruir la etiqueta.</p>`;
+  }
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Etiqueta ${esc(data.id)}</title>${etiquetaCSS(true)}</head><body><div class="public-wrap">${etiquetaLabelHTML(data, location.href)}</div></body></html>`;
+}
+
+function printLabels() {
+  const ids = state.etiquetaSel || [];
+  if (!ids.length) return;
+  const items = ids.map(id => {
+    const l = state.lotes.find(x => x.id === id);
+    if (!l) return "";
+    const c = clasificar(l);
+    const data = {
+      id: l.id,
+      mat: c.clase,
+      color: c.color,
+      masa: kgToTon(l.masa, 2),
+      cu: hasAnalysis(l) ? fmt(l.cu, 3).replace(/\.?0+$/, "") : "-",
+      mo: hasAnalysis(l) ? fmt(l.mo, 3).replace(/\.?0+$/, "") : "-",
+      s: hasAnalysis(l) ? fmt(l.s, 4).replace(/\.?0+$/, "") : "-",
+      fecha: l.fecha || hoy(),
+    };
+    const labelParams = new URLSearchParams(data);
+    const qrUrl = `${PUBLIC_APP_URL}etiqueta.html?${labelParams.toString()}`;
+    return etiquetaLabelHTML(data, qrUrl);
+  }).join("");
+  const w = window.open("", "_blank");
+  if (!w) {
+    alert("Permite ventanas emergentes para abrir la vista previa de etiquetas.");
+    return;
+  }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas OXMO</title>${etiquetaCSS(false)}</head><body><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div>${items}</body></html>`);
+  w.document.close();
+}

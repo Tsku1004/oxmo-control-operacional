@@ -1,51 +1,43 @@
-# Cambios realizados - Usuarios y Perfil
+# Cambios OXMO Control - usuarios, perfil y etiqueta Zebra
 
-Fecha: 2026-06-26
+Versión: `v20260626-label-pro-v3`
 
-## Cambios principales
+## 1. Usuarios / Admin
 
-1. Se reemplazó la edición de usuarios mediante `prompt()` por una ventana emergente/modal.
-2. El administrador ahora puede editar desde el modal:
-   - Usuario
-   - Nombre visible
-   - Contraseña visible
-   - Rol
-   - Estado activo/deshabilitado
-   - Cargo
-   - Área
-   - Turno
-   - Teléfono
-   - Correo
-   - Dirección
-   - Contacto de emergencia
-   - Relación del contacto
-   - Teléfono de emergencia
-   - Observaciones
-3. Se agregó una nueva pestaña `Mi perfil` para todos los usuarios.
-4. Cada usuario puede completar y guardar sus propios datos de contacto.
-5. Se agregaron estilos CSS para modal, formulario de perfil y campos responsivos.
+- Se mantiene la mejora anterior: edición de usuarios desde modal/ventana emergente.
+- El administrador puede editar datos de acceso, rol, estado y datos de contacto.
+- Se mantiene la pestaña `Mi perfil` para que cada usuario complete su información personal/contacto.
 
-## Archivos modificados
+## 2. Etiqueta Zebra ZT230 300 dpi
+
+Se corrigió nuevamente la etiqueta porque la vista `about:blank` no usa solo `etiqueta.html`; también depende de la función `printLabels()` dentro de `app.js`.
+
+Cambios aplicados:
+
+- Formato fijo `100 mm x 150 mm`.
+- Área útil interna `96 mm x 146 mm`.
+- Márgenes más equilibrados.
+- Logo y bloque `OXMO / CONTROL` separados en dos líneas para evitar quiebres como `CONTROL15-06-2026`.
+- ID centrado y con tamaño adaptable.
+- Clasificación más visible.
+- Bloques Cu / Mo / S proporcionados.
+- Masa centrada.
+- QR aumentado a 46-52 mm según largo del ID.
+- QR centrado en el espacio inferior usando mejor el papel.
+- Pie alineado al borde inferior.
+- `index.html` actualizado con cache-busting `v=20260626-label-pro-v3`.
+
+## 3. Archivos que debes reemplazar sí o sí
 
 - `app.js`
-- `styles.css`
+- `etiqueta.html`
+- `index.html`
 
-## Cómo aplicar en GitHub
+También puedes subir el ZIP completo descomprimido para reemplazar todo el proyecto.
 
-1. Descomprime el ZIP.
-2. Reemplaza los archivos del repositorio por los archivos incluidos.
-3. Sube los cambios a GitHub.
-4. Si usas Vercel, espera el redeploy automático.
-5. Abre la app, inicia sesión como administrador y revisa `Admin > Usuarios > Editar`.
-6. Luego inicia sesión como usuario y revisa la nueva pestaña `Mi perfil`.
+## 4. Después de subir a GitHub/Vercel
 
-## Nota
-
-La app conserva el mismo sistema actual de usuarios guardados en `oxmo:usuarios` y sincronizados por Supabase. No se migró a autenticación real de Supabase; eso sería una mejora posterior para producción.
-
-
-## Ajuste etiqueta 100x150 mm - Zebra ZT230 300 dpi
-- Se corrigio la plantilla de etiqueta para formato vertical 100 x 150 mm.
-- Se ajustaron margenes internos, bloque de cabecera, cajas quimicas, masa y QR.
-- El QR queda centrado, cuadrado y aumentado a 40 mm para lectura mas estable.
-- Se actualizo el pie a Zebra ZT230 · Etiqueta 100 x 150 mm · 300 dpi.
+1. Espera el redeploy.
+2. Abre la app.
+3. Presiona `Ctrl + F5`.
+4. Si aún aparece la antigua etiqueta, abre la app en incógnito o borra caché del sitio.
