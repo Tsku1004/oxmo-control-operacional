@@ -3302,7 +3302,7 @@ function etiquetaPublicaHTML(data) {
     .chem div, .meta div { border: .35mm solid #222; border-radius: 1.5mm; padding: 1.8mm; text-align: center; }
     .chem b, .meta b { display: block; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
     .chem span { font-family: Consolas, monospace; font-size: 14pt; font-weight: 900; }
-    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 3mm; }
+    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 1.2mm; }
     .meta span { font-size: 10pt; font-weight: 800; }
     .qr { width: 34mm; height: 34mm; align-self: center; image-rendering: pixelated; margin-top: 1mm; flex: 0 0 auto; }
     footer { border-top: .35mm solid #111; margin-top: auto; padding-top: 1.5mm; font-size: 6pt; text-align: center; color: #555; }
@@ -3312,7 +3312,7 @@ function etiquetaPublicaHTML(data) {
     <section class="label-page">
       <div class="label">
         <header>
-          <img src="./molyb-logo.jpg" alt="Molyb" />
+          <img src="./molyb-logo.webp" alt="Molyb" />
           <div>
             <div class="system">OXMO CONTROL</div>
             <div class="date">${esc(data.fecha || hoy())}</div>
@@ -3361,7 +3361,7 @@ function printLabels() {
     return `<section class="label-page">
       <div class="label">
         <header>
-          <img src="./molyb-logo.jpg" alt="Molyb" />
+          <img src="./molyb-logo.webp" alt="Molyb" />
           <div>
             <div class="system">OXMO CONTROL</div>
             <div class="date">${esc(l.fecha || hoy())}</div>
@@ -3403,7 +3403,7 @@ function printLabels() {
     .chem b, .meta b { display: block; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
     .chem span { font-family: Consolas, monospace; font-size: 14pt; font-weight: 900; }
     .pending { border: .5mm solid #222; padding: 3mm; font-size: 14pt; font-weight: 900; text-align: center; margin-bottom: 3mm; }
-    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 3mm; }
+    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 1.2mm; }
     .meta span { font-size: 10pt; font-weight: 800; }
     .qr { width: 34mm; height: 34mm; align-self: center; image-rendering: pixelated; margin-top: 1mm; flex: 0 0 auto; }
     footer { border-top: .35mm solid #111; margin-top: auto; padding-top: 1.5mm; font-size: 6pt; text-align: center; color: #555; }
@@ -4294,8 +4294,8 @@ function etiquetaCSS(publicMode = false) {
     .class-box{border:.45mm solid var(--accent);color:var(--accent);font-weight:900;text-align:center;border-radius:2mm;font-size:16pt;letter-spacing:.7pt;padding:2.2mm 1mm;margin-bottom:2.7mm;flex:0 0 auto}
     .chem{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2mm;margin-bottom:2.8mm;flex:0 0 auto}
     .cell{border:.35mm solid #222;border-radius:1.4mm;text-align:center;padding:1.8mm 1mm}.cell small{font-size:6.5pt;font-weight:800;display:block}.cell b{font-family:Consolas,'Courier New',monospace;font-size:13.5pt}
-    .mass{border:.35mm solid #222;border-radius:1.4mm;text-align:center;padding:2mm 1mm;margin-bottom:3mm;flex:0 0 auto}.mass small{font-size:6.5pt;font-weight:800;display:block}.mass b{font-size:12pt}
-    .qr{display:block;margin:auto auto 1mm;object-fit:contain;flex:0 0 auto}
+    .mass{border:.35mm solid #222;border-radius:1.4mm;text-align:center;padding:2mm 1mm;margin-bottom:1.2mm;flex:0 0 auto}.mass small{font-size:6.5pt;font-weight:800;display:block}.mass b{font-size:12pt}
+    .qr{display:block;margin:0 auto 1mm;object-fit:contain;flex:0 0 auto}
     .foot{border-top:.35mm solid #111;text-align:center;font-size:6pt;padding-top:1mm;white-space:nowrap;flex:0 0 auto}
     @media print{body{background:#fff}.no-print{display:none}.label-page{padding:0;margin:0;width:100mm;height:150mm}}
   </style>`;
@@ -4515,8 +4515,751 @@ function mezclaOpcionHTML(op, idx) {
   </div>`;
 }
 
+// --- Estabilizacion final: nube, ACP, usuarios, mayusculas y Zebra 2026-06-14 ---
+const FINAL_CACHE_TAG = "20260626-qr-arriba";
+
+function acpNumeroFinal(codigo) {
+  const clean = normalizarCodigoAnalisis(String(codigo || "")).toUpperCase();
+  const nums = clean.match(/\d+/g) || [];
+  if (!nums.length) return 0;
+  const usable = nums.length > 1 && String(nums[nums.length - 1]).length === 2 ? nums.slice(0, -1) : nums;
+  return Number(usable[usable.length - 1] || 0) || 0;
+}
+
+function acpFechaFinal(item) {
+  return fechaOrdenMs(item?.fecha || item?.fechaAnalisis || item?.fechaMuestra || "") || 0;
+}
+
+function sortAcpFinal(a, b) {
+  return acpFechaFinal(b) - acpFechaFinal(a)
+    || acpNumeroFinal(b?.codigo || b?.id) - acpNumeroFinal(a?.codigo || a?.id)
+    || String(b?.codigo || b?.id || "").localeCompare(String(a?.codigo || a?.id || ""));
+}
+
+function normalizarAcpFinal(item) {
+  const codigo = normalizarCodigoAnalisis(String(item?.codigo || item?.id || "")).toUpperCase();
+  return {
+    ...item,
+    codigo,
+    tipoAnalisis: item?.tipoAnalisis || tipoAnalisisACP(codigo),
+    cu: Number(item?.cu || 0),
+    mo: Number(item?.mo || 0),
+    s: Number(item?.s || 0),
+  };
+}
+
+function uniqueUltimoFinal(items, keyFn) {
+  const map = new Map();
+  for (const item of items || []) {
+    const key = keyFn(item);
+    if (key) map.set(key, item);
+  }
+  return [...map.values()];
+}
+
+function compactInfodiaFinal(info) {
+  if (!info) return null;
+  const days = uniqueUltimoFinal(info.days || [], d => d.fecha)
+    .sort((a, b) => fechaOrdenMs(a.fecha) - fechaOrdenMs(b.fecha))
+    .slice(-180);
+  const analisisACP = uniqueUltimoFinal((info.analisisACP || []).map(normalizarAcpFinal).filter(a => a.codigo), a =>
+    `${a.codigo}|${a.fecha || ""}|${a.tipoAnalisis || ""}`
+  ).sort(sortAcpFinal).slice(0, 7000);
+  const analisis = analisisACP.filter(a => a.tipoAnalisis === "comun_turno").sort(sortAcpFinal).slice(0, 3000);
+  const analisisLotes = analisisACP.filter(a => a.tipoAnalisis !== "comun_turno").sort(sortAcpFinal).slice(0, 4500);
+  const siloHistorial = (info.siloHistorial || [])
+    .filter(h => isValidSiloId(h.siloId))
+    .sort((a, b) => fechaOrdenMs(b.fecha) - fechaOrdenMs(a.fecha))
+    .slice(0, 2500);
+  const totals = recalcularTotalesInfodia(days);
+  const simWindow = selectSiloSimulationDays(days);
+  return { ...info, days, analisisACP, analisis, analisisLotes, siloHistorial, totals, simWindow };
+}
+
+function fusionarInfodia(prev, next) {
+  const p = compactInfodiaFinal(prev) || {};
+  const n = compactInfodiaFinal(next) || {};
+  return compactInfodiaFinal({
+    ...p,
+    ...n,
+    days: [...(p.days || []), ...(n.days || [])],
+    analisisACP: [...(p.analisisACP || []), ...(n.analisisACP || [])],
+    analisis: [...(p.analisis || []), ...(n.analisis || [])],
+    analisisLotes: [...(p.analisisLotes || []), ...(n.analisisLotes || [])],
+    siloHistorial: [...(p.siloHistorial || []), ...(n.siloHistorial || [])],
+  });
+}
+
+function prepararValorNubeFinal(key, value) {
+  if (key === "oxmo:lotes") {
+    return (value || [])
+      .filter(l => !isInfodiaProductionLote(l))
+      .map(l => ({ ...l, id: String(l.id || "").trim().toUpperCase() }))
+      .filter(l => l.id && l.id !== "L-NAN");
+  }
+  if (key === "oxmo:siloNiveles") return cleanSiloNiveles(value || {});
+  if (key === "oxmo:siloHistorial") return (value || []).filter(h => isValidSiloId(h.siloId));
+  if (key === "oxmo:infodia") return compactInfodiaFinal(value);
+  if (key === "oxmo:usuarios") return (value || []).map(normalizarUsuario);
+  if (key === "oxmo:comunes") {
+    return uniqueUltimoFinal((value || []).filter(c => isValidSiloId(c.siloId)), c => claveComun(c))
+      .sort((a, b) => fechaOrdenMs(b.fecha) - fechaOrdenMs(a.fecha) || String(b.codigo || "").localeCompare(String(a.codigo || "")));
+  }
+  return value;
+}
+
+async function cloudSave(key, value) {
+  if (!cloud.client) return;
+  try {
+    const clean = prepararValorNubeFinal(key, value);
+    const { error } = await cloud.client
+      .from("oxmo_state")
+      .upsert({ key, value: clean, updated_at: new Date().toISOString() });
+    if (error) throw error;
+    cloud.status = "sincronizado";
+    cloud.lastError = "";
+  } catch (e) {
+    cloud.status = "error nube";
+    cloud.lastError = e?.message || String(e);
+    console.error("Cloud save error", e);
+  }
+}
+
+function applyCloudValue(key, value) {
+  cloud.applying = true;
+  try {
+    let nextValue = prepararValorNubeFinal(key, value);
+    if (key === "oxmo:infodia") nextValue = fusionarInfodia(state.infodia, nextValue);
+    if (key === "oxmo:comunes") nextValue = prepararValorNubeFinal(key, [...(state.comunes || []), ...(nextValue || [])]);
+
+    localStorage.setItem(key, JSON.stringify(nextValue));
+    if (key === "oxmo:lotes") state.lotes = nextValue || [];
+    if (key === "oxmo:hist") state.historial = nextValue || [];
+    if (key === "oxmo:sectores") state.sectores = nextValue || DEFAULT_SECTORES;
+    if (key === "oxmo:silos") state.silosBase = nextValue || DEFAULT_SILOS;
+    if (key === "oxmo:comunes") state.comunes = nextValue || [];
+    if (key === "oxmo:siloNiveles") state.siloNiveles = cleanSiloNiveles(nextValue || {});
+    if (key === "oxmo:siloHistorial") state.siloHistorial = nextValue || [];
+    if (key === "oxmo:usuarios") state.usuarios = (nextValue || DEFAULT_USUARIOS).map(normalizarUsuario);
+    if (key === "oxmo:userStats") state.userStats = nextValue || {};
+    if (key === "oxmo:avisos") state.avisos = nextValue || [];
+    if (key === "oxmo:infodia") {
+      state.infodia = nextValue || null;
+      const acp = actualizarInventarioConACP((state.lotes || []).filter(l => !isInfodiaProductionLote(l)), state.infodia?.analisisACP || []);
+      state.lotes = prepararValorNubeFinal("oxmo:lotes", acp.lotes);
+      localStorage.setItem("oxmo:lotes", JSON.stringify(state.lotes));
+    }
+  } catch (e) {
+    cloud.status = "error nube";
+    cloud.lastError = e?.message || String(e);
+    console.error("Cloud apply error", e);
+  } finally {
+    cloud.applying = false;
+  }
+}
+
+async function resyncCloudSnapshotFinal() {
+  if (!cloud.ready || !cloud.client) return;
+  for (const key of SHARED_KEYS) {
+    const local = load(key, sharedFallback(key));
+    await cloudSave(key, local);
+  }
+}
+
+function debeMayusculaFinal(el) {
+  if (!el || !["INPUT", "TEXTAREA"].includes(el.tagName)) return false;
+  const type = String(el.type || "").toLowerCase();
+  if (["password", "number", "date", "time", "file", "email", "url", "search"].includes(type)) return false;
+  if (el.dataset.keepCase === "true") return false;
+  const name = `${el.name || ""} ${el.id || ""} ${el.placeholder || ""}`.toLowerCase();
+  return !/(clave|password|contrasena|contraseña|supabase|url|key|anon|fecha|hora|email|correo|qr|link)/.test(name);
+}
+
+function aplicarMayusculasFinal(root = document) {
+  root.querySelectorAll("input,textarea").forEach(el => {
+    if (!debeMayusculaFinal(el) || el.dataset.upperBound === "true") return;
+    el.dataset.upperBound = "true";
+    el.style.textTransform = "uppercase";
+    el.addEventListener("input", () => {
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const next = String(el.value || "").toUpperCase();
+      if (el.value !== next) {
+        el.value = next;
+        try { el.setSelectionRange(start, end); } catch {}
+      }
+    });
+  });
+}
+
+function passwordUsuarioModalHTML() {
+  if (!state.selfPassOpen || !state.user) return "";
+  return `<div class="modal-backdrop" data-self-pass-modal>
+    <div class="modal-card" style="max-width:460px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div><div class="section-title">MI CLAVE</div><h2 style="margin:4px 0 0">Cambiar contraseña</h2></div>
+        <button class="btn ghost" data-self-pass-close>Salir</button>
+      </div>
+      <div class="alert info">Si pierdes la clave, contacta al Administrador para reiniciarla.</div>
+      <label>Clave actual</label><input data-keep-case="true" data-self-pass-old type="text" class="input" value="" autocomplete="off">
+      <label>Nueva clave visible</label><input data-keep-case="true" data-self-pass-new type="text" class="input" value="" autocomplete="off">
+      <label>Repetir nueva clave</label><input data-keep-case="true" data-self-pass-repeat type="text" class="input" value="" autocomplete="off">
+      <button class="btn primary" data-self-pass-save style="width:100%;margin-top:12px">Guardar nueva clave</button>
+    </div>
+  </div>`;
+}
+
+function insertarBotonClavePropiaFinal() {
+  const logout = [...document.querySelectorAll("button")].find(b => b.textContent.trim().toUpperCase() === "SALIR");
+  if (!logout || document.querySelector("[data-self-pass-open]")) return;
+  const btn = document.createElement("button");
+  btn.textContent = "MI CLAVE";
+  btn.dataset.selfPassOpen = "true";
+  btn.className = logout.className || "";
+  btn.style.cssText = "background:#0f3a6e;border:1px solid #1e6fd966;color:#9cc7ff;padding:10px 16px;border-radius:7px;cursor:pointer;font-weight:900;letter-spacing:1px";
+  logout.parentElement?.insertBefore(btn, logout);
+}
+
+function bindSelfPasswordFinal() {
+  insertarBotonClavePropiaFinal();
+  document.querySelector("[data-self-pass-open]")?.addEventListener("click", () => { state.selfPassOpen = true; render(); });
+  if (state.selfPassOpen && !document.querySelector("[data-self-pass-modal]")) {
+    document.body.insertAdjacentHTML("beforeend", passwordUsuarioModalHTML());
+  }
+  document.querySelectorAll("[data-self-pass-close]").forEach(btn => btn.addEventListener("click", () => { state.selfPassOpen = false; render(); }));
+  document.querySelector("[data-self-pass-save]")?.addEventListener("click", () => {
+    const oldPass = document.querySelector("[data-self-pass-old]")?.value || "";
+    const newPass = document.querySelector("[data-self-pass-new]")?.value || "";
+    const repeat = document.querySelector("[data-self-pass-repeat]")?.value || "";
+    if (oldPass !== state.user.p) return alert("La clave actual no coincide.");
+    if (!newPass || newPass !== repeat) return alert("La nueva clave debe coincidir en ambos campos.");
+    state.usuarios = state.usuarios.map(u => u.u === state.user.u ? { ...u, p: newPass } : u);
+    state.user = { ...state.user, p: newPass };
+    saveUsuarios();
+    save("oxmo:user", state.user);
+    addHist("Usuario cambio su clave", state.user.u, "", C.cyan);
+    state.selfPassOpen = false;
+    render();
+  });
+}
+
+function adminUserModalHTML() {
+  const user = state.usuarios.find(u => u.u === state.adminEditUser);
+  if (!user) return "";
+  const stat = state.userStats[user.u] || {};
+  const roles = ROLES_USUARIO.map(r => `<option ${user.rol === r ? "selected" : ""}>${esc(r)}</option>`).join("");
+  return `<div class="modal-backdrop" data-admin-user-modal>
+    <div class="modal-card" style="max-width:720px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div><div class="section-title">USUARIO</div><h2 style="margin:4px 0 0">${esc(user.nombre)}</h2></div>
+        <button class="btn ghost" data-admin-edit-close>Cerrar</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>Usuario</label><input class="input" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
+        <div><label>Nombre visible</label><input class="input" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
+        <div><label>Contraseña visible</label><input class="input" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p)}"></div>
+        <div><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
+        <div><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
+        <div><label>Creado</label><input class="input" readonly value="${esc(user.creado || "-")}"></div>
+        <div><label>Ultimo uso</label><input class="input" readonly value="${esc(stat.lastSeen || "-")}"></div>
+        <div><label>Tiempo de uso</label><input class="input" readonly value="${esc(formatDuration(tiempoUsuarioMs(user.u)))}"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div class="section-title">Actividad reciente</div>
+        ${(stat.recientes || []).slice(0, 5).map(r => `<div style="padding:5px 0;border-bottom:1px solid var(--border);color:var(--txt2)">${esc(r.fecha)} ${esc(r.tiempo)} · ${esc(r.accion)} ${r.loteId ? "· " + esc(r.loteId) : ""}</div>`).join("") || `<div style="color:var(--txt3)">Sin actividad registrada.</div>`}
+      </div>
+      <button class="btn primary" data-admin-edit-save style="width:100%;margin-top:12px">Guardar cambios</button>
+    </div>
+  </div>`;
+}
+
+function adminUsersHTML(rows) {
+  const roleOptions = ROLES_USUARIO.map(r => `<option>${esc(r)}</option>`).join("");
+  return `
+    <div style="display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:16px;align-items:start">
+      <div class="card">
+        <div class="section-title">Crear cuenta</div>
+        <label>Usuario</label><input id="newUserU" class="input" placeholder="ej: TURNO_A">
+        <label>Nombre</label><input id="newUserNombre" class="input" placeholder="Nombre visible">
+        <label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial">
+        <label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select>
+        <button class="btn primary" id="crearUsuario" style="width:100%;margin-top:12px">Crear usuario</button>
+      </div>
+      <div class="card">
+        <div class="section-title">Cuentas creadas — ${rows.length}</div>
+        <div class="table-wrap"><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Creado</th><th>Ultimo uso</th><th>Control</th></tr></thead><tbody>
+          ${rows.map(u => {
+            const stat = state.userStats[u.u] || {};
+            return `<tr>
+              <td class="mono">${esc(u.u)}</td>
+              <td>${esc(u.nombre)}</td>
+              <td>${esc(u.rol)}</td>
+              <td style="color:${u.activo !== false ? C.green : C.red}">● ${u.activo !== false ? "Activo" : "Deshabilitado"}</td>
+              <td>${esc(u.creado || "-")}</td>
+              <td>${esc(stat.lastSeen || "-")}</td>
+              <td>
+                <button class="btn small" data-admin-edit="${esc(u.u)}">Editar</button>
+                ${u.u !== "admin" ? `<button class="btn small" data-admin-toggle="${esc(u.u)}">${u.activo !== false ? "Pausar" : "Activar"}</button><button class="btn small danger" data-admin-del="${esc(u.u)}">Eliminar</button>` : ""}
+              </td>
+            </tr>`;
+          }).join("")}
+        </tbody></table></div>
+      </div>
+    </div>
+    ${adminUserModalHTML()}
+  `;
+}
+
+function bindAdmin() {
+  document.querySelectorAll("[data-admin-view]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminView = btn.dataset.adminView;
+    render();
+  }));
+  document.querySelector("#crearUsuario")?.addEventListener("click", () => {
+    const u = (document.querySelector("#newUserU")?.value || "").trim().toLowerCase();
+    const nombre = (document.querySelector("#newUserNombre")?.value || "").trim();
+    const p = document.querySelector("#newUserPass")?.value || "";
+    const rol = document.querySelector("#newUserRol")?.value || "Operador";
+    if (!u || !nombre || !p) return alert("Completa usuario, nombre y contraseña.");
+    if (state.usuarios.some(x => x.u === u)) return alert("Ese usuario ya existe.");
+    state.usuarios.push(normalizarUsuario({ u, nombre, p, rol, creado: hoy(), activo: true }));
+    ensureUserStat(u);
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario creado", u, rol, C.green);
+    render();
+  });
+  document.querySelectorAll("[data-admin-edit]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminEditUser = btn.dataset.adminEdit;
+    render();
+  }));
+  document.querySelectorAll("[data-admin-edit-close]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminEditUser = "";
+    render();
+  }));
+  document.querySelector("[data-admin-edit-save]")?.addEventListener("click", () => {
+    const oldU = state.adminEditUser;
+    const old = state.usuarios.find(u => u.u === oldU);
+    if (!old) return;
+    const nextU = old.u === "admin" ? "admin" : (document.querySelector("[data-admin-edit-u]")?.value || "").trim().toLowerCase();
+    const nombre = (document.querySelector("[data-admin-edit-nombre]")?.value || "").trim();
+    const p = document.querySelector("[data-admin-edit-pass]")?.value || "";
+    const rol = document.querySelector("[data-admin-edit-rol]")?.value || "Operador";
+    const activo = old.u === "admin" ? true : document.querySelector("[data-admin-edit-activo]")?.value !== "false";
+    if (!nextU || !nombre || !p) return alert("Completa todos los datos del usuario.");
+    if (nextU !== oldU && state.usuarios.some(u => u.u === nextU)) return alert("Ese usuario ya existe.");
+    state.usuarios = state.usuarios.map(u => u.u === oldU ? normalizarUsuario({ ...u, u: nextU, nombre, p, rol, activo }) : u);
+    if (nextU !== oldU && state.userStats[oldU]) {
+      state.userStats[nextU] = state.userStats[oldU];
+      delete state.userStats[oldU];
+    }
+    if (state.user?.u === oldU) {
+      state.user = state.usuarios.find(u => u.u === nextU);
+      save("oxmo:user", state.user);
+    }
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario modificado", nextU, rol, C.cyan);
+    state.adminEditUser = "";
+    render();
+  });
+  document.querySelectorAll("[data-admin-toggle]").forEach(btn => btn.addEventListener("click", () => {
+    const u = btn.dataset.adminToggle;
+    state.usuarios = state.usuarios.map(x => x.u === u ? { ...x, activo: x.activo === false } : x);
+    saveUsuarios();
+    addHist("Estado de usuario modificado", u, "", C.yellow);
+    render();
+  }));
+  document.querySelectorAll("[data-admin-del]").forEach(btn => btn.addEventListener("click", () => {
+    const u = btn.dataset.adminDel;
+    if (!confirm(`Eliminar cuenta ${u}?`)) return;
+    state.usuarios = state.usuarios.filter(x => x.u !== u);
+    delete state.userStats[u];
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario eliminado", u, "", C.red);
+    render();
+  }));
+}
+
+function etiquetaFit(id) {
+  const len = String(id || "").length;
+  if (len > 28) return { idPt: 14, idMaxMm: 12, qrMm: 25 };
+  if (len > 22) return { idPt: 16, idMaxMm: 13, qrMm: 27 };
+  if (len > 16) return { idPt: 18, idMaxMm: 14, qrMm: 28 };
+  return { idPt: 22, idMaxMm: 15, qrMm: 31 };
+}
+
+function etiquetaCSS(publicMode = false) {
+  return `<style>
+    @page{size:100mm 150mm;margin:0}
+    *{box-sizing:border-box}
+    body{margin:0;background:${publicMode ? "#fff" : "#eee"};font-family:Arial,Helvetica,sans-serif;color:#000}
+    .toolbar{position:fixed;right:8mm;top:6mm;z-index:10}.toolbar button{font-weight:900;font-size:14px;padding:8px 14px;border:2px solid #111;background:#fff;cursor:pointer}
+    .sheet{width:100mm;height:150mm;padding:2mm;margin:${publicMode ? "0" : "10mm auto"};background:#fff;page-break-after:always}
+    .label{width:96mm;height:146mm;border:1.2mm solid #111;border-radius:3mm;padding:3.4mm 5mm 2.4mm;display:flex;flex-direction:column;overflow:hidden}
+    .top{display:flex;justify-content:space-between;align-items:flex-start;gap:4mm}
+    .logo{width:38mm;max-height:14mm;object-fit:contain;object-position:left center}
+    .brand{text-align:right;font-weight:900;letter-spacing:2px;font-size:14px;line-height:1.15}.date{font-size:8px;font-weight:400;letter-spacing:0;margin-top:2mm}
+    .line{border-top:0.45mm solid #111;margin:3mm 0 2.2mm}
+    .lot{text-align:center;font-family:Consolas,monospace;font-weight:900;line-height:1;margin:1mm auto 1.8mm;max-width:84mm;overflow-wrap:anywhere;word-break:break-word}
+    .class{border:0.45mm solid var(--accent);color:var(--accent);border-radius:1.8mm;text-align:center;font-weight:900;font-size:22px;letter-spacing:1px;padding:1.4mm;margin-bottom:2.4mm}
+    .chem{display:grid;grid-template-columns:repeat(3,1fr);gap:1.7mm;margin-bottom:2.3mm}.cell{border:0.35mm solid #111;border-radius:1.4mm;text-align:center;padding:1.2mm .8mm}.k{font-size:8px;font-weight:900}.v{font-family:Consolas,monospace;font-size:16px;font-weight:900;margin-top:.6mm}
+    .mass{border:0.35mm solid #111;border-radius:1.4mm;text-align:center;padding:1.3mm;margin-bottom:1.2mm}.mass .v{font-size:15px;margin-top:.5mm}
+    .qr{display:block;margin:0 auto 1mm;width:var(--qr);height:var(--qr);image-rendering:pixelated;flex-shrink:0}
+    .foot{border-top:0.35mm solid #111;text-align:center;font-size:6px;padding-top:.7mm;margin-top:0}
+    @media print{body{background:#fff}.toolbar{display:none}.sheet{margin:0;box-shadow:none}}
+  </style>`;
+}
+
+const renderBaseFinal = render;
+render = function() {
+  renderBaseFinal();
+  aplicarMayusculasFinal(document);
+  bindSelfPasswordFinal();
+};
+
+
+
+/* =========================================================
+   MEJORA USUARIOS / PERFIL - v20260626
+   - Admin edita usuarios desde modal (sin prompt)
+   - Cada usuario puede completar datos de contacto/perfil
+   ========================================================= */
+const PERFIL_CAMPOS_USUARIO = {
+  cargo: "",
+  area: "",
+  turno: "",
+  telefono: "",
+  correo: "",
+  direccion: "",
+  contactoEmergenciaNombre: "",
+  contactoEmergenciaRelacion: "",
+  contactoEmergenciaTelefono: "",
+  observacionesContacto: "",
+};
+
+const normalizarUsuarioAnteriorPerfil = normalizarUsuario;
+normalizarUsuario = function(u) {
+  const base = normalizarUsuarioAnteriorPerfil(u || {});
+  return {
+    ...PERFIL_CAMPOS_USUARIO,
+    ...base,
+    cargo: String(u?.cargo ?? base.cargo ?? ""),
+    area: String(u?.area ?? base.area ?? ""),
+    turno: String(u?.turno ?? base.turno ?? ""),
+    telefono: String(u?.telefono ?? base.telefono ?? ""),
+    correo: String(u?.correo ?? base.correo ?? ""),
+    direccion: String(u?.direccion ?? base.direccion ?? ""),
+    contactoEmergenciaNombre: String(u?.contactoEmergenciaNombre ?? base.contactoEmergenciaNombre ?? ""),
+    contactoEmergenciaRelacion: String(u?.contactoEmergenciaRelacion ?? base.contactoEmergenciaRelacion ?? ""),
+    contactoEmergenciaTelefono: String(u?.contactoEmergenciaTelefono ?? base.contactoEmergenciaTelefono ?? ""),
+    observacionesContacto: String(u?.observacionesContacto ?? base.observacionesContacto ?? ""),
+  };
+};
+
+state.usuarios = (state.usuarios || []).map(normalizarUsuario);
+if (state.user) state.user = normalizarUsuario(state.user);
+
+const canViewTabAnteriorPerfil = canViewTab;
+canViewTab = function(id, user = state.user) {
+  if (id === "perfil") return !!user;
+  return canViewTabAnteriorPerfil(id, user);
+};
+
+const visibleTabsAnteriorPerfil = visibleTabs;
+visibleTabs = function() {
+  const tabs = visibleTabsAnteriorPerfil().filter(([id]) => id !== "perfil");
+  const adminIndex = tabs.findIndex(([id]) => id === "admin");
+  const perfilTab = ["perfil", "Mi perfil"];
+  if (adminIndex >= 0) tabs.splice(adminIndex, 0, perfilTab);
+  else tabs.push(perfilTab);
+  return tabs;
+};
+
+const tabHTMLAnteriorPerfil = tabHTML;
+tabHTML = function() {
+  if (state.tab === "perfil") return perfilUsuarioHTML();
+  return tabHTMLAnteriorPerfil();
+};
+
+const bindTabAnteriorPerfil = bindTab;
+bindTab = function() {
+  bindTabAnteriorPerfil();
+  if (state.tab === "perfil") bindPerfilUsuario();
+};
+
+function valorPerfil(u, key) {
+  return esc(u?.[key] || "");
+}
+
+function perfilUsuarioHTML() {
+  const u = normalizarUsuario(state.usuarios.find(x => x.u === state.user?.u) || state.user || {});
+  return `
+    <div class="box">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px">
+        <div>
+          <div class="section-title">Mi perfil</div>
+          <div style="font-size:20px;font-weight:900;color:var(--txt)">${esc(u.nombre)}</div>
+          <div style="color:var(--txt2);font-size:12px;margin-top:6px">Completa tus datos de contacto. Esta información queda disponible para el administrador.</div>
+        </div>
+        <span class="tag" style="color:${C.cyan};background:#00d4ff22;border-color:#00d4ff55">${esc(u.rol)}</span>
+      </div>
+      <form id="perfilUsuarioForm" class="profile-form">
+        <div class="profile-grid">
+          <div class="field"><label>Usuario</label><input class="input" readonly value="${esc(u.u)}"></div>
+          <div class="field"><label>Nombre visible</label><input class="input" name="nombre" value="${esc(u.nombre)}"></div>
+          <div class="field"><label>Cargo</label><input class="input" name="cargo" value="${valorPerfil(u, "cargo")}" placeholder="Ej: OPERADOR ENVASE"></div>
+          <div class="field"><label>Área</label><input class="input" name="area" value="${valorPerfil(u, "area")}" placeholder="Ej: ENVASE Y LOGÍSTICA"></div>
+          <div class="field"><label>Turno</label><input class="input" name="turno" value="${valorPerfil(u, "turno")}" placeholder="Ej: TURNO A / 7x7"></div>
+          <div class="field"><label>Teléfono personal</label><input class="input" name="telefono" value="${valorPerfil(u, "telefono")}" placeholder="+56 9 ...."></div>
+          <div class="field"><label>Correo</label><input class="input" data-keep-case="true" type="email" name="correo" value="${valorPerfil(u, "correo")}" placeholder="correo@empresa.cl"></div>
+          <div class="field"><label>Dirección</label><input class="input" name="direccion" value="${valorPerfil(u, "direccion")}" placeholder="Dirección de contacto"></div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <div class="section-title" style="margin-bottom:10px;color:${C.red}">Contacto de emergencia</div>
+          <div class="profile-grid">
+            <div class="field"><label>Nombre contacto</label><input class="input" name="contactoEmergenciaNombre" value="${valorPerfil(u, "contactoEmergenciaNombre")}" placeholder="Nombre y apellido"></div>
+            <div class="field"><label>Relación</label><input class="input" name="contactoEmergenciaRelacion" value="${valorPerfil(u, "contactoEmergenciaRelacion")}" placeholder="Ej: MADRE / PAREJA / HERMANO"></div>
+            <div class="field"><label>Teléfono emergencia</label><input class="input" name="contactoEmergenciaTelefono" value="${valorPerfil(u, "contactoEmergenciaTelefono")}" placeholder="+56 9 ...."></div>
+            <div class="field"><label>Observaciones</label><textarea class="input" name="observacionesContacto" rows="3" placeholder="Alergias, restricciones o notas relevantes">${valorPerfil(u, "observacionesContacto")}</textarea></div>
+          </div>
+        </div>
+        <button class="btn primary" style="width:100%;margin-top:14px">Guardar mi perfil</button>
+      </form>
+    </div>
+  `;
+}
+
+function actualizarUsuarioPorKey(userKeyObjetivo, patch) {
+  const old = state.usuarios.find(u => u.u === userKeyObjetivo);
+  if (!old) return null;
+  const next = normalizarUsuario({ ...old, ...patch });
+  state.usuarios = state.usuarios.map(u => u.u === userKeyObjetivo ? next : u);
+  if (state.user?.u === userKeyObjetivo) {
+    state.user = next;
+    save("oxmo:user", state.user);
+  }
+  saveUsuarios();
+  return next;
+}
+
+function bindPerfilUsuario() {
+  const form = document.querySelector("#perfilUsuarioForm");
+  if (!form) return;
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form).entries());
+    const next = actualizarUsuarioPorKey(state.user.u, data);
+    if (!next) return alert("No se pudo actualizar el perfil.");
+    addHist("Perfil actualizado", next.u, "Datos de contacto actualizados", C.cyan);
+    alert("Perfil guardado correctamente.");
+    render();
+  });
+}
+
+function usuarioContactoResumen(u) {
+  const partes = [u.cargo, u.area, u.turno, u.telefono].filter(Boolean);
+  return partes.length ? esc(partes.join(" · ")) : '<span style="color:var(--txt3)">Sin datos</span>';
+}
+
+adminUserModalHTML = function() {
+  const user = normalizarUsuario(state.usuarios.find(u => u.u === state.adminEditUser));
+  if (!user?.u) return "";
+  const stat = state.userStats[user.u] || {};
+  const roles = ROLES_USUARIO.map(r => `<option ${user.rol === r ? "selected" : ""}>${esc(r)}</option>`).join("");
+  return `<div class="modal-backdrop" data-admin-user-modal>
+    <div class="modal-card user-modal-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px">
+        <div>
+          <div class="section-title">Editar usuario</div>
+          <h2 style="margin:4px 0 0">${esc(user.nombre)}</h2>
+          <div style="color:var(--txt2);font-size:12px;margin-top:4px">Modifica cuenta, rol, contraseña y datos de contacto desde esta ventana.</div>
+        </div>
+        <button class="btn ghost" data-admin-edit-close>Cerrar</button>
+      </div>
+
+      <div class="profile-grid">
+        <div class="field"><label>Usuario</label><input class="input" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
+        <div class="field"><label>Nombre visible</label><input class="input" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
+        <div class="field"><label>Contraseña visible</label><input class="input" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p)}"></div>
+        <div class="field"><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
+        <div class="field"><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
+        <div class="field"><label>Creado</label><input class="input" readonly value="${esc(user.creado || "-")}"></div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title" style="margin-bottom:10px">Datos laborales y contacto</div>
+        <div class="profile-grid">
+          <div class="field"><label>Cargo</label><input class="input" data-admin-edit-cargo value="${valorPerfil(user, "cargo")}"></div>
+          <div class="field"><label>Área</label><input class="input" data-admin-edit-area value="${valorPerfil(user, "area")}"></div>
+          <div class="field"><label>Turno</label><input class="input" data-admin-edit-turno value="${valorPerfil(user, "turno")}"></div>
+          <div class="field"><label>Teléfono</label><input class="input" data-admin-edit-telefono value="${valorPerfil(user, "telefono")}"></div>
+          <div class="field"><label>Correo</label><input class="input" data-keep-case="true" type="email" data-admin-edit-correo value="${valorPerfil(user, "correo")}"></div>
+          <div class="field"><label>Dirección</label><input class="input" data-admin-edit-direccion value="${valorPerfil(user, "direccion")}"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title" style="margin-bottom:10px;color:${C.red}">Emergencia</div>
+        <div class="profile-grid">
+          <div class="field"><label>Contacto emergencia</label><input class="input" data-admin-edit-emerg-nombre value="${valorPerfil(user, "contactoEmergenciaNombre")}"></div>
+          <div class="field"><label>Relación</label><input class="input" data-admin-edit-emerg-relacion value="${valorPerfil(user, "contactoEmergenciaRelacion")}"></div>
+          <div class="field"><label>Teléfono emergencia</label><input class="input" data-admin-edit-emerg-telefono value="${valorPerfil(user, "contactoEmergenciaTelefono")}"></div>
+          <div class="field"><label>Observaciones</label><textarea class="input" data-admin-edit-observaciones rows="3">${valorPerfil(user, "observacionesContacto")}</textarea></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title">Uso del sistema</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;color:var(--txt2);font-size:12px;margin-top:8px">
+          <div>Último uso: <b>${esc(stat.lastSeen || "-")}</b></div>
+          <div>Tiempo de uso: <b>${esc(formatDuration(tiempoUsuarioMs(user.u)))}</b></div>
+        </div>
+      </div>
+      <button class="btn primary" data-admin-edit-save style="width:100%;margin-top:12px">Guardar cambios</button>
+    </div>
+  </div>`;
+};
+
+adminUsersHTML = function(rows) {
+  const usuarios = rows.map(r => normalizarUsuario(r.u || r));
+  const roleOptions = ROLES_USUARIO.map(r => `<option>${esc(r)}</option>`).join("");
+  return `
+    <div style="display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:16px;align-items:start">
+      <div class="card">
+        <div class="section-title">Crear cuenta</div>
+        <div class="field"><label>Usuario</label><input id="newUserU" class="input" placeholder="ej: TURNO_A"></div>
+        <div class="field"><label>Nombre</label><input id="newUserNombre" class="input" placeholder="Nombre visible"></div>
+        <div class="field"><label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial"></div>
+        <div class="field"><label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select></div>
+        <div class="field"><label>Cargo</label><input id="newUserCargo" class="input" placeholder="Opcional"></div>
+        <div class="field"><label>Área</label><input id="newUserArea" class="input" placeholder="Opcional"></div>
+        <button class="btn primary" id="crearUsuario" style="width:100%;margin-top:4px">Crear usuario</button>
+      </div>
+      <div class="card">
+        <div class="section-title">Cuentas creadas — ${usuarios.length}</div>
+        <div class="table-wrap"><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Contacto</th><th>Estado</th><th>Último uso</th><th>Control</th></tr></thead><tbody>
+          ${usuarios.map(u => {
+            const stat = state.userStats[u.u] || {};
+            return `<tr>
+              <td class="mono" style="color:var(--blue-light);font-weight:900">${esc(u.u)}</td>
+              <td>${esc(u.nombre)}</td>
+              <td>${esc(u.rol)}</td>
+              <td style="color:var(--txt2);font-size:11px">${usuarioContactoResumen(u)}</td>
+              <td style="color:${u.activo !== false ? C.green : C.red}">● ${u.activo !== false ? "Activo" : "Deshabilitado"}</td>
+              <td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td>
+              <td><div class="mini-actions">
+                <button class="icon-btn" data-admin-edit="${esc(u.u)}">Editar</button>
+                ${u.u !== "admin" && u.u !== userKey() ? `<button class="icon-btn" data-admin-toggle="${esc(u.u)}">${u.activo !== false ? "Pausar" : "Activar"}</button><button class="icon-btn" data-admin-del="${esc(u.u)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button>` : ""}
+              </div></td>
+            </tr>`;
+          }).join("")}
+        </tbody></table></div>
+      </div>
+    </div>
+    ${adminUserModalHTML()}
+  `;
+};
+
+bindAdmin = function() {
+  document.querySelectorAll("[data-admin-view]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminView = btn.dataset.adminView;
+    render();
+  }));
+  document.querySelector("#crearUsuario")?.addEventListener("click", () => {
+    const u = (document.querySelector("#newUserU")?.value || "").trim().toLowerCase();
+    const nombre = (document.querySelector("#newUserNombre")?.value || "").trim();
+    const p = document.querySelector("#newUserPass")?.value || "";
+    const rol = document.querySelector("#newUserRol")?.value || "Operador";
+    const cargo = (document.querySelector("#newUserCargo")?.value || "").trim();
+    const area = (document.querySelector("#newUserArea")?.value || "").trim();
+    if (!u || !nombre || !p) return alert("Completa usuario, nombre y contraseña.");
+    if (!/^[a-z0-9._-]{3,24}$/.test(u)) return alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
+    if (state.usuarios.some(x => x.u === u)) return alert("Ese usuario ya existe.");
+    const nuevo = normalizarUsuario({ u, nombre, p, rol, cargo, area, creado: hoy(), activo: true });
+    state.usuarios.push(nuevo);
+    ensureUserStat(nuevo);
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario creado", u, rol, C.green);
+    render();
+  });
+  document.querySelectorAll("[data-admin-edit]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminEditUser = btn.dataset.adminEdit;
+    render();
+  }));
+  document.querySelectorAll("[data-admin-edit-close]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminEditUser = "";
+    render();
+  }));
+  document.querySelector("[data-admin-edit-save]")?.addEventListener("click", () => {
+    const oldU = state.adminEditUser;
+    const old = state.usuarios.find(u => u.u === oldU);
+    if (!old) return;
+    const nextU = old.u === "admin" ? "admin" : (document.querySelector("[data-admin-edit-u]")?.value || "").trim().toLowerCase();
+    const patch = {
+      u: nextU,
+      nombre: (document.querySelector("[data-admin-edit-nombre]")?.value || "").trim(),
+      p: document.querySelector("[data-admin-edit-pass]")?.value || "",
+      rol: document.querySelector("[data-admin-edit-rol]")?.value || "Operador",
+      activo: old.u === "admin" ? true : document.querySelector("[data-admin-edit-activo]")?.value !== "false",
+      cargo: (document.querySelector("[data-admin-edit-cargo]")?.value || "").trim(),
+      area: (document.querySelector("[data-admin-edit-area]")?.value || "").trim(),
+      turno: (document.querySelector("[data-admin-edit-turno]")?.value || "").trim(),
+      telefono: (document.querySelector("[data-admin-edit-telefono]")?.value || "").trim(),
+      correo: (document.querySelector("[data-admin-edit-correo]")?.value || "").trim(),
+      direccion: (document.querySelector("[data-admin-edit-direccion]")?.value || "").trim(),
+      contactoEmergenciaNombre: (document.querySelector("[data-admin-edit-emerg-nombre]")?.value || "").trim(),
+      contactoEmergenciaRelacion: (document.querySelector("[data-admin-edit-emerg-relacion]")?.value || "").trim(),
+      contactoEmergenciaTelefono: (document.querySelector("[data-admin-edit-emerg-telefono]")?.value || "").trim(),
+      observacionesContacto: (document.querySelector("[data-admin-edit-observaciones]")?.value || "").trim(),
+    };
+    if (!patch.u || !patch.nombre || !patch.p) return alert("Completa usuario, nombre y contraseña.");
+    if (!/^[a-z0-9._-]{3,24}$/.test(patch.u)) return alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
+    if (patch.u !== oldU && state.usuarios.some(u => u.u === patch.u)) return alert("Ese usuario ya existe.");
+    const next = normalizarUsuario({ ...old, ...patch });
+    state.usuarios = state.usuarios.map(u => u.u === oldU ? next : u);
+    if (patch.u !== oldU && state.userStats[oldU]) {
+      state.userStats[patch.u] = state.userStats[oldU];
+      delete state.userStats[oldU];
+      state.lotes = state.lotes.map(l => l.createdBy === oldU ? { ...l, createdBy: patch.u, createdByName: next.nombre } : l);
+      state.avisos = (state.avisos || []).map(a => a.autor === oldU ? { ...a, autor: patch.u, autorNombre: next.nombre } : a);
+      save("oxmo:lotes", state.lotes);
+      save("oxmo:avisos", state.avisos || []);
+    }
+    if (state.user?.u === oldU) {
+      state.user = next;
+      save("oxmo:user", state.user);
+    }
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario modificado", next.u, `${next.nombre} (${next.rol})`, C.cyan);
+    state.adminEditUser = "";
+    render();
+  });
+  document.querySelectorAll("[data-admin-toggle]").forEach(btn => btn.addEventListener("click", () => {
+    const u = btn.dataset.adminToggle;
+    state.usuarios = state.usuarios.map(x => x.u === u ? { ...x, activo: x.activo === false } : x);
+    saveUsuarios();
+    addHist("Estado de usuario modificado", u, "", C.yellow);
+    render();
+  }));
+  document.querySelectorAll("[data-admin-del]").forEach(btn => btn.addEventListener("click", () => {
+    const u = btn.dataset.adminDel;
+    if (!confirm(`¿Eliminar cuenta ${u}?`)) return;
+    state.usuarios = state.usuarios.filter(x => x.u !== u);
+    delete state.userStats[u];
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario eliminado", u, "", C.red);
+    render();
+  }));
+};
+
 syncInventarioACP();
 repararIdsLotesManuales();
+if (state.infodia) state.infodia = compactInfodiaFinal(state.infodia);
 render();
-initCloud();
+initCloud().then(() => setTimeout(resyncCloudSnapshotFinal, 1200));
 
