@@ -1,26 +1,36 @@
-# Cambios v20260626 - Área / célula + salida gerente
+# Cambios v20260626 - Área/Célula v7 FIX
 
-## Vista Gerente
-- Se agregó nuevamente el botón **Salir** para cerrar sesión.
-- Se mantiene eliminada la barra lateral y los controles técnicos visibles.
-- No se muestra configuración de nube ni botón de clave en el dashboard gerencial.
+## Corrección crítica
+- Se corrigió el problema de pantalla en blanco.
+- La app estaba renderizando antes de terminar de definir la lógica de Área/Célula.
+- Ahora la inicialización se ejecuta al final, después de cargar todos los parches y migraciones.
 
-## Usuarios / áreas de trabajo
-- Al crear usuarios ahora existe el campo **Área / célula**.
-- El admin puede seleccionar un área existente o usar **+ Añadir área / célula...** para crear una nueva.
-- Los datos de usuario ahora conservan `area` / `areaCelula` junto con cargo, turno y contacto.
+## Área / célula
+- Cada usuario queda asociado a un Área/Célula.
+- Usuarios operativos solo ven inventarios de su área.
+- Roles con vista global:
+  - Administrador
+  - Gerente
+  - Jefe de planta
+  - Super intendente / Superintendente
+- Inventario histórico sin área se migra automáticamente a `Envase`.
+- Los lotes nuevos quedan asociados al área del usuario que los registra.
 
-## Base multi-área / célula
-- Se agregó una base lógica para que los centros trabajen de forma independiente por área/célula.
-- Los lotes nuevos quedan asociados al área/célula del usuario que los registra.
-- Usuarios no globales ven/operan inventario de su propia área.
-- Administrador y Gerente pueden ver el totalizado general.
-- La vista de inventario muestra si está trabajando en una área específica o en totalizado.
+## Administración de usuarios
+- Al crear usuario se exige área/célula.
+- El área se elige desde lista desplegable.
+- El admin puede crear nuevas áreas desde `+ Añadir área / célula...`.
+- En ficha de usuario, el admin puede modificar el área/célula.
+- En Mi perfil, el usuario ve su área pero no la modifica.
 
-## Archivos clave
-Subir a GitHub:
+## Visual
+- Se mantiene el estilo visual suavizado del dashboard gerencial.
+- Se agregaron chips visuales de área/célula.
+
+## Archivos para subir a GitHub
+Subir mínimo:
 - `app.js`
 - `styles.css`
 - `index.html`
 
-Después del deploy, abrir con `Ctrl + F5`.
+Después del deploy, abrir con Ctrl + F5.
