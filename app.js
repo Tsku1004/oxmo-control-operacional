@@ -5501,31 +5501,58 @@ function gerenteDashboardHTML() {
   const disponibilidad = d.masaTotalKg ? (d.masaDisponibleKg / d.masaTotalKg) * 100 : 0;
   const sparkProd = d.trend30.slice(-12).map(x => x.produccionDiariaT || 0);
   const sparkCons = d.trend30.slice(-12).map(x => x.consumoT || 0);
-  return `<section class="exec-soft-shell">
-    <aside class="exec-soft-sidebar"><div class="exec-soft-logo"><div></div><b>MOLYB</b></div><nav><button class="active">⌂ Resumen</button><button>▣ Inventario</button><button>↗ Producción</button><button>⇣ Consumo</button><button>⚠ Alertas</button><button>▤ Reportes</button></nav><button class="exec-soft-profile" data-tab="perfil">☻ Mi Perfil</button></aside>
-    <main class="exec-soft-main"><div class="exec-soft-top"><div></div><div class="exec-soft-top-actions"><span class="exec-soft-cloud ${gerenteCloudClass()}">${gerenteCloudLabel()}</span><span class="exec-soft-role">Gerente</span><button id="myPassBtn">Mi clave</button><button id="logoutBtn">Salir</button></div></div>
-      <div class="exec-soft-layout">
-        <div class="exec-soft-content">
-          <div class="exec-soft-hero"><div><h1>Control Operacional Molyb</h1><p>Vista informativa orientada a gerencia. Consolida inventario, clasificación, producción, consumos y alertas sin exponer la operación técnica detallada.</p></div></div>
-          <div class="exec-soft-kpis">
-            ${gerenteKpiHTML('Inventario total', kgToTon(d.masaTotalKg, 2), `${d.lotes.length} lotes registrados`, C.blueLight, '◈', d.sectores.map(s => s.masaT))}
-            ${gerenteKpiHTML('Masa disponible', kgToTon(d.masaDisponibleKg, 2), `${gerenteNumber(disponibilidad, 1)}% del total`, C.green, '◎', sparkProd)}
-            ${gerenteKpiHTML('Masa retenida', kgToTon(d.masaRetenidaKg, 2), `${d.retenidos.length} lotes retenidos`, C.yellow, '▣', d.classRows.map(s => s.masaKg/1000))}
-            ${gerenteKpiHTML('Fuera especificación', kgToTon(d.masaFueraKg, 2), `${d.fuera.length} lote(s) afectados`, C.red, '△', d.classRows.map(s => s.masaKg/1000))}
-            ${gerenteKpiHTML('Producción del mes', kgToTon(d.totals.produccionKg || 0, 2), `${d.totals.lotes || 0} registros Infodia`, C.green, '▥', sparkProd)}
-            ${gerenteKpiHTML('Consumo / descarga', `${gerenteNumber(d.totals.descargaT || 0, 2)} t`, 'Acumulado desde Infodia', C.copper, '⇣', sparkCons)}
-          </div>
-          <div class="exec-soft-panels">${gerenteTrendCardHTML(d)}${gerenteDonutHTML(d)}</div>
-          <div class="exec-soft-update">• Última actualización: ${esc(d.updatedAt)}</div>
-        </div>
-        <aside class="exec-soft-side">${gerenteCalendarHTML()}${gerenteClockHTML()}<div class="exec-soft-side-card"><div class="exec-soft-side-title">Observaciones</div>${d.alerts.map(a => `<div class="exec-soft-alert ${a.level}"><b>${esc(a.title)}</b><p>${esc(a.text)}</p></div>`).join('')}</div></aside>
+  const userInitials = String(state.user?.nombre || state.user?.u || "GM").split(/\s+/).filter(Boolean).slice(0,2).map(x => x[0]).join("").toUpperCase() || "GM";
+  return `<section class="exec-soft-board-v4">
+    <header class="exec-v4-header">
+      <button class="exec-v4-brand" data-tab="gerencial" title="Volver al resumen"><span></span><b>MOLYB</b></button>
+      <div class="exec-v4-user">
+        <span>Gerente</span>
+        <button class="exec-v4-avatar" data-tab="perfil" title="Mi perfil">${esc(userInitials)}</button>
       </div>
-    </main>
+    </header>
+
+    <div class="exec-v4-layout">
+      <section class="exec-v4-content">
+        <div class="exec-soft-hero exec-v4-hero">
+          <div>
+            <h1>Control Operacional Molyb</h1>
+            <p>Vista informativa orientada a gerencia. Consolida inventario, clasificación, producción, consumos y alertas sin exponer la operación técnica detallada.</p>
+          </div>
+        </div>
+
+        <div class="exec-soft-kpis exec-v4-kpis">
+          ${gerenteKpiHTML('Inventario total', kgToTon(d.masaTotalKg, 2), `${d.lotes.length} lotes registrados`, C.blueLight, '◈', d.sectores.map(s => s.masaT))}
+          ${gerenteKpiHTML('Masa disponible', kgToTon(d.masaDisponibleKg, 2), `${gerenteNumber(disponibilidad, 1)}% del total`, C.green, '◎', sparkProd)}
+          ${gerenteKpiHTML('Masa retenida', kgToTon(d.masaRetenidaKg, 2), `${d.retenidos.length} lotes retenidos`, C.yellow, '▣', d.classRows.map(s => s.masaKg/1000))}
+          ${gerenteKpiHTML('Fuera especificación', kgToTon(d.masaFueraKg, 2), `${d.fuera.length} lote(s) afectados`, C.red, '△', d.classRows.map(s => s.masaKg/1000))}
+          ${gerenteKpiHTML('Producción del mes', kgToTon(d.totals.produccionKg || 0, 2), `${d.totals.lotes || 0} registros Infodia`, C.green, '▥', sparkProd)}
+          ${gerenteKpiHTML('Consumo / descarga', `${gerenteNumber(d.totals.descargaT || 0, 2)} t`, 'Acumulado desde Infodia', C.copper, '⇣', sparkCons)}
+        </div>
+
+        <div class="exec-soft-panels exec-v4-panels">
+          ${gerenteTrendCardHTML(d)}
+          ${gerenteDonutHTML(d)}
+        </div>
+        <div class="exec-soft-update">• Última actualización: ${esc(d.updatedAt)}</div>
+      </section>
+
+      <aside class="exec-soft-side exec-v4-side">
+        ${gerenteCalendarHTML()}
+        ${gerenteClockHTML()}
+        <div class="exec-soft-side-card exec-v4-observaciones">
+          <div class="exec-soft-side-title">Observaciones</div>
+          ${d.alerts.map(a => `<div class="exec-soft-alert ${a.level}"><b>${esc(a.title)}</b><p>${esc(a.text)}</p></div>`).join('')}
+        </div>
+      </aside>
+    </div>
   </section>`;
 }
 
 function gerenteShellHTML() {
-  return `<main class="exec-soft-root"><section id="tabView">${state.tab === 'perfil' ? perfilUsuarioHTML() : gerenteDashboardHTML()}</section></main>`;
+  if (state.tab === 'perfil') {
+    return `<main class="exec-soft-root exec-v4-profile"><header class="exec-v4-header"><button class="exec-v4-brand" data-tab="gerencial"><span></span><b>MOLYB</b></button><button class="exec-v4-back" data-tab="gerencial">Volver al dashboard</button></header><section class="main" id="tabView">${perfilUsuarioHTML()}</section></main>`;
+  }
+  return `<main class="exec-soft-root"><section id="tabView">${gerenteDashboardHTML()}</section></main>`;
 }
 
 const shellHTMLAnteriorGerente = shellHTML;
