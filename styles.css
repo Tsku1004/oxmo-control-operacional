@@ -1228,3 +1228,25 @@ tbody tr:hover { background: var(--blue-dim); }
   .exec-v4-hero { min-height: 220px; padding: 26px 22px; }
   .exec-v4-hero h1 { font-size: 38px; }
 }
+
+/* AREA / CÉLULA + botón salir gerencial */
+.exec-v4-logout {
+  border: 1px solid rgba(255,69,96,.38);
+  background: linear-gradient(135deg, rgba(255,69,96,.18), rgba(80,16,30,.72));
+  color: #ff9aac;
+  border-radius: 12px;
+  padding: 10px 15px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  box-shadow: 0 12px 26px rgba(255,69,96,.10);
+}
+.exec-v4-logout:hover {
+  background: linear-gradient(135deg, rgba(255,69,96,.32), rgba(90,18,36,.84));
+  border-color: rgba(255,69,96,.60);
+}
+@media (max-width: 900px) {
+  .exec-v4-user { gap: 8px; }
+  .exec-v4-logout { padding: 9px 12px; }
+}

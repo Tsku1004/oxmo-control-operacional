@@ -133,6 +133,17 @@ function normalizarUsuario(u) {
     nombre: u?.nombre || u?.u || "Usuario",
     activo: u?.activo !== false,
     creado: u?.creado || hoy(),
+    cargo: String(u?.cargo || "").trim(),
+    area: String(u?.area || u?.areaCelula || "").trim(),
+    areaCelula: String(u?.areaCelula || u?.area || "").trim(),
+    turno: String(u?.turno || "").trim(),
+    telefono: String(u?.telefono || "").trim(),
+    correo: String(u?.correo || "").trim(),
+    direccion: String(u?.direccion || "").trim(),
+    contactoEmergenciaNombre: String(u?.contactoEmergenciaNombre || "").trim(),
+    contactoEmergenciaRelacion: String(u?.contactoEmergenciaRelacion || "").trim(),
+    contactoEmergenciaTelefono: String(u?.contactoEmergenciaTelefono || "").trim(),
+    observacionesContacto: String(u?.observacionesContacto || "").trim(),
   };
 }
 function loadSilos() {
@@ -918,6 +929,7 @@ function bindRegistro() {
       createdAt: state.editando ? (state.editando.createdAt || new Date().toISOString()) : new Date().toISOString(),
       createdBy: state.editando ? (state.editando.createdBy || userKey()) : userKey(),
       createdByName: state.editando ? (state.editando.createdByName || state.user?.nombre || userKey()) : (state.user?.nombre || userKey()),
+      areaCelula: state.editando ? (state.editando.areaCelula || areaTrabajoUsuario()) : areaTrabajoUsuario(),
       estado: "Pendiente"
     };
     const clasif = clasificar(lote);
@@ -1056,6 +1068,13 @@ function bindAdmin() {
     state.adminView = btn.dataset.adminView;
     render();
   }));
+  const areaSelCrear = document.querySelector("#newUserArea");
+  const areaWrapCrear = document.querySelector("#newUserAreaAddWrap");
+  if (areaSelCrear && areaWrapCrear) {
+    const toggleArea = () => { areaWrapCrear.style.display = areaSelCrear.value === "__add__" ? "block" : "none"; };
+    areaSelCrear.addEventListener("change", toggleArea);
+    toggleArea();
+  }
   document.querySelector("#adminUserForm")?.addEventListener("submit", e => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.currentTarget).entries());
@@ -5079,6 +5098,36 @@ function usuarioContactoResumen(u) {
   return partes.length ? esc(partes.join(" · ")) : '<span style="color:var(--txt3)">Sin datos</span>';
 }
 
+/* Área / célula de trabajo: base para centros independientes y totalizado gerencial */
+function areaTrabajoDefault() { return "General"; }
+function areaTrabajoUsuario(user = state.user) {
+  return String(user?.area || user?.areaCelula || "").trim() || areaTrabajoDefault();
+}
+function areaTrabajoCatalogo() {
+  const areas = [areaTrabajoDefault(), ...(state.usuarios || []).map(u => normalizarUsuario(u).area).filter(Boolean)];
+  return [...new Set(areas)].sort((a, b) => a.localeCompare(b, "es"));
+}
+function areaTrabajoOptionsHTML(selected = "") {
+  const sel = String(selected || "").trim() || areaTrabajoDefault();
+  const options = areaTrabajoCatalogo();
+  if (sel && !options.includes(sel)) options.push(sel);
+  return options.map(a => `<option value="${esc(a)}" ${a === sel ? "selected" : ""}>${esc(a)}</option>`).join("") + `<option value="__add__">+ Añadir área / célula...</option>`;
+}
+function areaTrabajoEsGlobal(user = state.user) {
+  return isAdmin(user) || isGerente(user);
+}
+function areaTrabajoLote(lote = {}) {
+  const explicit = String(lote.areaCelula || lote.area || "").trim();
+  if (explicit) return explicit;
+  const creador = (state.usuarios || []).map(normalizarUsuario).find(u => u.u === String(lote.createdBy || "").trim().toLowerCase());
+  return areaTrabajoUsuario(creador);
+}
+function lotesPorAreaTrabajo(lotes = state.lotes, user = state.user) {
+  if (areaTrabajoEsGlobal(user)) return lotes || [];
+  const area = areaTrabajoUsuario(user);
+  return (lotes || []).filter(l => areaTrabajoLote(l) === area);
+}
+
 adminUserModalHTML = function() {
   const user = normalizarUsuario(state.usuarios.find(u => u.u === state.adminEditUser));
   if (!user?.u) return "";
@@ -5108,7 +5157,7 @@ adminUserModalHTML = function() {
         <div class="section-title" style="margin-bottom:10px">Datos laborales y contacto</div>
         <div class="profile-grid">
           <div class="field"><label>Cargo</label><input class="input" data-keep-case="true" data-admin-edit-cargo value="${valorPerfil(user, "cargo")}"></div>
-          <div class="field"><label>Área</label><input class="input" data-keep-case="true" data-admin-edit-area value="${valorPerfil(user, "area")}"></div>
+          <div class="field"><label>Área / célula</label><input class="input" data-keep-case="true" data-admin-edit-area value="${valorPerfil(user, "area")}" placeholder="Ej: Envase A, Planta Envase, Logística"></div>
           <div class="field"><label>Turno</label><input class="input" data-keep-case="true" data-admin-edit-turno value="${valorPerfil(user, "turno")}"></div>
           <div class="field"><label>Teléfono</label><input class="input" data-keep-case="true" data-admin-edit-telefono value="${valorPerfil(user, "telefono")}"></div>
           <div class="field"><label>Correo</label><input class="input" data-keep-case="true" type="email" data-admin-edit-correo value="${valorPerfil(user, "correo")}"></div>
@@ -5150,7 +5199,8 @@ adminUsersHTML = function(rows) {
         <div class="field"><label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial"></div>
         <div class="field"><label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select></div>
         <div class="field"><label>Cargo</label><input id="newUserCargo" class="input" data-keep-case="true" placeholder="Opcional"></div>
-        <div class="field"><label>Área</label><input id="newUserArea" class="input" data-keep-case="true" placeholder="Opcional"></div>
+        <div class="field"><label>Área / célula</label><select id="newUserArea" class="input" data-keep-case="true">${areaTrabajoOptionsHTML()}</select></div>
+        <div class="field" id="newUserAreaAddWrap" style="display:none"><label>Nueva área / célula</label><input id="newUserAreaAdd" class="input" data-keep-case="true" placeholder="Ej: Envase A, Centro Norte, Bodega 2"></div>
         <button class="btn primary" id="crearUsuario" style="width:100%;margin-top:4px">Crear usuario</button>
       </div>
       <div class="card">
@@ -5183,14 +5233,24 @@ bindAdmin = function() {
     state.adminView = btn.dataset.adminView;
     render();
   }));
+  const areaSelCrear = document.querySelector("#newUserArea");
+  const areaWrapCrear = document.querySelector("#newUserAreaAddWrap");
+  if (areaSelCrear && areaWrapCrear) {
+    const toggleArea = () => { areaWrapCrear.style.display = areaSelCrear.value === "__add__" ? "block" : "none"; };
+    areaSelCrear.addEventListener("change", toggleArea);
+    toggleArea();
+  }
   document.querySelector("#crearUsuario")?.addEventListener("click", () => {
     const u = (document.querySelector("#newUserU")?.value || "").trim().toLowerCase();
     const nombre = (document.querySelector("#newUserNombre")?.value || "").trim();
     const p = document.querySelector("#newUserPass")?.value || "";
     const rol = document.querySelector("#newUserRol")?.value || "Operador";
     const cargo = (document.querySelector("#newUserCargo")?.value || "").trim();
-    const area = (document.querySelector("#newUserArea")?.value || "").trim();
+    const areaSel = (document.querySelector("#newUserArea")?.value || "").trim();
+    const areaNueva = (document.querySelector("#newUserAreaAdd")?.value || "").trim();
+    const area = areaSel === "__add__" ? areaNueva : areaSel;
     if (!u || !nombre || !p) return alert("Completa usuario, nombre y contraseña.");
+    if (areaSel === "__add__" && !areaNueva) return alert("Ingresa el nombre de la nueva área / célula.");
     if (!/^[a-z0-9._-]{3,24}$/.test(u)) return alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
     if (state.usuarios.some(x => x.u === u)) return alert("Ese usuario ya existe.");
     const nuevo = normalizarUsuario({ u, nombre, p, rol, cargo, area, creado: hoy(), activo: true });
@@ -5508,6 +5568,7 @@ function gerenteDashboardHTML() {
       <div class="exec-v4-user">
         <span>Gerente</span>
         <button class="exec-v4-avatar" data-tab="perfil" title="Mi perfil">${esc(userInitials)}</button>
+        <button class="exec-v4-logout" id="logoutBtn" title="Cerrar sesión">Salir</button>
       </div>
     </header>
 
@@ -5550,7 +5611,7 @@ function gerenteDashboardHTML() {
 
 function gerenteShellHTML() {
   if (state.tab === 'perfil') {
-    return `<main class="exec-soft-root exec-v4-profile"><header class="exec-v4-header"><button class="exec-v4-brand" data-tab="gerencial"><span></span><b>MOLYB</b></button><button class="exec-v4-back" data-tab="gerencial">Volver al dashboard</button></header><section class="main" id="tabView">${perfilUsuarioHTML()}</section></main>`;
+    return `<main class="exec-soft-root exec-v4-profile"><header class="exec-v4-header"><button class="exec-v4-brand" data-tab="gerencial"><span></span><b>MOLYB</b></button><div style="display:flex;gap:10px"><button class="exec-v4-back" data-tab="gerencial">Volver al dashboard</button><button class="exec-v4-logout" id="logoutBtn">Salir</button></div></header><section class="main" id="tabView">${perfilUsuarioHTML()}</section></main>`;
   }
   return `<main class="exec-soft-root"><section id="tabView">${gerenteDashboardHTML()}</section></main>`;
 }
@@ -5576,6 +5637,58 @@ bindShell = function() {
 };
 const renderAnteriorGerente = render;
 render = function() { if (state.user && isGerente() && !['gerencial','perfil'].includes(state.tab)) state.tab = 'gerencial'; return renderAnteriorGerente(); };
+
+/* =========================================================
+   AREA_CELULA_V1_20260626
+   Centros independientes por área/célula + totalizado para Admin/Gerente.
+   ========================================================= */
+const canEditLotAnteriorAreaCelula = canEditLot;
+canEditLot = function(l, user = state.user) {
+  if (!user || !l) return false;
+  if (areaTrabajoEsGlobal(user)) return canEditLotAnteriorAreaCelula(l, user);
+  if (areaTrabajoLote(l) !== areaTrabajoUsuario(user)) return false;
+  return canEditLotAnteriorAreaCelula(l, user);
+};
+
+const lotesRecientesAnteriorAreaCelula = lotesRecientes;
+lotesRecientes = function(lotes = state.lotes) {
+  return lotesRecientesAnteriorAreaCelula(lotesPorAreaTrabajo(lotes));
+};
+
+const inventarioHTMLAnteriorAreaCelula = inventarioHTML;
+inventarioHTML = function() {
+  const base = lotesPorAreaTrabajo(state.lotes);
+  const lotes = state.filtro === "Todos" ? lotesRecientesAnteriorAreaCelula(base) : lotesRecientesAnteriorAreaCelula(base).filter(l => l.estado === state.filtro);
+  const selected = new Set(state.inventorySelected || []);
+  const editableIds = lotes.filter(canEditLot).map(l => l.id);
+  const dist = allSectores().map(s => ({s, v: base.filter(l => l.sector === s).reduce((a,l) => a + l.masa, 0)})).filter(d => d.v > 0);
+  const max = Math.max(1, ...dist.map(d => d.v));
+  const areaInfo = areaTrabajoEsGlobal() ? "Totalizado todas las áreas" : `Área / célula: ${esc(areaTrabajoUsuario())}`;
+  return `
+    <div class="notice" style="margin-bottom:10px;border-color:#00d4ff44;background:#00d4ff12;color:var(--cyan)">${areaInfo}</div>
+    <div class="filters">
+      ${["Todos","Disponible","Bloqueado","Pendiente","Fuera Esp"].map(f => `<button class="pill ${state.filtro === f ? "active" : ""}" data-filter="${f}">${f} (${f === "Todos" ? base.length : base.filter(l => l.estado === f).length})</button>`).join("")}
+      ${selected.size ? `<button class="pill" id="deleteSelectedLots" style="border-color:#ff456055;color:var(--red)">Eliminar seleccionados (${selected.size})</button>` : ""}
+      <button class="pill" id="newLot" style="margin-left:auto;border-color:#00e5a055;color:var(--green)">+ Nuevo lote</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th><input id="invSelectAll" type="checkbox" ${editableIds.length && editableIds.every(id => selected.has(id)) ? "checked" : ""}></th>${["ID","Tipo","Masa","Sector","Cu%","Mo%","S%","Clasif.","Estado","Fecha",""] .map(h => `<th>${h}</th>`).join("")}</tr></thead>
+        <tbody>${lotes.map(l => rowHTML(l)).join("")}</tbody>
+      </table>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px">
+      <div class="card">
+        <div class="muted-title" style="margin-bottom:10px">Por sector</div>
+        ${dist.length ? dist.map(d => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:128px;color:var(--txt2);font-size:11px">${esc(d.s)}</span><div class="bar" style="flex:1;--accent:var(--blue)"><span style="--w:${(d.v/max)*100}%"></span></div><span class="mono" style="color:var(--txt2);font-size:11px">${kgToTon(d.v, 1)}</span></div>`).join("") : `<span style="color:var(--txt3);font-size:12px">Sin inventario en esta área.</span>`}
+      </div>
+      <div class="card">
+        <div class="muted-title" style="margin-bottom:10px">Estados</div>
+        ${["Disponible","Bloqueado","Pendiente","Fuera Esp"].map(e => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a2e4a33"><span style="color:${eColor(e)}">● ${e}</span><span class="mono" style="font-weight:800">${base.filter(l => l.estado === e).length}</span></div>`).join("")}
+      </div>
+    </div>
+  `;
+};
 
 syncInventarioACP();
 repararIdsLotesManuales();
