@@ -5267,6 +5267,242 @@ bindAdmin = function() {
   }));
 };
 
+
+
+/* =========================================================
+   GERENTE_DASHBOARD_V1_20260626
+   Perfil Gerente: oculta módulos técnicos y muestra solo un
+   dashboard informativo con totales, consumos y gráficos simples.
+   ========================================================= */
+function isGerente(user = state.user) {
+  return String(user?.rol || "").trim().toLowerCase() === "gerente";
+}
+
+function gerenteNumber(n, d = 1) {
+  return Number(n || 0).toFixed(d);
+}
+
+function gerentePct(value, max) {
+  const v = Number(value || 0);
+  const m = Math.max(Number(max || 0), 1);
+  return Math.max(0, Math.min(100, (v / m) * 100));
+}
+
+function gerenteDashboardData() {
+  const lotes = state.lotes || [];
+  const disp = lotes.filter(l => l.estado === "Disponible");
+  const retenidos = lotes.filter(l => l.estado !== "Disponible");
+  const fuera = lotes.filter(l => l.estado === "Fuera Esp" || clasificar(l).clase === "Fuera Esp");
+  const masaTotalKg = lotes.reduce((a, l) => a + Number(l.masa || 0), 0);
+  const masaDisponibleKg = disp.reduce((a, l) => a + Number(l.masa || 0), 0);
+  const masaRetenidaKg = retenidos.reduce((a, l) => a + Number(l.masa || 0), 0);
+  const finoMoKg = lotes.filter(l => Number(l.mo) > 0).reduce((a, l) => a + (Number(l.masa || 0) * Number(l.mo || 0) / 100), 0);
+  const info = state.infodia || {};
+  const days = [...(info.days || [])].sort((a, b) => fechaOrdenMs(a.fecha) - fechaOrdenMs(b.fecha));
+  const totals = info.totals || recalcularTotalesInfodia(days);
+  const last = days.at(-1) || null;
+  const sectores = allSectores().map(s => ({
+    label: s,
+    value: lotes.filter(l => l.sector === s).reduce((a, l) => a + Number(l.masa || 0), 0) / 1000
+  })).filter(x => x.value > 0).sort((a, b) => b.value - a.value).slice(0, 8);
+  const estados = ["Disponible", "Pendiente", "Bloqueado", "Fuera Esp"].map(e => ({
+    label: e,
+    value: lotes.filter(l => l.estado === e).reduce((a, l) => a + Number(l.masa || 0), 0) / 1000,
+    count: lotes.filter(l => l.estado === e).length,
+  })).filter(x => x.value > 0 || x.count > 0);
+  const prod7 = days.slice(-7).map(d => ({
+    label: d.fecha || "-",
+    value: Number(d.produccionKg || 0) / 1000,
+    kgMo: Number(d.kgMo || 0) / 1000,
+  }));
+  const silos = sortedSiloEntries().map(([id, s]) => ({
+    label: id,
+    value: Number(s.nivel || 0),
+    masa: Number(s.masa || 0),
+  })).slice(0, 8);
+  return { lotes, disp, retenidos, fuera, masaTotalKg, masaDisponibleKg, masaRetenidaKg, finoMoKg, info, days, totals, last, sectores, estados, prod7, silos };
+}
+
+function gerenteKpiHTML(label, value, sub, color = C.blueLight) {
+  return `<div class="exec-kpi" style="--accent:${color}">
+    <div class="exec-kpi-label">${esc(label)}</div>
+    <div class="exec-kpi-value">${esc(value)}</div>
+    <div class="exec-kpi-sub">${esc(sub || "")}</div>
+  </div>`;
+}
+
+function gerenteBarsHTML(title, rows, unit = "t", color = C.blueLight) {
+  const max = Math.max(1, ...rows.map(r => Number(r.value || 0)));
+  return `<div class="exec-card">
+    <div class="exec-card-title">${esc(title)}</div>
+    <div class="exec-bars">
+      ${rows.length ? rows.map(r => `<div class="exec-bar-row">
+        <div class="exec-bar-head"><span>${esc(r.label)}</span><b>${gerenteNumber(r.value, 2)} ${esc(unit)}</b></div>
+        <div class="exec-bar"><span style="--w:${gerentePct(r.value, max)}%;--accent:${color}"></span></div>
+      </div>`).join("") : `<div class="exec-empty">Sin datos cargados.</div>`}
+    </div>
+  </div>`;
+}
+
+function gerenteProductionHTML(rows) {
+  const max = Math.max(1, ...rows.map(r => Number(r.value || 0)));
+  return `<div class="exec-card exec-card-wide">
+    <div class="exec-card-title">Producción últimos 7 días</div>
+    <div class="exec-column-chart">
+      ${rows.length ? rows.map(r => `<div class="exec-col-wrap">
+        <div class="exec-col-value">${gerenteNumber(r.value, 1)}t</div>
+        <div class="exec-col"><span style="--h:${gerentePct(r.value, max)}%"></span></div>
+        <div class="exec-col-label">${esc(String(r.label || "-").slice(5) || "-")}</div>
+      </div>`).join("") : `<div class="exec-empty">Sin Infodia importado.</div>`}
+    </div>
+  </div>`;
+}
+
+function gerenteSilosHTML(rows) {
+  return `<div class="exec-card">
+    <div class="exec-card-title">Nivel de silos</div>
+    <div class="exec-bars">
+      ${rows.length ? rows.map(r => `<div class="exec-bar-row">
+        <div class="exec-bar-head"><span>${esc(r.label)}</span><b>${gerenteNumber(r.value, 1)}%</b></div>
+        <div class="exec-bar"><span style="--w:${Math.max(0, Math.min(100, Number(r.value || 0)))}%;--accent:${Number(r.value || 0) > 85 ? C.red : Number(r.value || 0) > 60 ? C.yellow : C.green}"></span></div>
+      </div>`).join("") : `<div class="exec-empty">Sin niveles de silos importados.</div>`}
+    </div>
+  </div>`;
+}
+
+function gerenteDashboardHTML() {
+  const d = gerenteDashboardData();
+  const lastDate = d.last?.fecha || "Sin Infodia";
+  const disponibilidad = d.masaTotalKg ? (d.masaDisponibleKg / d.masaTotalKg) * 100 : 0;
+  const fueraPct = d.lotes.length ? (d.fuera.length / d.lotes.length) * 100 : 0;
+  return `<section class="exec-dashboard">
+    <div class="exec-hero">
+      <div>
+        <div class="exec-eyebrow">Dashboard Gerencial</div>
+        <h1>Resumen ejecutivo OXMO</h1>
+        <p>Vista informativa sin edición técnica. Muestra inventario, producción, consumos/descargas y estado general.</p>
+      </div>
+      <div class="exec-hero-meta">
+        <span>Último día: <b>${esc(lastDate)}</b></span>
+        <span>Actualizado: <b>${esc(new Date().toLocaleString("es-CL"))}</b></span>
+      </div>
+    </div>
+
+    <div class="exec-kpis">
+      ${gerenteKpiHTML("Masa total inventario", kgToTon(d.masaTotalKg, 2), `${d.lotes.length} lotes registrados`, C.blueLight)}
+      ${gerenteKpiHTML("Masa disponible", kgToTon(d.masaDisponibleKg, 2), `${gerenteNumber(disponibilidad, 1)}% del inventario`, C.green)}
+      ${gerenteKpiHTML("Masa retenida", kgToTon(d.masaRetenidaKg, 2), `${d.retenidos.length} lotes no disponibles`, C.yellow)}
+      ${gerenteKpiHTML("Fuera especificación", String(d.fuera.length), `${gerenteNumber(fueraPct, 1)}% de lotes`, C.red)}
+      ${gerenteKpiHTML("Producción acumulada", kgToTon(d.totals.produccionKg || 0, 2), `${d.totals.lotes || 0} registros procesados`, C.cyan)}
+      ${gerenteKpiHTML("Fino Mo acumulado", kgToTon(d.totals.kgMo || d.finoMoKg || 0, 2), "Estimación según análisis disponible", C.copper)}
+      ${gerenteKpiHTML("Consumo / descarga silos", `${gerenteNumber(d.totals.descargaT || 0, 2)} t`, "Acumulado desde Infodia", C.yellow)}
+      ${gerenteKpiHTML("Llenado de silos", `${gerenteNumber(d.totals.llenadoT || 0, 2)} t`, "Acumulado desde Infodia", C.green)}
+    </div>
+
+    <div class="exec-grid">
+      ${gerenteBarsHTML("Inventario por sector", d.sectores, "t", C.blueLight)}
+      ${gerenteBarsHTML("Inventario por estado", d.estados, "t", C.green)}
+      ${gerenteProductionHTML(d.prod7)}
+      ${gerenteSilosHTML(d.silos)}
+    </div>
+
+    <div class="exec-note">
+      Esta vista está pensada para Gerencia: no permite registrar, editar, importar ni ver parámetros operacionales detallados. Para cambios técnicos usa perfiles Supervisor o Administrador.
+    </div>
+  </section>`;
+}
+
+function gerenteShellHTML() {
+  return `<header class="topbar gerente-topbar">
+    <div class="brand" style="justify-content:flex-start;margin:0">
+      <div class="brand-mark" style="height:38px"></div>
+      <div>
+        <div style="font-weight:900;letter-spacing:3px">CONTROL OPERACIONAL</div>
+        <div class="brand-sub">OXMO · DASHBOARD GERENCIAL</div>
+      </div>
+    </div>
+    <div class="top-user-center">
+      <div class="top-user-role">GERENTE</div>
+      <div class="top-user-name">${esc(state.user?.nombre || "Gerente")}</div>
+    </div>
+    <div class="top-actions">
+      <div style="text-align:right">
+        <div class="mono" style="color:var(--green);font-size:13px;font-weight:800">${new Date().toLocaleTimeString("es-CL")}</div>
+        <div style="color:var(--txt3);font-size:8px;letter-spacing:1px">${hoy()}</div>
+      </div>
+      <button class="btn danger" id="logoutBtn">SALIR</button>
+    </div>
+  </header>
+  <main class="main gerente-main">
+    <nav class="tabs gerente-tabs">
+      <button class="tab ${state.tab === "gerencial" ? "active" : ""}" data-tab="gerencial">Dashboard</button>
+      <button class="tab ${state.tab === "perfil" ? "active" : ""}" data-tab="perfil">Mi perfil</button>
+    </nav>
+    <section id="tabView">${state.tab === "perfil" ? perfilUsuarioHTML() : gerenteDashboardHTML()}</section>
+  </main>
+  <footer class="footer"><span>OXMO CONTROL · Vista gerencial</span><span>SOLO LECTURA</span></footer>`;
+}
+
+const shellHTMLAnteriorGerente = shellHTML;
+shellHTML = function() {
+  if (isGerente()) return gerenteShellHTML();
+  return shellHTMLAnteriorGerente();
+};
+
+const canViewTabAnteriorGerente = canViewTab;
+canViewTab = function(id, user = state.user) {
+  if (isGerente(user)) return ["gerencial", "perfil"].includes(id);
+  return canViewTabAnteriorGerente(id, user);
+};
+
+const visibleTabsAnteriorGerente = visibleTabs;
+visibleTabs = function() {
+  if (isGerente()) return [["gerencial", "Dashboard"], ["perfil", "Mi perfil"]];
+  return visibleTabsAnteriorGerente();
+};
+
+const tabHTMLAnteriorGerente = tabHTML;
+tabHTML = function() {
+  if (isGerente() && state.tab === "gerencial") return gerenteDashboardHTML();
+  if (isGerente() && state.tab === "perfil") return perfilUsuarioHTML();
+  return tabHTMLAnteriorGerente();
+};
+
+const bindTabAnteriorGerente = bindTab;
+bindTab = function() {
+  if (isGerente()) {
+    if (state.tab === "perfil") bindPerfilUsuario();
+    return;
+  }
+  bindTabAnteriorGerente();
+};
+
+const bindShellAnteriorGerente = bindShell;
+bindShell = function() {
+  if (!isGerente()) return bindShellAnteriorGerente();
+  document.querySelector("#logoutBtn")?.addEventListener("click", () => {
+    cerrarSesionUsuario();
+    state.user = null;
+    save("oxmo:user", null);
+    render();
+  });
+  document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => {
+    state.tab = btn.dataset.tab;
+    render();
+  }));
+  aplicarMayusculasFinal();
+  bindTab();
+};
+
+const renderAnteriorGerente = render;
+render = function() {
+  if (state.user && isGerente() && !["gerencial", "perfil"].includes(state.tab)) {
+    state.tab = "gerencial";
+  }
+  return renderAnteriorGerente();
+};
+
+
 syncInventarioACP();
 repararIdsLotesManuales();
 if (state.infodia) state.infodia = compactInfodiaFinal(state.infodia);

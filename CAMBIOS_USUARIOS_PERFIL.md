@@ -41,3 +41,16 @@ También puedes subir el ZIP completo descomprimido para reemplazar todo el proy
 2. Abre la app.
 3. Presiona `Ctrl + F5`.
 4. Si aún aparece la antigua etiqueta, abre la app en incógnito o borra caché del sitio.
+
+
+## Dashboard Gerencial
+
+Se agregó una vista especial para usuarios con rol **Gerente**:
+
+- Oculta módulos técnicos como Inventario, Silos, Mezclas, Infodia, Alertas, Avisos y Admin.
+- Muestra solo un dashboard informativo de lectura con KPIs y gráficos simples.
+- Incluye masa total, masa disponible, masa retenida, fuera de especificación, producción acumulada, fino Mo, consumo/descarga de silos y llenado de silos.
+- Agrega gráficos por sector, por estado, producción de últimos 7 días y nivel de silos.
+- Mantiene acceso a Mi perfil para completar datos personales.
+
+Para activar esta vista, en Admin > Usuarios edita o crea una cuenta con rol **Gerente**.
