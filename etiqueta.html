@@ -10,130 +10,162 @@
         margin: 0;
         min-height: 100%;
         background: #eceff3;
-        font-family: Arial, sans-serif;
+        font-family: Arial, Helvetica, sans-serif;
         color: #111;
       }
-      .wrap { min-height: 100vh; display: grid; place-items: center; padding: 12px; }
+      .wrap {
+        min-height: 100vh;
+        display: grid;
+        place-items: start center;
+        padding: 12px;
+      }
       .label-page {
         width: 100mm;
         height: 150mm;
-        padding: 2mm;
+        padding: 3mm;
         background: #fff;
         box-shadow: 0 12px 34px #0003;
         overflow: hidden;
       }
       .label {
-        width: 96mm;
-        height: 146mm;
-        border: 1mm solid #111;
-        border-radius: 3mm;
-        padding: 4mm 5mm 2.6mm;
+        width: 94mm;
+        height: 144mm;
+        border: .8mm solid #111;
+        border-radius: 2.5mm;
+        padding: 4.5mm 5mm 2.8mm;
         display: flex;
         flex-direction: column;
         overflow: hidden;
       }
       header {
+        min-height: 19mm;
         display: flex;
         justify-content: space-between;
-        gap: 4mm;
         align-items: flex-start;
+        gap: 4mm;
         border-bottom: .45mm solid #111;
-        padding-bottom: 1.6mm;
+        padding-bottom: 2.2mm;
       }
       header img {
-        width: 38mm;
+        width: 32mm;
         max-height: 14mm;
         height: auto;
         object-fit: contain;
+        margin-top: 1.2mm;
       }
       .system {
-        font-size: 9pt;
+        font-size: 10pt;
+        line-height: 1.15;
         font-weight: 900;
-        letter-spacing: 1.2pt;
+        letter-spacing: 2.1pt;
         text-align: right;
+        white-space: pre-line;
       }
       .date {
         font-size: 7pt;
-        color: #555;
+        color: #333;
         text-align: right;
-        margin-top: 1mm;
+        margin-top: 1.6mm;
       }
       main {
         flex: 1;
         display: flex;
         flex-direction: column;
         align-items: stretch;
-        padding-top: 1.4mm;
         min-height: 0;
+        padding-top: 3mm;
       }
       .lot-id {
-        font-family: Consolas, monospace;
-        font-size: clamp(14pt, var(--id-size, 22pt), 22pt);
+        font-family: Consolas, "Courier New", monospace;
+        font-size: clamp(14pt, var(--id-size, 20pt), 20pt);
         font-weight: 900;
         text-align: center;
-        line-height: 1.02;
-        margin-bottom: 1.5mm;
+        line-height: 1.05;
+        letter-spacing: .2pt;
+        margin: 0 0 3mm;
         overflow-wrap: anywhere;
         word-break: break-word;
       }
       .material {
+        min-height: 13mm;
         border: .55mm solid var(--accent);
         color: var(--accent);
         border-radius: 2mm;
-        padding: 1.4mm;
-        font-size: 14pt;
+        padding: 1.7mm 2mm;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16pt;
         font-weight: 900;
+        letter-spacing: 1.2pt;
         text-align: center;
-        margin-bottom: 2mm;
+        margin-bottom: 3mm;
       }
       .chem {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 1.7mm;
-        margin-bottom: 2mm;
+        gap: 2mm;
+        margin-bottom: 3mm;
       }
-      .chem div, .meta div {
+      .chem div,
+      .meta div {
         border: .35mm solid #222;
         border-radius: 1.5mm;
-        padding: 1.2mm;
         text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
       }
-      .chem b, .meta b {
+      .chem div { min-height: 14mm; padding: 1.4mm 1mm; }
+      .meta div { min-height: 13mm; padding: 1.4mm; }
+      .chem b,
+      .meta b {
         display: block;
-        font-size: 7pt;
+        font-size: 6.5pt;
+        line-height: 1;
         text-transform: uppercase;
-        color: #555;
-        margin-bottom: .6mm;
+        color: #111;
+        margin-bottom: 1mm;
+        letter-spacing: .3pt;
       }
       .chem span {
-        font-family: Consolas, monospace;
-        font-size: 13pt;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 13.5pt;
+        line-height: 1;
         font-weight: 900;
       }
       .meta {
         display: grid;
         grid-template-columns: 1fr;
-        gap: 1.5mm;
-        margin-bottom: 1.2mm;
+        gap: 2mm;
+        margin-bottom: 2mm;
       }
       .meta span {
-        font-size: 9.5pt;
-        font-weight: 800;
+        font-size: 12pt;
+        line-height: 1;
+        font-weight: 900;
+      }
+      .qr-zone {
+        flex: 1;
+        min-height: 42mm;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1mm 0 1.5mm;
       }
       .qr {
-        width: var(--qr-size, 29mm);
-        height: var(--qr-size, 29mm);
-        align-self: center;
+        width: var(--qr-size, 40mm);
+        height: var(--qr-size, 40mm);
         image-rendering: pixelated;
-        margin-top: 0;
-        margin-bottom: 1mm;
-        flex: 0 0 auto;
+        object-fit: contain;
+        display: block;
       }
       footer {
         border-top: .35mm solid #111;
-        margin-top: 0;
-        padding-top: .7mm;
+        padding-top: .8mm;
         font-size: 5.5pt;
+        line-height: 1.2;
         text-align: center;
         color: #555;
       }
@@ -147,9 +179,9 @@
       }
       @media print {
         @page { size: 100mm 150mm; margin: 0; }
-        body { background: #fff; }
-        .wrap { padding: 0; display: block; }
-        .label-page { box-shadow: none; }
+        html, body { width: 100mm; height: 150mm; background: #fff; }
+        .wrap { min-height: 150mm; padding: 0; display: block; }
+        .label-page { box-shadow: none; margin: 0; }
       }
     </style>
   </head>
@@ -176,15 +208,14 @@
         const qrData = encodeURIComponent(location.href);
         document.documentElement.style.setProperty("--accent", data.color);
         const idLen = String(data.id || "").length;
-        document.documentElement.style.setProperty("--qr-size", idLen > 24 ? "25mm" : idLen > 18 ? "27mm" : "29mm");
-        document.documentElement.style.setProperty("--id-size", idLen > 24 ? "14pt" : idLen > 18 ? "16pt" : "22pt");
+        document.documentElement.style.setProperty("--id-size", idLen > 26 ? "14pt" : idLen > 20 ? "16pt" : "20pt");
         document.querySelector("#root").innerHTML = `<div class="wrap">
           <section class="label-page">
             <div class="label">
               <header>
                 <img src="./molyb-logo.webp" alt="Molyb" />
                 <div>
-                  <div class="system">OXMO CONTROL</div>
+                  <div class="system">OXMO\nCONTROL</div>
                   <div class="date">${esc(data.fecha)}</div>
                 </div>
               </header>
@@ -197,9 +228,9 @@
                   <div><b>S</b><span>${esc(data.s)}%</span></div>
                 </div>
                 <div class="meta"><div><b>Masa</b><span>${esc(data.masa)}</span></div></div>
-                <img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${qrData}" alt="QR ${esc(data.id)}" />
+                <div class="qr-zone"><img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=520x520&margin=1&data=${qrData}" alt="QR ${esc(data.id)}" /></div>
               </main>
-              <footer>Copia digital etiqueta OXMO - Zebra ZT230 - 100 x 150 mm</footer>
+              <footer>Zebra ZT230 · Etiqueta 100 × 150 mm · 300 dpi</footer>
             </div>
           </section>
         </div>`;

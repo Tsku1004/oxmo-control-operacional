@@ -42,3 +42,10 @@ Fecha: 2026-06-26
 ## Nota
 
 La app conserva el mismo sistema actual de usuarios guardados en `oxmo:usuarios` y sincronizados por Supabase. No se migró a autenticación real de Supabase; eso sería una mejora posterior para producción.
+
+
+## Ajuste etiqueta 100x150 mm - Zebra ZT230 300 dpi
+- Se corrigio la plantilla de etiqueta para formato vertical 100 x 150 mm.
+- Se ajustaron margenes internos, bloque de cabecera, cajas quimicas, masa y QR.
+- El QR queda centrado, cuadrado y aumentado a 40 mm para lectura mas estable.
+- Se actualizo el pie a Zebra ZT230 · Etiqueta 100 x 150 mm · 300 dpi.

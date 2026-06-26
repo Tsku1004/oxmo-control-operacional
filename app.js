@@ -1,4 +1,4 @@
-﻿const C = {
+const C = {
   blue: "#1E6FD9", blueLight: "#3A8EF5", cyan: "#00D4FF",
   green: "#00E5A0", copper: "#C87533", yellow: "#FFB800", red: "#FF4560",
   txt2: "#6A8FAF", txt3: "#2D4A6A"
@@ -3285,28 +3285,33 @@ function etiquetaPublicaHTML(data) {
   }
   const color = data.color || C.cyan;
   const qrData = encodeURIComponent(location.href);
+  const idLen = String(data.lote || "").length;
+  const idSize = idLen > 26 ? "14pt" : idLen > 20 ? "16pt" : "20pt";
   return `<style>
-    html, body { margin: 0; min-height: 100%; background: #eceff3; font-family: Arial, sans-serif; color: #111; }
-    .public-wrap { min-height: 100vh; display: grid; place-items: center; padding: 18px; }
-    .label-page { width: 100mm; height: 150mm; padding: 4mm; background: #fff; box-shadow: 0 12px 34px #0003; overflow: hidden; }
-    .label { width: 92mm; height: 142mm; border: 1mm solid #111; border-radius: 3mm; padding: 4.5mm; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
-    .label * { box-sizing: border-box; }
-    header { display: flex; justify-content: space-between; gap: 4mm; align-items: flex-start; border-bottom: .45mm solid #111; padding-bottom: 2.5mm; }
-    header img { width: 28mm; height: auto; object-fit: contain; }
-    .system { font-size: 9pt; font-weight: 900; letter-spacing: 1.2pt; text-align: right; }
-    .date { font-size: 7pt; color: #555; text-align: right; margin-top: 1mm; }
-    main { flex: 1; display: flex; flex-direction: column; align-items: stretch; padding-top: 3mm; min-height: 0; }
-    .lot-id { font-family: Consolas, monospace; font-size: 24pt; font-weight: 900; text-align: center; line-height: 1; margin-bottom: 2.5mm; }
-    .material { border: .55mm solid ${esc(color)}; color: ${esc(color)}; border-radius: 2mm; padding: 2mm; font-size: 14pt; font-weight: 900; text-align: center; margin-bottom: 3mm; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #eceff3; font-family: Arial, Helvetica, sans-serif; color: #111; }
+    .public-wrap { min-height: 100vh; display: grid; place-items: start center; padding: 12px; }
+    .label-page { width: 100mm; height: 150mm; padding: 3mm; background: #fff; box-shadow: 0 12px 34px #0003; overflow: hidden; }
+    .label { width: 94mm; height: 144mm; border: .8mm solid #111; border-radius: 2.5mm; padding: 4.5mm 5mm 2.8mm; display: flex; flex-direction: column; overflow: hidden; }
+    header { min-height: 19mm; display: flex; justify-content: space-between; align-items: flex-start; gap: 4mm; border-bottom: .45mm solid #111; padding-bottom: 2.2mm; }
+    header img { width: 32mm; max-height: 14mm; height: auto; object-fit: contain; margin-top: 1.2mm; }
+    .system { font-size: 10pt; line-height: 1.15; font-weight: 900; letter-spacing: 2.1pt; text-align: right; white-space: pre-line; }
+    .date { font-size: 7pt; color: #333; text-align: right; margin-top: 1.6mm; }
+    main { flex: 1; display: flex; flex-direction: column; align-items: stretch; min-height: 0; padding-top: 3mm; }
+    .lot-id { font-family: Consolas, "Courier New", monospace; font-size: ${idSize}; font-weight: 900; text-align: center; line-height: 1.05; letter-spacing: .2pt; margin: 0 0 3mm; overflow-wrap: anywhere; word-break: break-word; }
+    .material { min-height: 13mm; border: .55mm solid ${esc(color)}; color: ${esc(color)}; border-radius: 2mm; padding: 1.7mm 2mm; display: flex; align-items: center; justify-content: center; font-size: 16pt; font-weight: 900; letter-spacing: 1.2pt; text-align: center; margin-bottom: 3mm; }
     .chem { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm; margin-bottom: 3mm; }
-    .chem div, .meta div { border: .35mm solid #222; border-radius: 1.5mm; padding: 1.8mm; text-align: center; }
-    .chem b, .meta b { display: block; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
-    .chem span { font-family: Consolas, monospace; font-size: 14pt; font-weight: 900; }
-    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 1.2mm; }
-    .meta span { font-size: 10pt; font-weight: 800; }
-    .qr { width: 34mm; height: 34mm; align-self: center; image-rendering: pixelated; margin-top: 1mm; flex: 0 0 auto; }
-    footer { border-top: .35mm solid #111; margin-top: auto; padding-top: 1.5mm; font-size: 6pt; text-align: center; color: #555; }
-    @media print { @page { size: 100mm 150mm; margin: 0; } body { background: #fff; } .public-wrap { padding: 0; display: block; } .label-page { box-shadow: none; } }
+    .chem div, .meta div { border: .35mm solid #222; border-radius: 1.5mm; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .chem div { min-height: 14mm; padding: 1.4mm 1mm; }
+    .meta div { min-height: 13mm; padding: 1.4mm; }
+    .chem b, .meta b { display: block; font-size: 6.5pt; line-height: 1; text-transform: uppercase; color: #111; margin-bottom: 1mm; letter-spacing: .3pt; }
+    .chem span { font-family: Consolas, "Courier New", monospace; font-size: 13.5pt; line-height: 1; font-weight: 900; }
+    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 2mm; }
+    .meta span { font-size: 12pt; line-height: 1; font-weight: 900; }
+    .qr-zone { flex: 1; min-height: 42mm; display: flex; align-items: center; justify-content: center; padding: 1mm 0 1.5mm; }
+    .qr { width: 40mm; height: 40mm; image-rendering: pixelated; object-fit: contain; display: block; }
+    footer { border-top: .35mm solid #111; padding-top: .8mm; font-size: 5.5pt; line-height: 1.2; text-align: center; color: #555; }
+    @media print { @page { size: 100mm 150mm; margin: 0; } html, body { width: 100mm; height: 150mm; background: #fff; } .public-wrap { min-height: 150mm; padding: 0; display: block; } .label-page { box-shadow: none; margin: 0; } }
   </style>
   <div class="public-wrap">
     <section class="label-page">
@@ -3314,7 +3319,7 @@ function etiquetaPublicaHTML(data) {
         <header>
           <img src="./molyb-logo.webp" alt="Molyb" />
           <div>
-            <div class="system">OXMO CONTROL</div>
+            <div class="system">OXMO\nCONTROL</div>
             <div class="date">${esc(data.fecha || hoy())}</div>
           </div>
         </header>
@@ -3327,13 +3332,14 @@ function etiquetaPublicaHTML(data) {
             <div><b>S</b><span>${esc(data.s != null ? `${data.s}%` : "-")}</span></div>
           </div>
           <div class="meta"><div><b>Masa</b><span>${esc(data.masa || "-")}</span></div></div>
-          <img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${qrData}" alt="QR ${esc(data.lote)}" />
+          <div class="qr-zone"><img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=520x520&margin=1&data=${qrData}" alt="QR ${esc(data.lote)}" /></div>
         </main>
-        <footer>Copia digital etiqueta OXMO - Zebra ZT230 - 100 x 150 mm</footer>
+        <footer>Zebra ZT230 · Etiqueta 100 × 150 mm · 300 dpi</footer>
       </div>
     </section>
   </div>`;
 }
+
 
 function publicDato(label, value) {
   return `<div class="card" style="padding:10px;text-align:center"><div style="color:var(--txt3);font-size:9px;text-transform:uppercase">${esc(label)}</div><div class="mono" style="font-weight:900;color:var(--txt)">${esc(value)}</div></div>`;
@@ -3355,6 +3361,8 @@ function printLabels() {
     });
     const qrUrl = `${PUBLIC_APP_URL}etiqueta.html?${labelParams.toString()}`;
     const qrData = encodeURIComponent(qrUrl);
+    const idLen = String(l.id || "").length;
+    const idSize = idLen > 26 ? "14pt" : idLen > 20 ? "16pt" : "20pt";
     const chem = hasAnalysis(l)
       ? `<div class="chem"><div><b>Cu</b><span>${fmt(l.cu, 2)}%</span></div><div><b>Mo</b><span>${fmt(l.mo, 2)}%</span></div><div><b>S</b><span>${fmt(l.s, 3)}%</span></div></div>`
       : `<div class="pending">SIN ANALISIS</div>`;
@@ -3363,20 +3371,18 @@ function printLabels() {
         <header>
           <img src="./molyb-logo.webp" alt="Molyb" />
           <div>
-            <div class="system">OXMO CONTROL</div>
+            <div class="system">OXMO\nCONTROL</div>
             <div class="date">${esc(l.fecha || hoy())}</div>
           </div>
         </header>
         <main>
-          <div class="lot-id">${esc(l.id)}</div>
+          <div class="lot-id" style="font-size:${idSize}">${esc(l.id)}</div>
           <div class="material" style="border-color:${c.color};color:${c.color}">${esc(c.clase.toUpperCase())}</div>
           ${chem}
-          <div class="meta">
-            <div><b>Masa</b><span>${kgToTon(l.masa, 2)}</span></div>
-          </div>
-          <img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${qrData}" alt="QR ${esc(l.id)}" />
+          <div class="meta"><div><b>Masa</b><span>${kgToTon(l.masa, 2)}</span></div></div>
+          <div class="qr-zone"><img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=520x520&margin=1&data=${qrData}" alt="QR ${esc(l.id)}" /></div>
         </main>
-        <footer>Zebra ZT230 - Etiqueta 100 x 150 mm - 203 dpi</footer>
+        <footer>Zebra ZT230 · Etiqueta 100 × 150 mm · 300 dpi</footer>
       </div>
     </section>`;
   }).join("");
@@ -3388,32 +3394,36 @@ function printLabels() {
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas OXMO</title><style>
     @page { size: 100mm 150mm; margin: 0; }
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: #f3f3f3; font-family: Arial, sans-serif; color: #111; }
-    .label-page { width: 100mm; height: 150mm; page-break-after: always; padding: 4mm; background: #fff; overflow: hidden; }
-    .label { width: 92mm; height: 142mm; border: 1mm solid #111; border-radius: 3mm; padding: 4.5mm; display: flex; flex-direction: column; overflow: hidden; }
-    header { display: flex; justify-content: space-between; gap: 4mm; align-items: flex-start; border-bottom: .45mm solid #111; padding-bottom: 2.5mm; }
-    header img { width: 28mm; height: auto; object-fit: contain; }
-    .system { font-size: 9pt; font-weight: 900; letter-spacing: 1.2pt; text-align: right; }
-    .date { font-size: 7pt; color: #555; text-align: right; margin-top: 1mm; }
-    main { flex: 1; display: flex; flex-direction: column; align-items: stretch; padding-top: 3mm; min-height: 0; }
-    .lot-id { font-family: Consolas, monospace; font-size: 24pt; font-weight: 900; text-align: center; line-height: 1; margin-bottom: 2.5mm; }
-    .material { border: .55mm solid; border-radius: 2mm; padding: 2mm; font-size: 14pt; font-weight: 900; text-align: center; margin-bottom: 3mm; }
+    html, body { margin: 0; padding: 0; background: #eceff3; font-family: Arial, Helvetica, sans-serif; color: #111; }
+    .label-page { width: 100mm; height: 150mm; page-break-after: always; break-after: page; padding: 3mm; background: #fff; overflow: hidden; }
+    .label { width: 94mm; height: 144mm; border: .8mm solid #111; border-radius: 2.5mm; padding: 4.5mm 5mm 2.8mm; display: flex; flex-direction: column; overflow: hidden; }
+    header { min-height: 19mm; display: flex; justify-content: space-between; align-items: flex-start; gap: 4mm; border-bottom: .45mm solid #111; padding-bottom: 2.2mm; }
+    header img { width: 32mm; max-height: 14mm; height: auto; object-fit: contain; margin-top: 1.2mm; }
+    .system { font-size: 10pt; line-height: 1.15; font-weight: 900; letter-spacing: 2.1pt; text-align: right; white-space: pre-line; }
+    .date { font-size: 7pt; color: #333; text-align: right; margin-top: 1.6mm; }
+    main { flex: 1; display: flex; flex-direction: column; align-items: stretch; min-height: 0; padding-top: 3mm; }
+    .lot-id { font-family: Consolas, "Courier New", monospace; font-weight: 900; text-align: center; line-height: 1.05; letter-spacing: .2pt; margin: 0 0 3mm; overflow-wrap: anywhere; word-break: break-word; }
+    .material { min-height: 13mm; border: .55mm solid; border-radius: 2mm; padding: 1.7mm 2mm; display: flex; align-items: center; justify-content: center; font-size: 16pt; font-weight: 900; letter-spacing: 1.2pt; text-align: center; margin-bottom: 3mm; }
     .chem { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm; margin-bottom: 3mm; }
-    .chem div, .meta div { border: .35mm solid #222; border-radius: 1.5mm; padding: 1.8mm; text-align: center; }
-    .chem b, .meta b { display: block; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
-    .chem span { font-family: Consolas, monospace; font-size: 14pt; font-weight: 900; }
-    .pending { border: .5mm solid #222; padding: 3mm; font-size: 14pt; font-weight: 900; text-align: center; margin-bottom: 3mm; }
-    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 1.2mm; }
-    .meta span { font-size: 10pt; font-weight: 800; }
-    .qr { width: 34mm; height: 34mm; align-self: center; image-rendering: pixelated; margin-top: 1mm; flex: 0 0 auto; }
-    footer { border-top: .35mm solid #111; margin-top: auto; padding-top: 1.5mm; font-size: 6pt; text-align: center; color: #555; }
-    .no-print { position: fixed; top: 10px; right: 10px; display: flex; gap: 8px; }
-    .no-print button { padding: 8px 12px; font-weight: 800; cursor: pointer; }
+    .chem div, .meta div { border: .35mm solid #222; border-radius: 1.5mm; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .chem div { min-height: 14mm; padding: 1.4mm 1mm; }
+    .meta div { min-height: 13mm; padding: 1.4mm; }
+    .chem b, .meta b { display: block; font-size: 6.5pt; line-height: 1; text-transform: uppercase; color: #111; margin-bottom: 1mm; letter-spacing: .3pt; }
+    .chem span { font-family: Consolas, "Courier New", monospace; font-size: 13.5pt; line-height: 1; font-weight: 900; }
+    .pending { min-height: 14mm; border: .35mm solid #222; border-radius: 1.5mm; padding: 3mm; font-size: 14pt; font-weight: 900; text-align: center; margin-bottom: 3mm; display: flex; align-items: center; justify-content: center; }
+    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 2mm; }
+    .meta span { font-size: 12pt; line-height: 1; font-weight: 900; }
+    .qr-zone { flex: 1; min-height: 42mm; display: flex; align-items: center; justify-content: center; padding: 1mm 0 1.5mm; }
+    .qr { width: 40mm; height: 40mm; image-rendering: pixelated; object-fit: contain; display: block; }
+    footer { border-top: .35mm solid #111; padding-top: .8mm; font-size: 5.5pt; line-height: 1.2; text-align: center; color: #555; }
+    .no-print { position: fixed; top: 10px; right: 10px; display: flex; gap: 8px; z-index: 10; }
+    .no-print button { padding: 9px 14px; font-weight: 900; cursor: pointer; }
     @media screen { body { display: grid; place-items: start center; gap: 12px; padding: 16px; } .label-page { box-shadow: 0 8px 30px #0003; } }
-    @media print { body { background: #fff; padding: 0; } .no-print { display: none; } .label-page { box-shadow: none; } }
+    @media print { html, body { width: 100mm; background: #fff; padding: 0; } .no-print { display: none; } .label-page { box-shadow: none; margin: 0; } }
   </style></head><body><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div>${items}</body></html>`);
   w.document.close();
 }
+
 
 // --- Ajustes finales 2026-06-14: mezcla por objetivo, silos con comunes y etiqueta desde inventario ---
 function correlativoAnalisis(codigo) {
