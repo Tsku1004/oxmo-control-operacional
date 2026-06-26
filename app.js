@@ -6385,19 +6385,613 @@ gerenteDashboardData = function() {
   return gerenteDashboardDataAreaV2();
 };
 
-// Inicialización final segura: primero quedan definidas todas las funciones,
-// luego se migran áreas/células y recién después se renderiza la app.
+
+
+/* =========================================================
+   AREA_CELULA_V9_FIX_20260626
+   - Usuarios no globales fuera de Envase: solo Inventario + Mi perfil.
+   - Usuarios no globales pueden crear/editar inventarios de su área.
+   - Roles globales ven totalizado: Administrador, Gerente, Jefe de planta, Super intendente/Superintendente.
+   - Área/Célula en usuarios como lista desplegable administrada por Admin.
+   - Inventario sin área queda asociado a Envase.
+   - Restauración robusta de Infodia/ACP: comunes OO300/O0300 + silos llenados por fecha.
+   ========================================================= */
+
+function normalizarRolAreaV9(user = state.user) {
+  return String(user?.rol || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizarTextoAreaV9(v) {
+  return String(v || "").trim();
+}
+
+areaTrabajoDefault = function() {
+  return AREA_CELULA_DEFAULT || "Envase";
+};
+
+areaTrabajoUsuario = function(user = state.user) {
+  return normalizarTextoAreaV9(user?.areaCelula || user?.area) || areaTrabajoDefault();
+};
+
+areaTrabajoEsGlobal = function(user = state.user) {
+  const rol = normalizarRolAreaV9(user);
+  return ["administrador", "gerente", "jefe de planta", "super intendente", "superintendente"].includes(rol) || isAdmin(user) || isGerente(user);
+};
+
+function areaEsEnvaseV9(user = state.user) {
+  return normalizarTextoAreaV9(areaTrabajoUsuario(user)).toLowerCase() === String(areaTrabajoDefault()).toLowerCase();
+}
+
+function usuarioAreaLimitadaV9(user = state.user) {
+  return !!user && !areaTrabajoEsGlobal(user) && !areaEsEnvaseV9(user);
+}
+
+areaTrabajoLote = function(lote = {}) {
+  const explicit = normalizarTextoAreaV9(lote.areaCelula || lote.areaTrabajo || lote.area);
+  if (explicit) return explicit;
+  const creatorKey = String(lote.createdBy || "").trim().toLowerCase();
+  const creador = (state.usuarios || []).map(normalizarUsuario).find(u => u.u === creatorKey);
+  return creador ? areaTrabajoUsuario(creador) : areaTrabajoDefault();
+};
+
+areasTrabajoCatalogo = function() {
+  const areas = [
+    areaTrabajoDefault(),
+    ...(state.usuarios || []).map(u => normalizarUsuario(u).areaCelula || normalizarUsuario(u).area).filter(Boolean),
+    ...(state.lotes || []).map(l => normalizarTextoAreaV9(l.areaCelula || l.areaTrabajo || l.area)).filter(Boolean),
+  ];
+  return [...new Set(areas.map(normalizarTextoAreaV9).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+};
+
+areaTrabajoCatalogo = function() {
+  return areasTrabajoCatalogo();
+};
+
+areaTrabajoOptionsHTML = function(selected = "", { includeAdd = false } = {}) {
+  const sel = normalizarTextoAreaV9(selected) || areaTrabajoDefault();
+  const options = areasTrabajoCatalogo();
+  if (sel && !options.includes(sel)) options.push(sel);
+  return options.map(a => `<option value="${esc(a)}" ${a === sel ? "selected" : ""}>${esc(a)}</option>`).join("")
+    + (includeAdd ? `<option value="__add__">+ Añadir área / célula...</option>` : "");
+};
+
+renderAreaSelectHTML = function({ id = "", name = "", value = "", dataAttr = "", includeAdd = false, disabled = false } = {}) {
+  const attrId = id ? `id="${esc(id)}"` : "";
+  const attrName = name ? `name="${esc(name)}"` : "";
+  const attrData = dataAttr ? `${dataAttr}` : "";
+  return `<select ${attrId} ${attrName} class="input area-select" data-keep-case="true" ${attrData} ${disabled ? "disabled" : ""}>${areaTrabajoOptionsHTML(value, { includeAdd })}</select>`;
+};
+
+function migrarAreaCelulaV9() {
+  let changedUsers = false;
+  state.usuarios = (state.usuarios || []).map(u => {
+    const nu = normalizarUsuario(u || {});
+    const area = normalizarTextoAreaV9(nu.areaCelula || nu.area) || areaTrabajoDefault();
+    if (nu.area !== area || nu.areaCelula !== area) changedUsers = true;
+    return { ...nu, area, areaCelula: area };
+  });
+
+  if (state.user) {
+    const area = normalizarTextoAreaV9(state.user.areaCelula || state.user.area) || areaTrabajoDefault();
+    if (state.user.area !== area || state.user.areaCelula !== area) {
+      state.user = normalizarUsuario({ ...state.user, area, areaCelula: area });
+      save("oxmo:user", state.user);
+    }
+  }
+
+  let changedLotes = false;
+  state.lotes = (state.lotes || []).map(l => {
+    const area = normalizarTextoAreaV9(l.areaCelula || l.areaTrabajo || l.area) || areaTrabajoDefault();
+    if (l.areaCelula === area && l.areaTrabajo === area) return l;
+    changedLotes = true;
+    return { ...l, areaCelula: area, areaTrabajo: area };
+  });
+
+  if (changedUsers) saveUsuarios();
+  if (changedLotes) save("oxmo:lotes", state.lotes);
+}
+
+function lotesVisiblesAreaV9(lotes = state.lotes, user = state.user) {
+  const source = Array.isArray(lotes) ? lotes : [];
+  if (!user || areaTrabajoEsGlobal(user)) return source;
+  const area = areaTrabajoUsuario(user);
+  return source.filter(l => areaTrabajoLote(l) === area);
+}
+
+function areaBadgeHTMLV9(area, subtle = false) {
+  return `<span class="area-chip ${subtle ? "subtle" : ""}">${esc(area || areaTrabajoDefault())}</span>`;
+}
+areaBadgeHTML = areaBadgeHTMLV9;
+
+function areaScopeNoticeV9() {
+  if (!state.user) return "";
+  if (areaTrabajoEsGlobal()) {
+    const areas = areasTrabajoCatalogo().map(a => areaBadgeHTML(a, true)).join(" ");
+    return `<div class="area-scope-card"><div><b>Totalizado general</b><span>Vista consolidada de todas las áreas/células.</span></div><div class="area-chip-list">${areas}</div></div>`;
+  }
+  const area = areaTrabajoUsuario();
+  const extra = areaEsEnvaseV9() ? "Área Envase: acceso según rol asignado." : "Área independiente: solo Inventario y Mi perfil.";
+  return `<div class="area-scope-card"><div><b>${esc(area)}</b><span>${esc(extra)}</span></div>${areaBadgeHTML(area)}</div>`;
+}
+
+canViewTab = function(id, user = state.user) {
+  if (!user) return false;
+  if (isGerente(user)) return ["gerencial", "perfil"].includes(id);
+  if (usuarioAreaLimitadaV9(user)) return ["inventario", "registro", "perfil"].includes(id);
+  return canViewTabAnteriorGerente(id, user);
+};
+
+visibleTabs = function() {
+  if (state.user && usuarioAreaLimitadaV9()) {
+    return [["inventario", "Inventario"], ["perfil", "Mi perfil"]];
+  }
+  return visibleTabsAnteriorGerente();
+};
+
+shellHTML = function() {
+  // El encabezado/KPIs también se acota al área para evitar que usuarios
+  // operativos vean totales de otras células. No afecta Silos/Infodia
+  // porque esos módulos se renderizan después y sin reemplazar state.lotes.
+  if (!state.user || areaTrabajoEsGlobal()) return shellHTMLAreaV2();
+  return withScopedLotesHTML(shellHTMLAreaV2);
+};
+
+tabHTML = function() {
+  if (state.tab === "inventario") return inventarioHTML();
+  if (state.tab === "registro") return registroHTML();
+  return tabHTMLAreaV2();
+};
+
+canEditLot = function(l, user = state.user) {
+  if (!l || !user) return false;
+  if (!areaTrabajoEsGlobal(user) && areaTrabajoLote(l) !== areaTrabajoUsuario(user)) return false;
+  return canEditLotAreaV2(l, user);
+};
+
+inventarioHTML = function() {
+  const base = lotesVisiblesAreaV9(state.lotes);
+  const ordered = lotesRecientesAnteriorAreaCelula(base);
+  const lotes = state.filtro === "Todos" ? ordered : ordered.filter(l => l.estado === state.filtro);
+  const selected = new Set(state.inventorySelected || []);
+  const editableIds = lotes.filter(l => canEditLot(l)).map(l => l.id);
+  const dist = allSectores().map(s => ({
+    s,
+    v: base.filter(l => l.sector === s).reduce((a, l) => a + Number(l.masa || 0), 0)
+  })).filter(d => d.v > 0);
+  const max = Math.max(1, ...dist.map(d => d.v));
+  return `
+    ${areaScopeNoticeV9()}
+    <div class="filters filters-soft">
+      ${["Todos", "Disponible", "Bloqueado", "Pendiente", "Fuera Esp"].map(f => `<button class="pill ${state.filtro === f ? "active" : ""}" data-filter="${f}">${f} (${f === "Todos" ? base.length : base.filter(l => l.estado === f).length})</button>`).join("")}
+      ${selected.size ? `<button class="pill" id="deleteSelectedLots" style="border-color:#ff456055;color:var(--red)">Eliminar seleccionados (${selected.size})</button>` : ""}
+      <button class="pill" id="newLot" style="margin-left:auto;border-color:#00e5a055;color:var(--green)">+ Nuevo lote</button>
+    </div>
+    <div class="table-wrap inventory-soft-table">
+      <table>
+        <thead><tr><th><input id="invSelectAll" type="checkbox" ${editableIds.length && editableIds.every(id => selected.has(id)) ? "checked" : ""}></th>${["ID", "Área", "Tipo", "Masa", "Sector", "Cu%", "Mo%", "S%", "Clasif.", "Estado", "Fecha", ""].map(h => `<th>${h}</th>`).join("")}</tr></thead>
+        <tbody>${lotes.length ? lotes.map(l => rowHTMLAreaV9(l)).join("") : `<tr><td colspan="12" style="text-align:center;color:var(--txt2);padding:26px">Sin inventario registrado para esta área/célula. Usa <b>+ Nuevo lote</b> para cargar tu primer registro.</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px">
+      <div class="card">
+        <div class="muted-title" style="margin-bottom:10px">Por sector</div>
+        ${dist.length ? dist.map(d => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:128px;color:var(--txt2);font-size:11px">${esc(d.s)}</span><div class="bar" style="flex:1;--accent:var(--blue)"><span style="--w:${(d.v / max) * 100}%"></span></div><span class="mono" style="color:var(--txt2);font-size:11px">${kgToTon(d.v, 1)}</span></div>`).join("") : `<span style="color:var(--txt3);font-size:12px">Sin inventario en esta área.</span>`}
+      </div>
+      <div class="card">
+        <div class="muted-title" style="margin-bottom:10px">Estados</div>
+        ${["Disponible", "Bloqueado", "Pendiente", "Fuera Esp"].map(e => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a2e4a33"><span style="color:${eColor(e)}">● ${e}</span><span class="mono" style="font-weight:800">${base.filter(l => l.estado === e).length}</span></div>`).join("")}
+      </div>
+    </div>
+  `;
+};
+
+function rowHTMLAreaV9(l) {
+  const { clase, color } = clasificar(l);
+  const selected = (state.inventorySelected || []).includes(l.id);
+  const select = canEditLot(l) ? `<input type="checkbox" data-inv-select="${esc(l.id)}" ${selected ? "checked" : ""}>` : "";
+  const labelAction = `<button class="icon-btn" data-label-lot="${esc(l.id)}" title="Imprimir etiqueta">▦</button>`;
+  const actions = canEditLot(l)
+    ? `<div class="mini-actions">${labelAction}<button class="icon-btn" data-edit="${esc(l.id)}">✏</button><button class="icon-btn" data-del="${esc(l.id)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button></div>`
+    : `<div class="mini-actions">${labelAction}</div>`;
+  return `<tr>
+    <td>${select}</td>
+    <td class="mono" style="color:var(--blue-light);font-weight:800">${esc(l.id)}</td>
+    <td>${areaBadgeHTML(areaTrabajoLote(l), true)}</td>
+    <td style="color:var(--txt2)">${esc(l.tipo)}</td>
+    <td class="mono">${kgToTon(l.masa, 3)}</td>
+    <td><span class="tag" style="color:var(--blue-light);background:#0f3a6e">${esc(l.sector)}</span></td>
+    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.cu >= 0.51 ? C.copper : C.green}">${hasAnalysis(l) ? l.cu : "—"}</td>
+    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.mo >= moMinimo(l.cu) ? C.green : C.red}">${hasAnalysis(l) ? l.mo : "—"}</td>
+    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.s < 0.1 ? C.green : C.red}">${hasAnalysis(l) ? l.s : "—"}</td>
+    <td><span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${clase}</span></td>
+    <td style="color:${eColor(l.estado)}">● ${esc(l.estado)}</td>
+    <td class="mono" style="color:var(--txt3);font-size:10px">${esc(l.fecha)}</td>
+    <td>${actions}</td>
+  </tr>`;
+}
+
+registroHTML = function() {
+  const area = state.editando ? areaTrabajoLote(state.editando) : areaTrabajoUsuario();
+  return `<div class="area-scope-card"><div><b>Registro en área/célula</b><span>El lote quedará asociado a ${esc(area)}. Solo usuarios de esta área y roles globales podrán verlo.</span></div>${areaBadgeHTML(area)}</div>${registroHTMLAreaV2()}`;
+};
+
+// Infodia/ACP robusto: acepta OO300-001 y O0300-001 como comunes de turno.
+tipoAnalisisACP = function(codigo) {
+  codigo = normalizarCodigoAnalisis(codigo);
+  if (/^O[O0]300-001-\d+-\d{2}$/.test(codigo)) return "comun_turno";
+  if (/^OXMO\d+-\d{2}$/.test(codigo)) return "lote_oxmo";
+  if (/^OXBR\d+-\d{2}$/.test(codigo)) return "briqueta";
+  if (codigo.includes("OSAC") && /-\d{2}$/.test(codigo)) return "lote_osac";
+  if (/^[A-Z]{2,12}\d+-\d{2}$/.test(codigo)) return "otro_lote";
+  return "";
+};
+
+buildSiloHistorial = function(days, analisis) {
+  const byDate = new Map();
+  for (const a of analisis || []) {
+    if (!byDate.has(a.fecha)) byDate.set(a.fecha, []);
+    byDate.get(a.fecha).push(a);
+  }
+  const out = [];
+  for (const day of [...(days || [])].sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))) {
+    const comunesDia = byDate.get(day.fecha) || [];
+    for (const s of day.silos || []) {
+      const comunes = comunesParaTurno(comunesDia, s.turno);
+      const promedio = promedioAnalisis(comunes);
+      const llenado = Number(s.llenadoT || 0);
+      const descarga = Number(s.descargaT || 0);
+      const masaFinal = Number(s.masa || 0);
+      const tieneComun = comunes.length > 0 && hasAnalysis(promedio);
+      const caracter = tieneComun && llenado > 0 ? { cu: promedio.cu, mo: promedio.mo, s: promedio.s } : { cu: 0, mo: 0, s: 0 };
+      const movimiento = llenado > 0 ? "Llenado" : descarga > 0 ? "Descarga" : "Nivel";
+      const rec = {
+        fecha: day.fecha,
+        siloId: s.id,
+        silo: s.silo,
+        turno: s.turno,
+        horaInicio: s.horaInicio,
+        horaTermino: s.horaTermino,
+        movimiento,
+        nivelInicial: Number(s.nivelInicial || 0),
+        masaLlenado: llenado,
+        masaDescarga: descarga,
+        masaFinal,
+        nivelFinal: Number(s.finalNivel || 0),
+        comunes: comunes.map(c => c.codigo),
+        comunCu: promedio.cu,
+        comunMo: promedio.mo,
+        comunS: promedio.s,
+        cu: caracter.cu,
+        mo: caracter.mo,
+        s: caracter.s,
+      };
+      const finalRec = { ...rec, ...clasificar(rec) };
+      if (tieneComun && llenado > 0 && hasAnalysis(finalRec)) out.push(finalRec);
+    }
+  }
+  return out;
+};
+
+// Cuando ya existe Infodia cargado, recalcula siloHistorial con la lógica corregida
+// sin tocar niveles ni inventario. Si la importación antigua no guardó analisis OO300,
+// basta reimportar el Infodia para repoblar comunes.
+function recalcularSiloHistorialInfodiaV9() {
+  if (!state.infodia?.days?.length || !state.infodia?.analisisACP?.length) return false;
+  const analisis = (state.infodia.analisisACP || []).filter(a => tipoAnalisisACP(a.codigo) === "comun_turno").map(a => ({ ...a, tipoAnalisis: "comun_turno" }));
+  const siloHistorial = buildSiloHistorial(state.infodia.days, analisis);
+  state.infodia = { ...state.infodia, analisis, siloHistorial };
+  state.siloHistorial = siloHistorial;
+  save("oxmo:infodia", state.infodia);
+  save("oxmo:siloHistorial", state.siloHistorial);
+  return true;
+}
+
+adminUsersHTML = function(rows) {
+  const usuarios = rows.map(r => normalizarUsuario(r.u || r));
+  const roleOptions = ROLES_USUARIO.map(r => `<option>${esc(r)}</option>`).join("");
+  const areas = areasTrabajoCatalogo();
+  return `
+    <div class="area-admin-shell">
+      <div class="area-admin-card create-user-card">
+        <div class="section-title">Crear cuenta</div>
+        <div class="area-help">Cada usuario queda asociado a un área/célula. Usuarios de otras áreas solo ven su inventario y su perfil.</div>
+        <div class="field"><label>Usuario</label><input id="newUserU" class="input" data-keep-case="true" placeholder="ej: turno_a"></div>
+        <div class="field"><label>Nombre</label><input id="newUserNombre" class="input" data-keep-case="true" placeholder="Nombre visible"></div>
+        <div class="field"><label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial"></div>
+        <div class="field"><label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select></div>
+        <div class="field"><label>Cargo</label><input id="newUserCargo" class="input" data-keep-case="true" placeholder="Opcional"></div>
+        <div class="field"><label>Área / célula</label>${renderAreaSelectHTML({ id: "newUserArea", value: areaTrabajoDefault(), includeAdd: true })}</div>
+        <div class="field" id="newUserAreaAddWrap" style="display:none"><label>Nueva área / célula</label><input id="newUserAreaAdd" class="input" data-keep-case="true" placeholder="Ej: Envase B, Logística, Centro Norte"></div>
+        <button class="btn primary" id="crearUsuario" style="width:100%;margin-top:4px">Crear usuario</button>
+      </div>
+      <div class="area-admin-card users-list-card">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:12px">
+          <div>
+            <div class="section-title">Cuentas creadas — ${usuarios.length}</div>
+            <div class="area-help">Áreas activas: ${areas.map(a => areaBadgeHTML(a, true)).join(" ")}</div>
+          </div>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Área / célula</th><th>Contraseña</th><th>Estado</th><th>Último uso</th><th>Control</th></tr></thead><tbody>
+          ${usuarios.map(u => {
+            const stat = state.userStats[u.u] || {};
+            return `<tr>
+              <td class="mono" style="color:var(--blue-light);font-weight:900">${esc(u.u)}</td>
+              <td>${esc(u.nombre)}</td>
+              <td>${esc(u.rol)}</td>
+              <td>${areaBadgeHTML(u.area)}</td>
+              <td><span class="pass-chip mono">${esc(u.p || "-")}</span></td>
+              <td style="color:${u.activo !== false ? C.green : C.red}">● ${u.activo !== false ? "Activo" : "Deshabilitado"}</td>
+              <td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td>
+              <td><div class="mini-actions">
+                <button class="icon-btn" data-admin-edit="${esc(u.u)}">Editar</button>
+                ${u.u !== "admin" && u.u !== userKey() ? `<button class="icon-btn" data-admin-toggle="${esc(u.u)}">${u.activo !== false ? "Pausar" : "Activar"}</button><button class="icon-btn" data-admin-del="${esc(u.u)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button>` : ""}
+              </div></td>
+            </tr>`;
+          }).join("")}
+        </tbody></table></div>
+      </div>
+    </div>
+    ${adminUserModalHTML()}
+  `;
+};
+
+adminUserModalHTML = function() {
+  const user = normalizarUsuario(state.usuarios.find(u => u.u === state.adminEditUser));
+  if (!user?.u) return "";
+  const stat = state.userStats[user.u] || {};
+  const roles = ROLES_USUARIO.map(r => `<option ${user.rol === r ? "selected" : ""}>${esc(r)}</option>`).join("");
+  return `<div class="modal-backdrop" data-admin-user-modal>
+    <div class="modal-card user-modal-card area-user-modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px">
+        <div>
+          <div class="section-title">Editar usuario</div>
+          <h2 style="margin:4px 0 0">${esc(user.nombre)}</h2>
+          <div style="color:var(--txt2);font-size:12px;margin-top:4px">Administra cuenta, rol, contraseña, área/célula y datos personales.</div>
+        </div>
+        <button class="btn ghost" data-admin-edit-close>Cerrar</button>
+      </div>
+
+      <div class="area-modal-banner">
+        <div>
+          <div class="area-modal-title">Área asignada</div>
+          <div class="area-modal-text">Define qué inventario puede ver el usuario.</div>
+        </div>
+        ${areaBadgeHTML(user.area)}
+      </div>
+
+      <div class="profile-grid">
+        <div class="field"><label>Usuario</label><input class="input" data-keep-case="true" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
+        <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
+        <div class="field"><label>Contraseña visible</label><input class="input" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p)}"></div>
+        <div class="field"><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
+        <div class="field"><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
+        <div class="field"><label>Creado</label><input class="input" readonly value="${esc(user.creado || "-")}"></div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title" style="margin-bottom:10px">Datos laborales y contacto</div>
+        <div class="profile-grid">
+          <div class="field"><label>Cargo</label><input class="input" data-keep-case="true" data-admin-edit-cargo value="${valorPerfil(user, "cargo")}"></div>
+          <div class="field"><label>Área / célula</label>${renderAreaSelectHTML({ value: user.area, dataAttr: "data-admin-edit-area", includeAdd: true })}</div>
+          <div class="field" data-admin-edit-area-add-wrap style="display:none"><label>Nueva área / célula</label><input class="input" data-keep-case="true" data-admin-edit-area-add placeholder="Ej: Envase B, Logística, Centro Norte"></div>
+          <div class="field"><label>Turno</label><input class="input" data-keep-case="true" data-admin-edit-turno value="${valorPerfil(user, "turno")}"></div>
+          <div class="field"><label>Teléfono</label><input class="input" data-keep-case="true" data-admin-edit-telefono value="${valorPerfil(user, "telefono")}"></div>
+          <div class="field"><label>Correo</label><input class="input" data-keep-case="true" data-admin-edit-correo value="${valorPerfil(user, "correo")}"></div>
+          <div class="field"><label>Dirección</label><input class="input" data-keep-case="true" data-admin-edit-direccion value="${valorPerfil(user, "direccion")}"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title" style="margin-bottom:10px;color:${C.red}">Emergencia</div>
+        <div class="profile-grid">
+          <div class="field"><label>Contacto emergencia</label><input class="input" data-keep-case="true" data-admin-edit-emerg-nombre value="${valorPerfil(user, "contactoEmergenciaNombre")}"></div>
+          <div class="field"><label>Relación</label><input class="input" data-keep-case="true" data-admin-edit-emerg-relacion value="${valorPerfil(user, "contactoEmergenciaRelacion")}"></div>
+          <div class="field"><label>Teléfono emergencia</label><input class="input" data-keep-case="true" data-admin-edit-emerg-telefono value="${valorPerfil(user, "contactoEmergenciaTelefono")}"></div>
+          <div class="field"><label>Observaciones</label><textarea class="input" data-keep-case="true" data-admin-edit-observaciones rows="3">${valorPerfil(user, "observacionesContacto")}</textarea></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;color:var(--txt2);font-size:12px;margin-top:8px">
+          <div>Último uso: <b>${esc(stat.lastSeen || "-")}</b></div>
+          <div>Tiempo de uso: <b>${esc(formatDuration(tiempoUsuarioMs(user.u)))}</b></div>
+        </div>
+      </div>
+      <button class="btn primary" data-admin-edit-save style="width:100%;margin-top:12px">Guardar cambios</button>
+    </div>
+  </div>`;
+};
+
+bindAdmin = function() {
+  document.querySelectorAll("[data-admin-view]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminView = btn.dataset.adminView;
+    render();
+  }));
+  const toggleAddWrap = (sel, wrap) => {
+    if (!sel || !wrap) return;
+    const run = () => { wrap.style.display = sel.value === "__add__" ? "block" : "none"; };
+    sel.addEventListener("change", run);
+    run();
+  };
+  toggleAddWrap(document.querySelector("#newUserArea"), document.querySelector("#newUserAreaAddWrap"));
+  toggleAddWrap(document.querySelector("[data-admin-edit-area]"), document.querySelector("[data-admin-edit-area-add-wrap]"));
+
+  document.querySelector("#crearUsuario")?.addEventListener("click", () => {
+    const u = (document.querySelector("#newUserU")?.value || "").trim().toLowerCase();
+    const nombre = (document.querySelector("#newUserNombre")?.value || "").trim();
+    const p = document.querySelector("#newUserPass")?.value || "";
+    const rol = document.querySelector("#newUserRol")?.value || "Operador";
+    const cargo = (document.querySelector("#newUserCargo")?.value || "").trim();
+    const areaSel = (document.querySelector("#newUserArea")?.value || "").trim();
+    const areaNueva = (document.querySelector("#newUserAreaAdd")?.value || "").trim();
+    const area = areaSel === "__add__" ? areaNueva : areaSel;
+    if (!u || !nombre || !p) return alert("Completa usuario, nombre y contraseña.");
+    if (!area) return alert("Selecciona el área / célula del usuario.");
+    if (areaSel === "__add__" && !areaNueva) return alert("Ingresa el nombre de la nueva área / célula.");
+    if (!/^[a-z0-9._-]{3,24}$/.test(u)) return alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
+    if (state.usuarios.some(x => x.u === u)) return alert("Ese usuario ya existe.");
+    const nuevo = normalizarUsuario({ u, nombre, p, rol, cargo, area, areaCelula: area, creado: hoy(), activo: true });
+    state.usuarios.push(nuevo);
+    ensureUserStat(nuevo);
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario creado", u, `${rol} · ${area}`, C.green);
+    render();
+  });
+
+  document.querySelectorAll("[data-admin-edit]").forEach(btn => btn.addEventListener("click", () => {
+    state.adminEditUser = btn.dataset.adminEdit;
+    render();
+  }));
+  document.querySelectorAll("[data-admin-edit-close]").forEach(btn => btn.addEventListener("click", () => { state.adminEditUser = ""; render(); }));
+  document.querySelector("[data-admin-edit-save]")?.addEventListener("click", () => {
+    const oldU = state.adminEditUser;
+    const old = state.usuarios.find(u => u.u === oldU);
+    if (!old) return;
+    const nextU = old.u === "admin" ? "admin" : (document.querySelector("[data-admin-edit-u]")?.value || "").trim().toLowerCase();
+    const areaSel = (document.querySelector("[data-admin-edit-area]")?.value || "").trim();
+    const areaNueva = (document.querySelector("[data-admin-edit-area-add]")?.value || "").trim();
+    const area = areaSel === "__add__" ? areaNueva : areaSel;
+    const patch = {
+      u: nextU,
+      nombre: (document.querySelector("[data-admin-edit-nombre]")?.value || "").trim(),
+      p: document.querySelector("[data-admin-edit-pass]")?.value || "",
+      rol: document.querySelector("[data-admin-edit-rol]")?.value || "Operador",
+      activo: old.u === "admin" ? true : document.querySelector("[data-admin-edit-activo]")?.value !== "false",
+      cargo: (document.querySelector("[data-admin-edit-cargo]")?.value || "").trim(),
+      area,
+      areaCelula: area,
+      turno: (document.querySelector("[data-admin-edit-turno]")?.value || "").trim(),
+      telefono: (document.querySelector("[data-admin-edit-telefono]")?.value || "").trim(),
+      correo: (document.querySelector("[data-admin-edit-correo]")?.value || "").trim(),
+      direccion: (document.querySelector("[data-admin-edit-direccion]")?.value || "").trim(),
+      contactoEmergenciaNombre: (document.querySelector("[data-admin-edit-emerg-nombre]")?.value || "").trim(),
+      contactoEmergenciaRelacion: (document.querySelector("[data-admin-edit-emerg-relacion]")?.value || "").trim(),
+      contactoEmergenciaTelefono: (document.querySelector("[data-admin-edit-emerg-telefono]")?.value || "").trim(),
+      observacionesContacto: (document.querySelector("[data-admin-edit-observaciones]")?.value || "").trim(),
+    };
+    if (!patch.u || !patch.nombre || !patch.p) return alert("Completa usuario, nombre y contraseña.");
+    if (!patch.area) return alert("Selecciona el área / célula del usuario.");
+    if (areaSel === "__add__" && !areaNueva) return alert("Ingresa el nombre de la nueva área / célula.");
+    if (!/^[a-z0-9._-]{3,24}$/.test(patch.u)) return alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
+    if (patch.u !== oldU && state.usuarios.some(u => u.u === patch.u)) return alert("Ese usuario ya existe.");
+    const cambiosCriticos = [
+      old.u !== patch.u ? `usuario: ${old.u} → ${patch.u}` : "",
+      old.nombre !== patch.nombre ? `nombre: ${old.nombre} → ${patch.nombre}` : "",
+      old.rol !== patch.rol ? `rol: ${old.rol} → ${patch.rol}` : "",
+      areaTrabajoUsuario(old) !== patch.area ? `área: ${areaTrabajoUsuario(old)} → ${patch.area}` : "",
+      old.p !== patch.p ? "contraseña: modificada" : "",
+      old.activo !== patch.activo ? `estado: ${old.activo !== false ? "Activo" : "Deshabilitado"} → ${patch.activo ? "Activo" : "Deshabilitado"}` : "",
+    ].filter(Boolean);
+    const msg = cambiosCriticos.length
+      ? `Confirma modificación de usuario:\n\n${cambiosCriticos.join("\n")}\n\n¿Guardar cambios?`
+      : "No se detectan cambios críticos. ¿Guardar de todas formas?";
+    if (!confirm(msg)) return;
+    const next = normalizarUsuario({ ...old, ...patch });
+    state.usuarios = state.usuarios.map(u => u.u === oldU ? next : u);
+    if (patch.u !== oldU && state.userStats[oldU]) {
+      state.userStats[patch.u] = state.userStats[oldU];
+      delete state.userStats[oldU];
+      state.lotes = state.lotes.map(l => l.createdBy === oldU ? { ...l, createdBy: patch.u, createdByName: next.nombre } : l);
+      state.avisos = (state.avisos || []).map(a => a.autor === oldU ? { ...a, autor: patch.u, autorNombre: next.nombre } : a);
+      save("oxmo:lotes", state.lotes);
+      save("oxmo:avisos", state.avisos || []);
+    }
+    if (state.user?.u === oldU) { state.user = next; save("oxmo:user", state.user); }
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario modificado", next.u, `${next.nombre} · ${next.area}`, C.cyan);
+    state.adminEditUser = "";
+    render();
+  });
+
+  document.querySelectorAll("[data-admin-toggle]").forEach(btn => btn.addEventListener("click", () => {
+    const u = state.usuarios.find(x => x.u === btn.dataset.adminToggle);
+    if (!u) return;
+    if (!confirm(`${u.activo !== false ? "Deshabilitar" : "Activar"} usuario ${u.u}?`)) return;
+    u.activo = u.activo === false ? true : false;
+    saveUsuarios();
+    addHist(u.activo ? "Usuario activado" : "Usuario deshabilitado", u.u, "", u.activo ? C.green : C.yellow);
+    render();
+  }));
+  document.querySelectorAll("[data-admin-del]").forEach(btn => btn.addEventListener("click", () => {
+    const u = btn.dataset.adminDel;
+    if (!confirm(`Eliminar usuario ${u}? Esta acción no se puede deshacer.`)) return;
+    state.usuarios = state.usuarios.filter(x => x.u !== u);
+    delete state.userStats[u];
+    saveUsuarios();
+    save("oxmo:userStats", state.userStats);
+    addHist("Usuario eliminado", u, "", C.red);
+    render();
+  }));
+};
+
+perfilUsuarioHTML = function() {
+  const u = normalizarUsuario(state.usuarios.find(x => x.u === state.user?.u) || state.user || {});
+  return `
+    <div class="box profile-soft-box">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px">
+        <div>
+          <div class="section-title">Mi perfil</div>
+          <div style="font-size:20px;font-weight:900;color:var(--txt)">${esc(u.nombre)}</div>
+          <div style="color:var(--txt2);font-size:12px;margin-top:6px">Puedes actualizar tus datos de contacto. El área/célula queda bloqueada y la modifica solo el Administrador.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="tag" style="color:${C.cyan};background:#00d4ff22;border-color:#00d4ff55">${esc(u.rol)}</span>${areaBadgeHTML(u.area)}</div>
+      </div>
+      <form id="perfilUsuarioForm" class="profile-form">
+        <div class="profile-grid">
+          <div class="field"><label>Usuario</label><input class="input" readonly value="${esc(u.u)}"></div>
+          <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" name="nombre" value="${esc(u.nombre)}"></div>
+          <div class="field"><label>Cargo</label><input class="input" data-keep-case="true" name="cargo" value="${valorPerfil(u, "cargo")}" placeholder="Ej: Operador Envase"></div>
+          <div class="field"><label>Área / célula</label>${renderAreaSelectHTML({ value: u.area, disabled: true })}<input type="hidden" name="area" value="${esc(u.area)}"><input type="hidden" name="areaCelula" value="${esc(u.area)}"></div>
+          <div class="field"><label>Turno</label><input class="input" data-keep-case="true" name="turno" value="${valorPerfil(u, "turno")}" placeholder="Ej: Turno A / 7x7"></div>
+          <div class="field"><label>Teléfono personal</label><input class="input" data-keep-case="true" name="telefono" value="${valorPerfil(u, "telefono")}" placeholder="+56 9 ...."></div>
+          <div class="field"><label>Correo</label><input class="input" data-keep-case="true" type="email" name="correo" value="${valorPerfil(u, "correo")}" placeholder="correo@empresa.cl"></div>
+          <div class="field"><label>Dirección</label><input class="input" data-keep-case="true" name="direccion" value="${valorPerfil(u, "direccion")}" placeholder="Dirección de contacto"></div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <div class="section-title" style="margin-bottom:10px;color:${C.red}">Contacto de emergencia</div>
+          <div class="profile-grid">
+            <div class="field"><label>Nombre contacto</label><input class="input" data-keep-case="true" name="contactoEmergenciaNombre" value="${valorPerfil(u, "contactoEmergenciaNombre")}" placeholder="Nombre y apellido"></div>
+            <div class="field"><label>Relación</label><input class="input" data-keep-case="true" name="contactoEmergenciaRelacion" value="${valorPerfil(u, "contactoEmergenciaRelacion")}" placeholder="Ej: Madre / Pareja / Hermano"></div>
+            <div class="field"><label>Teléfono emergencia</label><input class="input" data-keep-case="true" name="contactoEmergenciaTelefono" value="${valorPerfil(u, "contactoEmergenciaTelefono")}" placeholder="+56 9 ...."></div>
+            <div class="field"><label>Observaciones</label><textarea class="input" data-keep-case="true" name="observacionesContacto" rows="3" placeholder="Alergias, restricciones o notas relevantes">${valorPerfil(u, "observacionesContacto")}</textarea></div>
+          </div>
+        </div>
+        <button class="btn primary" style="width:100%;margin-top:14px">Guardar mi perfil</button>
+      </form>
+    </div>
+  `;
+};
+
+if (!document.getElementById("area-celula-v9-style")) {
+  const st = document.createElement("style");
+  st.id = "area-celula-v9-style";
+  st.textContent = `
+    .area-scope-card{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:14px 16px;border:1px solid rgba(0,212,255,.22);background:linear-gradient(135deg,rgba(0,212,255,.10),rgba(30,111,217,.08));border-radius:18px;box-shadow:0 12px 34px rgba(0,0,0,.16)}
+    .area-scope-card b{display:block;color:var(--txt);font-size:14px}.area-scope-card span{display:block;color:var(--txt2);font-size:12px;margin-top:3px}.area-chip-list{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.filters-soft{background:rgba(8,21,39,.72);border:1px solid rgba(74,142,245,.20);border-radius:16px;padding:12px}.inventory-soft-table{border-radius:16px;overflow:hidden;border:1px solid rgba(74,142,245,.18)}.inventory-soft-table table thead th{background:linear-gradient(90deg,rgba(30,111,217,.50),rgba(0,212,255,.18))}.area-user-modal,.modal-card,.box,.card{border-radius:18px}.profile-soft-box{background:linear-gradient(135deg,rgba(11,25,46,.98),rgba(8,18,35,.96))}.area-select{background:#06101d;border-color:#1d3a5d}.area-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(0,212,255,.35);background:rgba(0,212,255,.12);color:#a9ecff;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:800}.area-chip.subtle{padding:3px 7px;font-size:10px;color:#8ccdf4;background:rgba(58,142,245,.12)}.pass-chip{display:inline-flex;align-items:center;border:1px solid rgba(255,184,0,.35);background:rgba(255,184,0,.12);color:#ffd36e;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}
+  `;
+  document.head.appendChild(st);
+}
+
+render = function() {
+  if (state.user && usuarioAreaLimitadaV9() && !["inventario", "registro", "perfil"].includes(state.tab)) {
+    state.tab = "inventario";
+  }
+  return renderAnteriorGerente();
+};
+
+// Inicialización final segura.
 syncInventarioACP();
 repararIdsLotesManuales();
 if (state.infodia) state.infodia = compactInfodiaFinal(state.infodia);
-migrarAreaCelulaV2();
+migrarAreaCelulaV9();
+recalcularSiloHistorialInfodiaV9();
 render();
 initCloud().then(() => setTimeout(() => {
   try {
     resyncCloudSnapshotFinal();
-    migrarAreaCelulaV2();
+    migrarAreaCelulaV9();
+    recalcularSiloHistorialInfodiaV9();
     render();
   } catch (e) {
-    console.warn('Área/célula post-sync', e);
+    console.warn("Área/célula post-sync", e);
   }
 }, 1200));

@@ -1,36 +1,32 @@
-# Cambios v20260626 - Área/Célula v7 FIX
+# Cambios v9 FIX - Área / Célula + Infodia + permisos
 
-## Corrección crítica
-- Se corrigió el problema de pantalla en blanco.
-- La app estaba renderizando antes de terminar de definir la lógica de Área/Célula.
-- Ahora la inicialización se ejecuta al final, después de cargar todos los parches y migraciones.
-
-## Área / célula
-- Cada usuario queda asociado a un Área/Célula.
-- Usuarios operativos solo ven inventarios de su área.
-- Roles con vista global:
+## Permisos por área/célula
+- Cada usuario queda asociado a un Área / Célula.
+- El inventario sin área se migra automáticamente a **Envase**.
+- Usuarios de áreas distintas a Envase solo ven:
+  - Inventario
+  - Mi perfil
+- Esos usuarios sí pueden agregar, editar e imprimir sus propios inventarios dentro de su área.
+- Roles con vista totalizada general:
   - Administrador
   - Gerente
   - Jefe de planta
   - Super intendente / Superintendente
-- Inventario histórico sin área se migra automáticamente a `Envase`.
-- Los lotes nuevos quedan asociados al área del usuario que los registra.
 
 ## Administración de usuarios
-- Al crear usuario se exige área/célula.
-- El área se elige desde lista desplegable.
-- El admin puede crear nuevas áreas desde `+ Añadir área / célula...`.
-- En ficha de usuario, el admin puede modificar el área/célula.
-- En Mi perfil, el usuario ve su área pero no la modifica.
+- El campo Área / Célula ahora usa lista desplegable.
+- El admin puede crear nuevas áreas con `+ Añadir área / célula...`.
+- El admin puede ver la contraseña de cada usuario.
+- Antes de guardar modificaciones de usuario, la app muestra una confirmación con los cambios críticos.
 
-## Visual
-- Se mantiene el estilo visual suavizado del dashboard gerencial.
-- Se agregaron chips visuales de área/célula.
+## Infodia / Silos / Comunes de turno
+- Se corrigió la lectura de comunes de turno para códigos tipo `OO300-001-00xxx-26` y `O0300-001-00xxx-26`.
+- Se recalcula el historial de silos usando fecha de análisis ACP + llenado de silos del Infodia.
+- No se filtra `state.lotes` globalmente al entrar a Silos, para no romper niveles ni comunes.
+- Si el Infodia fue importado con una versión antigua que no guardó los comunes, reimportar el archivo Infodia poblará nuevamente la caracterización.
 
-## Archivos para subir a GitHub
-Subir mínimo:
+## Archivos clave
+Subir a GitHub:
 - `app.js`
 - `styles.css`
 - `index.html`
-
-Después del deploy, abrir con Ctrl + F5.
