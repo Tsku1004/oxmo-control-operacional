@@ -3302,7 +3302,7 @@ function etiquetaPublicaHTML(data) {
     .chem div, .meta div { border: .35mm solid #222; border-radius: 1.5mm; padding: 1.8mm; text-align: center; }
     .chem b, .meta b { display: block; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
     .chem span { font-family: Consolas, monospace; font-size: 14pt; font-weight: 900; }
-    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 3mm; }
+    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 1.2mm; }
     .meta span { font-size: 10pt; font-weight: 800; }
     .qr { width: 34mm; height: 34mm; align-self: center; image-rendering: pixelated; margin-top: 1mm; flex: 0 0 auto; }
     footer { border-top: .35mm solid #111; margin-top: auto; padding-top: 1.5mm; font-size: 6pt; text-align: center; color: #555; }
@@ -3403,7 +3403,7 @@ function printLabels() {
     .chem b, .meta b { display: block; font-size: 7pt; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
     .chem span { font-family: Consolas, monospace; font-size: 14pt; font-weight: 900; }
     .pending { border: .5mm solid #222; padding: 3mm; font-size: 14pt; font-weight: 900; text-align: center; margin-bottom: 3mm; }
-    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 3mm; }
+    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 1.2mm; }
     .meta span { font-size: 10pt; font-weight: 800; }
     .qr { width: 34mm; height: 34mm; align-self: center; image-rendering: pixelated; margin-top: 1mm; flex: 0 0 auto; }
     footer { border-top: .35mm solid #111; margin-top: auto; padding-top: 1.5mm; font-size: 6pt; text-align: center; color: #555; }
@@ -4294,7 +4294,7 @@ function etiquetaCSS(publicMode = false) {
     .class-box{border:.45mm solid var(--accent);color:var(--accent);font-weight:900;text-align:center;border-radius:2mm;font-size:16pt;letter-spacing:.7pt;padding:2.2mm 1mm;margin-bottom:2.7mm;flex:0 0 auto}
     .chem{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2mm;margin-bottom:2.8mm;flex:0 0 auto}
     .cell{border:.35mm solid #222;border-radius:1.4mm;text-align:center;padding:1.8mm 1mm}.cell small{font-size:6.5pt;font-weight:800;display:block}.cell b{font-family:Consolas,'Courier New',monospace;font-size:13.5pt}
-    .mass{border:.35mm solid #222;border-radius:1.4mm;text-align:center;padding:2mm 1mm;margin-bottom:3mm;flex:0 0 auto}.mass small{font-size:6.5pt;font-weight:800;display:block}.mass b{font-size:12pt}
+    .mass{border:.35mm solid #222;border-radius:1.4mm;text-align:center;padding:2mm 1mm;margin-bottom:1.2mm;flex:0 0 auto}.mass small{font-size:6.5pt;font-weight:800;display:block}.mass b{font-size:12pt}
     .qr{display:block;margin:0 auto 1mm;object-fit:contain;flex:0 0 auto}
     .foot{border-top:.35mm solid #111;text-align:center;font-size:6pt;padding-top:1mm;white-space:nowrap;flex:0 0 auto}
     @media print{body{background:#fff}.no-print{display:none}.label-page{padding:0;margin:0;width:100mm;height:150mm}}
@@ -4516,7 +4516,7 @@ function mezclaOpcionHTML(op, idx) {
 }
 
 // --- Estabilizacion final: nube, ACP, usuarios, mayusculas y Zebra 2026-06-14 ---
-const FINAL_CACHE_TAG = "20260622-etiqueta-compacta";
+const FINAL_CACHE_TAG = "20260626-qr-arriba";
 
 function acpNumeroFinal(codigo) {
   const clean = normalizarCodigoAnalisis(String(codigo || "")).toUpperCase();
@@ -4905,7 +4905,7 @@ function etiquetaCSS(publicMode = false) {
     .lot{text-align:center;font-family:Consolas,monospace;font-weight:900;line-height:1;margin:1mm auto 1.8mm;max-width:84mm;overflow-wrap:anywhere;word-break:break-word}
     .class{border:0.45mm solid var(--accent);color:var(--accent);border-radius:1.8mm;text-align:center;font-weight:900;font-size:22px;letter-spacing:1px;padding:1.4mm;margin-bottom:2.4mm}
     .chem{display:grid;grid-template-columns:repeat(3,1fr);gap:1.7mm;margin-bottom:2.3mm}.cell{border:0.35mm solid #111;border-radius:1.4mm;text-align:center;padding:1.2mm .8mm}.k{font-size:8px;font-weight:900}.v{font-family:Consolas,monospace;font-size:16px;font-weight:900;margin-top:.6mm}
-    .mass{border:0.35mm solid #111;border-radius:1.4mm;text-align:center;padding:1.3mm;margin-bottom:7mm}.mass .v{font-size:15px;margin-top:.5mm}
+    .mass{border:0.35mm solid #111;border-radius:1.4mm;text-align:center;padding:1.3mm;margin-bottom:1.2mm}.mass .v{font-size:15px;margin-top:.5mm}
     .qr{display:block;margin:0 auto 1mm;width:var(--qr);height:var(--qr);image-rendering:pixelated;flex-shrink:0}
     .foot{border-top:0.35mm solid #111;text-align:center;font-size:6px;padding-top:.7mm;margin-top:0}
     @media print{body{background:#fff}.toolbar{display:none}.sheet{margin:0;box-shadow:none}}
