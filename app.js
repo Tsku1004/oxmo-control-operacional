@@ -4681,8 +4681,14 @@ function debeMayusculaFinal(el) {
   const type = String(el.type || "").toLowerCase();
   if (["password", "number", "date", "time", "file", "email", "url", "search"].includes(type)) return false;
   if (el.dataset.keepCase === "true") return false;
-  const name = `${el.name || ""} ${el.id || ""} ${el.placeholder || ""}`.toLowerCase();
-  return !/(clave|password|contrasena|contraseña|supabase|url|key|anon|fecha|hora|email|correo|qr|link)/.test(name);
+
+  // No forzar mayúsculas en administración de usuarios ni en Mi perfil.
+  // Antes estos campos se transformaban automáticamente a MAYÚSCULAS al escribir,
+  // lo que bloqueaba el uso normal de nombres, cargos, direcciones, correos, etc.
+  const ctx = `${el.name || ""} ${el.id || ""} ${el.placeholder || ""} ${Object.keys(el.dataset || {}).join(" ")}`.toLowerCase();
+  if (/(user|usuario|nombre|cargo|area|área|turno|telefono|teléfono|correo|email|direccion|dirección|contacto|emerg|relacion|relación|observacion|observación|perfil|clave|password|contrasena|contraseña|supabase|url|key|anon|fecha|hora|qr|link)/.test(ctx)) return false;
+
+  return true;
 }
 
 function aplicarMayusculasFinal(root = document) {
@@ -4765,8 +4771,8 @@ function adminUserModalHTML() {
         <button class="btn ghost" data-admin-edit-close>Cerrar</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label>Usuario</label><input class="input" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
-        <div><label>Nombre visible</label><input class="input" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
+        <div><label>Usuario</label><input class="input" data-keep-case="true" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
+        <div><label>Nombre visible</label><input class="input" data-keep-case="true" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
         <div><label>Contraseña visible</label><input class="input" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p)}"></div>
         <div><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
         <div><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
@@ -4789,8 +4795,8 @@ function adminUsersHTML(rows) {
     <div style="display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:16px;align-items:start">
       <div class="card">
         <div class="section-title">Crear cuenta</div>
-        <label>Usuario</label><input id="newUserU" class="input" placeholder="ej: TURNO_A">
-        <label>Nombre</label><input id="newUserNombre" class="input" placeholder="Nombre visible">
+        <label>Usuario</label><input id="newUserU" class="input" data-keep-case="true" placeholder="ej: turno_a">
+        <label>Nombre</label><input id="newUserNombre" class="input" data-keep-case="true" placeholder="Nombre visible">
         <label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial">
         <label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select>
         <button class="btn primary" id="crearUsuario" style="width:100%;margin-top:12px">Crear usuario</button>
@@ -5018,21 +5024,21 @@ function perfilUsuarioHTML() {
       <form id="perfilUsuarioForm" class="profile-form">
         <div class="profile-grid">
           <div class="field"><label>Usuario</label><input class="input" readonly value="${esc(u.u)}"></div>
-          <div class="field"><label>Nombre visible</label><input class="input" name="nombre" value="${esc(u.nombre)}"></div>
-          <div class="field"><label>Cargo</label><input class="input" name="cargo" value="${valorPerfil(u, "cargo")}" placeholder="Ej: OPERADOR ENVASE"></div>
-          <div class="field"><label>Área</label><input class="input" name="area" value="${valorPerfil(u, "area")}" placeholder="Ej: ENVASE Y LOGÍSTICA"></div>
-          <div class="field"><label>Turno</label><input class="input" name="turno" value="${valorPerfil(u, "turno")}" placeholder="Ej: TURNO A / 7x7"></div>
-          <div class="field"><label>Teléfono personal</label><input class="input" name="telefono" value="${valorPerfil(u, "telefono")}" placeholder="+56 9 ...."></div>
+          <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" name="nombre" value="${esc(u.nombre)}"></div>
+          <div class="field"><label>Cargo</label><input class="input" data-keep-case="true" name="cargo" value="${valorPerfil(u, "cargo")}" placeholder="Ej: OPERADOR ENVASE"></div>
+          <div class="field"><label>Área</label><input class="input" data-keep-case="true" name="area" value="${valorPerfil(u, "area")}" placeholder="Ej: ENVASE Y LOGÍSTICA"></div>
+          <div class="field"><label>Turno</label><input class="input" data-keep-case="true" name="turno" value="${valorPerfil(u, "turno")}" placeholder="Ej: TURNO A / 7x7"></div>
+          <div class="field"><label>Teléfono personal</label><input class="input" data-keep-case="true" name="telefono" value="${valorPerfil(u, "telefono")}" placeholder="+56 9 ...."></div>
           <div class="field"><label>Correo</label><input class="input" data-keep-case="true" type="email" name="correo" value="${valorPerfil(u, "correo")}" placeholder="correo@empresa.cl"></div>
-          <div class="field"><label>Dirección</label><input class="input" name="direccion" value="${valorPerfil(u, "direccion")}" placeholder="Dirección de contacto"></div>
+          <div class="field"><label>Dirección</label><input class="input" data-keep-case="true" name="direccion" value="${valorPerfil(u, "direccion")}" placeholder="Dirección de contacto"></div>
         </div>
         <div class="card" style="margin-top:14px">
           <div class="section-title" style="margin-bottom:10px;color:${C.red}">Contacto de emergencia</div>
           <div class="profile-grid">
-            <div class="field"><label>Nombre contacto</label><input class="input" name="contactoEmergenciaNombre" value="${valorPerfil(u, "contactoEmergenciaNombre")}" placeholder="Nombre y apellido"></div>
-            <div class="field"><label>Relación</label><input class="input" name="contactoEmergenciaRelacion" value="${valorPerfil(u, "contactoEmergenciaRelacion")}" placeholder="Ej: MADRE / PAREJA / HERMANO"></div>
-            <div class="field"><label>Teléfono emergencia</label><input class="input" name="contactoEmergenciaTelefono" value="${valorPerfil(u, "contactoEmergenciaTelefono")}" placeholder="+56 9 ...."></div>
-            <div class="field"><label>Observaciones</label><textarea class="input" name="observacionesContacto" rows="3" placeholder="Alergias, restricciones o notas relevantes">${valorPerfil(u, "observacionesContacto")}</textarea></div>
+            <div class="field"><label>Nombre contacto</label><input class="input" data-keep-case="true" name="contactoEmergenciaNombre" value="${valorPerfil(u, "contactoEmergenciaNombre")}" placeholder="Nombre y apellido"></div>
+            <div class="field"><label>Relación</label><input class="input" data-keep-case="true" name="contactoEmergenciaRelacion" value="${valorPerfil(u, "contactoEmergenciaRelacion")}" placeholder="Ej: MADRE / PAREJA / HERMANO"></div>
+            <div class="field"><label>Teléfono emergencia</label><input class="input" data-keep-case="true" name="contactoEmergenciaTelefono" value="${valorPerfil(u, "contactoEmergenciaTelefono")}" placeholder="+56 9 ...."></div>
+            <div class="field"><label>Observaciones</label><textarea class="input" data-keep-case="true" name="observacionesContacto" rows="3" placeholder="Alergias, restricciones o notas relevantes">${valorPerfil(u, "observacionesContacto")}</textarea></div>
           </div>
         </div>
         <button class="btn primary" style="width:100%;margin-top:14px">Guardar mi perfil</button>
@@ -5090,8 +5096,8 @@ adminUserModalHTML = function() {
       </div>
 
       <div class="profile-grid">
-        <div class="field"><label>Usuario</label><input class="input" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
-        <div class="field"><label>Nombre visible</label><input class="input" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
+        <div class="field"><label>Usuario</label><input class="input" data-keep-case="true" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
+        <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
         <div class="field"><label>Contraseña visible</label><input class="input" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p)}"></div>
         <div class="field"><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
         <div class="field"><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
@@ -5101,22 +5107,22 @@ adminUserModalHTML = function() {
       <div class="card" style="margin-top:12px">
         <div class="section-title" style="margin-bottom:10px">Datos laborales y contacto</div>
         <div class="profile-grid">
-          <div class="field"><label>Cargo</label><input class="input" data-admin-edit-cargo value="${valorPerfil(user, "cargo")}"></div>
-          <div class="field"><label>Área</label><input class="input" data-admin-edit-area value="${valorPerfil(user, "area")}"></div>
-          <div class="field"><label>Turno</label><input class="input" data-admin-edit-turno value="${valorPerfil(user, "turno")}"></div>
-          <div class="field"><label>Teléfono</label><input class="input" data-admin-edit-telefono value="${valorPerfil(user, "telefono")}"></div>
+          <div class="field"><label>Cargo</label><input class="input" data-keep-case="true" data-admin-edit-cargo value="${valorPerfil(user, "cargo")}"></div>
+          <div class="field"><label>Área</label><input class="input" data-keep-case="true" data-admin-edit-area value="${valorPerfil(user, "area")}"></div>
+          <div class="field"><label>Turno</label><input class="input" data-keep-case="true" data-admin-edit-turno value="${valorPerfil(user, "turno")}"></div>
+          <div class="field"><label>Teléfono</label><input class="input" data-keep-case="true" data-admin-edit-telefono value="${valorPerfil(user, "telefono")}"></div>
           <div class="field"><label>Correo</label><input class="input" data-keep-case="true" type="email" data-admin-edit-correo value="${valorPerfil(user, "correo")}"></div>
-          <div class="field"><label>Dirección</label><input class="input" data-admin-edit-direccion value="${valorPerfil(user, "direccion")}"></div>
+          <div class="field"><label>Dirección</label><input class="input" data-keep-case="true" data-admin-edit-direccion value="${valorPerfil(user, "direccion")}"></div>
         </div>
       </div>
 
       <div class="card" style="margin-top:12px">
         <div class="section-title" style="margin-bottom:10px;color:${C.red}">Emergencia</div>
         <div class="profile-grid">
-          <div class="field"><label>Contacto emergencia</label><input class="input" data-admin-edit-emerg-nombre value="${valorPerfil(user, "contactoEmergenciaNombre")}"></div>
-          <div class="field"><label>Relación</label><input class="input" data-admin-edit-emerg-relacion value="${valorPerfil(user, "contactoEmergenciaRelacion")}"></div>
-          <div class="field"><label>Teléfono emergencia</label><input class="input" data-admin-edit-emerg-telefono value="${valorPerfil(user, "contactoEmergenciaTelefono")}"></div>
-          <div class="field"><label>Observaciones</label><textarea class="input" data-admin-edit-observaciones rows="3">${valorPerfil(user, "observacionesContacto")}</textarea></div>
+          <div class="field"><label>Contacto emergencia</label><input class="input" data-keep-case="true" data-admin-edit-emerg-nombre value="${valorPerfil(user, "contactoEmergenciaNombre")}"></div>
+          <div class="field"><label>Relación</label><input class="input" data-keep-case="true" data-admin-edit-emerg-relacion value="${valorPerfil(user, "contactoEmergenciaRelacion")}"></div>
+          <div class="field"><label>Teléfono emergencia</label><input class="input" data-keep-case="true" data-admin-edit-emerg-telefono value="${valorPerfil(user, "contactoEmergenciaTelefono")}"></div>
+          <div class="field"><label>Observaciones</label><textarea class="input" data-keep-case="true" data-admin-edit-observaciones rows="3">${valorPerfil(user, "observacionesContacto")}</textarea></div>
         </div>
       </div>
 
@@ -5139,12 +5145,12 @@ adminUsersHTML = function(rows) {
     <div style="display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:16px;align-items:start">
       <div class="card">
         <div class="section-title">Crear cuenta</div>
-        <div class="field"><label>Usuario</label><input id="newUserU" class="input" placeholder="ej: TURNO_A"></div>
-        <div class="field"><label>Nombre</label><input id="newUserNombre" class="input" placeholder="Nombre visible"></div>
+        <div class="field"><label>Usuario</label><input id="newUserU" class="input" data-keep-case="true" placeholder="ej: turno_a"></div>
+        <div class="field"><label>Nombre</label><input id="newUserNombre" class="input" data-keep-case="true" placeholder="Nombre visible"></div>
         <div class="field"><label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial"></div>
         <div class="field"><label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select></div>
-        <div class="field"><label>Cargo</label><input id="newUserCargo" class="input" placeholder="Opcional"></div>
-        <div class="field"><label>Área</label><input id="newUserArea" class="input" placeholder="Opcional"></div>
+        <div class="field"><label>Cargo</label><input id="newUserCargo" class="input" data-keep-case="true" placeholder="Opcional"></div>
+        <div class="field"><label>Área</label><input id="newUserArea" class="input" data-keep-case="true" placeholder="Opcional"></div>
         <button class="btn primary" id="crearUsuario" style="width:100%;margin-top:4px">Crear usuario</button>
       </div>
       <div class="card">

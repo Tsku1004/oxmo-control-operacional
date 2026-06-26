@@ -54,3 +54,12 @@ Se agregó una vista especial para usuarios con rol **Gerente**:
 - Mantiene acceso a Mi perfil para completar datos personales.
 
 Para activar esta vista, en Admin > Usuarios edita o crea una cuenta con rol **Gerente**.
+
+## Ajuste v20260626 - Usuarios sin bloqueo de mayúsculas
+
+- Se corrigió la función global que transformaba automáticamente textos a MAYÚSCULAS.
+- Ya no se fuerza mayúscula en Administración de Usuarios ni en Mi perfil.
+- Campos liberados: usuario, nombre, cargo, área, turno, teléfono, correo, dirección, contacto de emergencia y observaciones.
+- Se mantiene la normalización interna del usuario para login, pero la escritura ya no se bloquea visualmente en mayúsculas.
+- Se actualizó `index.html` con versión `20260626-usuarios-sin-mayus` para evitar caché en Vercel/navegador.
+
