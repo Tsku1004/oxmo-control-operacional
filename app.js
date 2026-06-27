@@ -8225,3 +8225,136 @@ try {
 } catch (e) {
   console.warn("sync ACP exact v17", e);
 }
+
+/* =========================================================
+   HOTFIX_V18_REPORTES_ADMIN_MOFINO_20260627
+   - Elimina pestaña Alertas/Alarma.
+   - Agrega KPIs superiores de Mo fino por clasificación.
+   - Reportes: historial de eventos/acciones visible solo para Admin.
+   ========================================================= */
+function finoMoPorClasificacionV18(lotes = lotesScopeAreaV10()) {
+  const out = { bajo: 0, alto: 0, fuera: 0 };
+  for (const l of lotes || []) {
+    if (!hasAnalysis(l)) continue;
+    const fino = Number(l.masa || 0) * Number(l.mo || 0) / 100;
+    const clase = clasificar(l).clase;
+    if (clase === "Bajo Cobre") out.bajo += fino;
+    else if (clase === "Alto Cobre") out.alto += fino;
+    else if (clase === "Fuera Esp") out.fuera += fino;
+  }
+  return out;
+}
+
+const canViewTabV18Base = canViewTab;
+canViewTab = function(id, user = state.user) {
+  if (id === "alertas" || id === "alarma" || id === "alarmas") return false;
+  return canViewTabV18Base(id, user);
+};
+
+const visibleTabsV18Base = visibleTabs;
+visibleTabs = function() {
+  return visibleTabsV18Base().filter(([id, label]) => {
+    const raw = `${id} ${label}`.toLowerCase();
+    return !raw.includes("alerta") && !raw.includes("alarma");
+  });
+};
+
+const shellHTMLV18Base = shellHTML;
+shellHTML = function() {
+  if (isGerente()) return gerenteShellHTML();
+  const lotesScope = lotesScopeAreaV10();
+  const d = kpiDataAreaV14(lotesScope);
+  const fino = finoMoPorClasificacionV18(lotesScope);
+  const areaLabel = areaScopeGlobalV10();
+  return `
+    <header class="topbar">
+      <div class="brand" style="justify-content:flex-start;margin:0"><div class="brand-mark" style="height:38px"></div><div><div style="font-weight:900;letter-spacing:3px">CONTROL OPERACIONAL</div><div class="brand-sub">OXMO · ENVASE · TRAZABILIDAD</div></div></div>
+      <div class="top-user-center"><div class="top-user-role">${esc(state.user.rol.toUpperCase())}</div><div class="top-user-name">${esc(state.user.nombre)}</div></div>
+      <div class="top-actions"><div style="text-align:right"><div id="clock" class="mono" style="color:var(--green);font-size:13px;font-weight:800">${new Date().toLocaleTimeString("es-CL")}</div><div style="color:var(--txt3);font-size:8px;letter-spacing:1px">${hoy()}</div></div><button class="btn secondary" id="cloudConfigBtn" title="Configurar tiempo real">NUBE: ${esc(cloud.status.toUpperCase())}</button><button class="btn danger" id="logoutBtn">SALIR</button></div>
+    </header>
+    <div class="status">${d.fuera.length ? `⚠ ${d.fuera.length} lote(s) fuera de especificación` : "Estado normal"} · Área: ${esc(areaLabel)} · Masa disponible con análisis: ${kgToTon(d.masaDisp)} · ${d.sinAnalisis.length} sin análisis · Lotes totales: ${d.total}</div>
+    <main class="main main-v10-soft">
+      <section class="kpis kpis-v18-mofino">
+        ${kpiV14('Masa disponible <small>(con análisis)</small>', d.masaDisp / 1000, 't', `${d.disp.length} lotes`, C.green, 'INV', 2)}
+        ${kpiV14('Masa sin análisis', d.masaSinAnalisis / 1000, 't', `${d.sinAnalisis.length} lotes`, C.yellow, 'LAB', 2)}
+        ${kpiV14('Fino Mo total', d.finoMoKg / 1000, 't', 'todos los analizados', C.copper, '◆', 2)}
+        ${kpiV14('Cu Promedio', d.cuProm, '%', 'ponderado por masa', C.cyan, 'CU', 2)}
+        ${kpiV14('Total Lotes', d.total, '', 'según área/filtro', C.blue, 'LOT', 0)}
+        ${kpiV14('Fuera Esp.', d.fuera.length, '', 'lotes afectados', C.red, '!', 0)}
+        ${kpiV14('Mo fino BC', fino.bajo / 1000, 't', 'material Bajo Cobre', C.green, 'BC', 2)}
+        ${kpiV14('Mo fino Alto Cu', fino.alto / 1000, 't', 'material Alto Cobre', C.copper, 'AC', 2)}
+        ${kpiV14('Mo fino Fuera Esp.', fino.fuera / 1000, 't', 'material fuera de especificación', C.red, 'FE', 2)}
+      </section>
+      <nav class="tabs">${visibleTabs().map(([id,label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}</nav>
+      ${infodiaUploadPillV14()}
+      <section id="tabView">${tabHTML()}</section>
+    </main>
+    <footer class="footer"><span>OXMO CONTROL · ${esc(state.user.nombre)} (${esc(state.user.rol)}) · Área ${esc(areaTrabajoUsuario())}</span><span>DATOS PERSISTENTES · SGI COMPATIBLE</span></footer>
+    ${state.cloudPanel ? cloudPanelHTML() : ""}`;
+};
+
+function adminAuditReportHTMLV18() {
+  if (!isAdmin()) return "";
+  const usuarios = (state.usuarios || []).map(u => {
+    const key = userKey(u);
+    const stat = state.userStats?.[key] || {};
+    return { u, key, stat };
+  });
+  const eventosSistema = [...(state.historial || [])].slice().reverse().slice(0, 120);
+  const accionesUsuario = usuarios.flatMap(({ u, key, stat }) => (stat.recientes || []).map(r => ({
+    usuario: key,
+    nombre: u.nombre || key,
+    rol: u.rol || "-",
+    area: areaTrabajoUsuario(u),
+    fecha: r.fecha || "-",
+    tiempo: r.tiempo || "-",
+    accion: r.accion || "-",
+    loteId: r.loteId || "",
+    detalle: r.detalle || "",
+  }))).sort((a, b) => `${b.fecha} ${b.tiempo}`.localeCompare(`${a.fecha} ${a.tiempo}`)).slice(0, 160);
+  return `<div class="box admin-audit-report">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
+      <div>
+        <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Control administrador</div>
+        <h2 style="margin:0">Historial de eventos y acciones por usuario</h2>
+        <p style="color:var(--txt2);font-size:12px;margin:6px 0 0;max-width:900px;line-height:1.45">Visible solo para Administrador. Resume eventos del sistema, acciones por cuenta, tiempo de uso y últimos accesos registrados.</p>
+      </div>
+      <span class="tag" style="background:#00d4ff22;color:var(--cyan);border-color:#00d4ff44">Solo Admin</span>
+    </div>
+    <div class="grid-cards" style="margin-bottom:14px">
+      ${miniReport("Usuarios", usuarios.length, C.blueLight)}
+      ${miniReport("Acciones", usuarios.reduce((a, x) => a + Number(x.stat.acciones || 0), 0), C.green)}
+      ${miniReport("Eventos sistema", (state.historial || []).length, C.copper)}
+      ${miniReport("Tiempo acumulado", formatDuration(usuarios.reduce((a, x) => a + Number(x.stat.tiempoMs || 0), 0)), C.cyan)}
+    </div>
+    <div class="table-wrap" style="margin-bottom:14px">
+      <table>
+        <thead><tr><th>Cuenta</th><th>Nombre</th><th>Rol</th><th>Área</th><th>Acciones</th><th>Tiempo uso</th><th>Último uso</th></tr></thead>
+        <tbody>${usuarios.map(({ u, key, stat }) => `<tr><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(key)}</td><td>${esc(u.nombre || "-")}</td><td>${esc(u.rol || "-")}</td><td>${areaBadgeHTML(areaTrabajoUsuario(u), true)}</td><td class="mono">${Number(stat.acciones || 0)}</td><td class="mono">${esc(formatDuration(tiempoUsuarioMs(key)))}</td><td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td></tr>`).join("")}</tbody>
+      </table>
+    </div>
+    <div class="profile-grid">
+      <div class="card">
+        <div class="section-title" style="margin-bottom:10px">Últimas acciones por cuenta</div>
+        <div class="table-wrap" style="max-height:360px"><table><thead><tr><th>Fecha</th><th>Hora</th><th>Usuario</th><th>Acción</th><th>Lote</th><th>Detalle</th></tr></thead><tbody>${accionesUsuario.length ? accionesUsuario.map(r => `<tr><td class="mono">${esc(r.fecha)}</td><td class="mono">${esc(r.tiempo)}</td><td>${esc(r.nombre)} <span style="color:var(--txt3)">(${esc(r.usuario)})</span></td><td>${esc(r.accion)}</td><td class="mono" style="color:var(--blue-light)">${esc(r.loteId || "-")}</td><td style="color:var(--txt2)">${esc(r.detalle || "-")}</td></tr>`).join("") : `<tr><td colspan="6" style="text-align:center;color:var(--txt2);padding:18px">Sin acciones recientes registradas.</td></tr>`}</tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="section-title" style="margin-bottom:10px">Historial del sistema</div>
+        <div class="table-wrap" style="max-height:360px"><table><thead><tr><th>Tiempo</th><th>Acción</th><th>Lote/Ref.</th><th>Detalle</th></tr></thead><tbody>${eventosSistema.length ? eventosSistema.map(h => `<tr><td class="mono">${esc(h.tiempo || "-")}</td><td>${esc(h.accion || "-")}</td><td class="mono" style="color:var(--blue-light)">${esc(h.loteId || "-")}</td><td style="color:var(--txt2)">${esc(h.detalle || "-")}</td></tr>`).join("") : `<tr><td colspan="4" style="text-align:center;color:var(--txt2);padding:18px">Sin eventos registrados.</td></tr>`}</tbody></table></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+const reportesHTMLV18Base = reportesHTML;
+reportesHTML = function() {
+  return `${reportesHTMLV18Base()}${adminAuditReportHTMLV18()}`;
+};
+
+const renderV18Base = render;
+render = function() {
+  if (state.tab === "alertas" || state.tab === "alarma" || state.tab === "alarmas") state.tab = "inventario";
+  return renderV18Base();
+};
+
+try { render(); } catch (e) { console.warn("render v18", e); }

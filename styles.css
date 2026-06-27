@@ -1431,3 +1431,19 @@ body {
 .cloud-upload-pill,.cloud-upload-btn{display:inline-flex!important;align-items:center;gap:4px;font-weight:900}
 .infodia-upload-strip{border-color:#00d4ff22;background:linear-gradient(135deg,#07182d,#0a2537)}
 .exec-soft-kpi-label small{font-size:.7em;color:#8aa4bf;margin-left:4px}
+
+/* HOTFIX V18 - KPIs Mo fino + auditoría admin */
+.kpis-v18-mofino {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.admin-audit-report {
+  margin-top: 16px;
+  border-color: rgba(0, 212, 255, .22);
+  background: linear-gradient(180deg, rgba(10,24,43,.98), rgba(5,14,28,.98));
+}
+.admin-audit-report .profile-grid {
+  align-items: start;
+}
+.admin-audit-report .table-wrap {
+  border-radius: 16px;
+}
