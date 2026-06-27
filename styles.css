@@ -1447,3 +1447,15 @@ body {
 .admin-audit-report .table-wrap {
   border-radius: 16px;
 }
+
+/* V23 permisos */
+.perm-modal-v23{max-width:1180px;width:min(1180px,96vw);max-height:92vh;overflow:auto}
+.perm-groups-v23{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:12px}
+.perm-group-v23{padding:12px}
+.perm-row-v23{display:grid;grid-template-columns:24px 1fr;gap:9px;align-items:flex-start;border:1px solid rgba(74,142,245,.16);border-radius:12px;background:rgba(4,10,20,.34);padding:9px;margin:7px 0;cursor:pointer}
+.perm-row-v23 input{margin-top:3px;accent-color:var(--cyan)}
+.perm-row-v23 b{display:block;color:var(--txt);font-size:12px;letter-spacing:.2px}
+.perm-row-v23 small{display:block;color:var(--txt2);font-size:10px;line-height:1.35;margin-top:2px}
+.perm-row-v23 em{display:inline-block;color:var(--txt3);font-style:normal;font-size:9px;margin-top:5px}
+.perm-row-v23.perm-on{border-color:rgba(0,212,255,.34);background:rgba(0,212,255,.08)}
+.perm-row-v23.perm-on em{color:var(--cyan)}

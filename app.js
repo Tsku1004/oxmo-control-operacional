@@ -7362,3 +7362,429 @@ render = function() {
 };
 
 try { render(); } catch (e) { console.warn("render v22", e); }
+
+
+/* =========================================================
+   HOTFIX_V23_PERMISOS_SESION_20260627
+   - Admin inamovible.
+   - Rol Supervisor migra a Encargado.
+   - Roles operacionales: Operador, Encargado, Jefe de turno,
+     Jefe de planta, Super intendente, Gerente.
+   - Permisos individuales por usuario.
+   - Cierre automático si cuenta es pausada/eliminada.
+   ========================================================= */
+
+const ADMIN_USER_KEY_V23 = "admin";
+const ROLES_OPERACION_V23 = ["Operador", "Encargado", "Jefe de turno", "Jefe de planta", "Super intendente", "Gerente"];
+const ROLES_SISTEMA_V23 = [...ROLES_OPERACION_V23, "Administrador"];
+
+const PERMISOS_GRUPOS_V23 = [
+  ["Vistas", [
+    ["view_inventario", "Ver Inventario", "Acceso a la pestaña Inventario"],
+    ["view_silos", "Ver Silos", "Acceso a estado/niveles de silos"],
+    ["view_lotes_oxmo", "Ver Lotes OXMO/BQA", "Acceso a cartilla ACP / lotes OXMO"],
+    ["view_mezclas", "Ver Mezclas", "Acceso a pestaña Mezclas"],
+    ["view_reportes", "Ver Reportes", "Acceso a reportes operacionales"],
+    ["view_avisos", "Ver Avisos", "Acceso a avisos operacionales"],
+    ["view_gerencial", "Ver Dashboard gerencial", "Acceso al panel gerencial"],
+    ["view_admin", "Ver Admin", "Administración de usuarios y permisos"],
+    ["view_mi_perfil", "Ver Mi perfil", "Acceso a datos personales y clave propia"],
+  ]],
+  ["Inventario", [
+    ["lot_create", "Crear lotes", "Permite usar Nuevo lote"],
+    ["lot_edit_own", "Editar lotes propios", "Editar lotes creados por el usuario"],
+    ["lot_edit_area", "Editar lotes del área", "Editar lotes del área asignada"],
+    ["lot_edit_all", "Editar todos los lotes", "Editar lotes de cualquier área"],
+    ["lot_delete_own", "Eliminar lotes propios", "Eliminar lotes creados por el usuario"],
+    ["lot_delete_area", "Eliminar lotes del área", "Eliminar lotes del área asignada"],
+    ["lot_delete_all", "Eliminar todos los lotes", "Eliminar lotes de cualquier área"],
+    ["lot_change_status", "Cambiar estado de lote", "Disponible, Pendiente, Bloqueado, Fuera Esp."],
+    ["lot_print_label", "Imprimir etiqueta", "Generar etiqueta QR"],
+  ]],
+  ["Infodia / ACP", [
+    ["infodia_upload", "Subir Infodia", "Mostrar botón Subir Infodia"],
+    ["infodia_apply_acp", "Actualizar inventario con ACP", "Cruzar análisis ACP con inventario"],
+    ["infodia_view_acp", "Ver cartilla ACP", "Ver análisis importados"],
+    ["infodia_reprocess", "Reprocesar Infodia", "Recalcular datos importados"],
+    ["infodia_clear", "Limpiar Infodia cargado", "Borrar último Infodia guardado"],
+  ]],
+  ["Silos", [
+    ["silo_view", "Ver silos", "Ver estado y niveles de silos"],
+    ["silo_manual_adjust", "Ajustar silo manualmente", "Ingresar común/ajuste manual"],
+    ["silo_clear", "Vaciar / limpiar silo", "Limpiar datos manuales de silo"],
+    ["silo_edit_common", "Editar común de turno", "Modificar comunes asociados"],
+    ["silo_delete_common", "Eliminar común de turno", "Eliminar registros de comunes"],
+  ]],
+  ["Mezclas", [
+    ["mix_view", "Ver mezclas", "Entrar a pestaña Mezclas"],
+    ["mix_calculate", "Calcular mezclas", "Buscar combinaciones"],
+    ["mix_print", "Imprimir mezcla", "Generar reporte/PDF de mezcla"],
+    ["mix_view_area_only", "Mezcla solo de su área", "Limita materiales al área asignada"],
+    ["mix_view_all_areas", "Mezcla todas las áreas", "Permite ver materiales de todas las áreas"],
+  ]],
+  ["Reportes", [
+    ["report_view", "Ver reportes", "Acceso a reportes"],
+    ["report_print", "Imprimir reportes", "Generar PDF"],
+    ["report_admin_history", "Ver historial admin", "Eventos por usuario/cuenta"],
+    ["report_global", "Reporte global", "Ver todas las áreas"],
+    ["report_area_only", "Reporte solo área", "Ver solo el área asignada"],
+  ]],
+  ["Avisos", [
+    ["notice_view", "Ver avisos", "Ver pestaña Avisos"],
+    ["notice_create", "Crear avisos", "Publicar aviso"],
+    ["notice_delete_own", "Eliminar avisos propios", "Borrar avisos propios"],
+    ["notice_delete_all", "Eliminar cualquier aviso", "Borrar avisos de otros usuarios"],
+  ]],
+  ["Usuarios / Administración", [
+    ["user_view", "Ver usuarios", "Ver cuentas creadas"],
+    ["user_create", "Crear usuarios", "Crear nuevas cuentas"],
+    ["user_edit", "Editar usuarios", "Modificar usuario, nombre, rol y área"],
+    ["user_pause", "Pausar usuarios", "Desactivar cuenta"],
+    ["user_delete", "Eliminar usuarios", "Eliminar cuenta"],
+    ["user_password_view", "Ver contraseñas", "Mostrar contraseña de usuarios"],
+    ["user_password_change", "Cambiar contraseñas", "Cambiar clave de otro usuario"],
+    ["user_permissions_edit", "Otorgar permisos", "Editar permisos individuales"],
+  ]],
+];
+
+const TODOS_PERMISOS_V23 = PERMISOS_GRUPOS_V23.flatMap(g => g[1].map(p => p[0]));
+
+const ROLE_PERMISSIONS_V23 = {
+  "Operador": ["view_inventario", "view_silos", "view_lotes_oxmo", "view_mezclas", "view_avisos", "view_mi_perfil", "lot_create", "lot_edit_own", "lot_print_label", "mix_view", "mix_calculate", "mix_print", "mix_view_area_only", "notice_view", "notice_create", "notice_delete_own", "silo_view", "infodia_view_acp"],
+  "Encargado": ["view_inventario", "view_silos", "view_lotes_oxmo", "view_mezclas", "view_reportes", "view_avisos", "view_mi_perfil", "lot_create", "lot_edit_own", "lot_edit_area", "lot_delete_own", "lot_delete_area", "lot_change_status", "lot_print_label", "infodia_upload", "infodia_apply_acp", "infodia_view_acp", "infodia_reprocess", "silo_view", "silo_manual_adjust", "silo_clear", "silo_edit_common", "silo_delete_common", "mix_view", "mix_calculate", "mix_print", "mix_view_area_only", "report_view", "report_print", "report_area_only", "notice_view", "notice_create", "notice_delete_own"],
+  "Jefe de turno": ["view_inventario", "view_silos", "view_lotes_oxmo", "view_mezclas", "view_reportes", "view_avisos", "view_mi_perfil", "lot_create", "lot_edit_own", "lot_edit_area", "lot_delete_own", "lot_delete_area", "lot_change_status", "lot_print_label", "infodia_apply_acp", "infodia_view_acp", "silo_view", "silo_manual_adjust", "silo_clear", "silo_edit_common", "silo_delete_common", "mix_view", "mix_calculate", "mix_print", "mix_view_area_only", "report_view", "report_print", "report_area_only", "notice_view", "notice_create", "notice_delete_own", "notice_delete_all"],
+  "Jefe de planta": ["view_inventario", "view_silos", "view_lotes_oxmo", "view_mezclas", "view_reportes", "view_avisos", "view_mi_perfil", "lot_create", "lot_edit_own", "lot_edit_area", "lot_delete_own", "lot_delete_area", "lot_change_status", "lot_print_label", "infodia_apply_acp", "infodia_view_acp", "silo_view", "silo_manual_adjust", "silo_clear", "silo_edit_common", "silo_delete_common", "mix_view", "mix_calculate", "mix_print", "mix_view_area_only", "report_view", "report_print", "report_area_only", "notice_view", "notice_create", "notice_delete_own", "notice_delete_all"],
+  "Super intendente": ["view_inventario", "view_silos", "view_lotes_oxmo", "view_reportes", "view_avisos", "view_mi_perfil", "infodia_view_acp", "silo_view", "report_view", "report_print", "report_global", "notice_view"],
+  "Gerente": ["view_inventario", "view_silos", "view_lotes_oxmo", "view_reportes", "view_gerencial", "view_avisos", "view_mi_perfil", "infodia_view_acp", "silo_view", "report_view", "report_print", "report_global", "notice_view"],
+  "Administrador": TODOS_PERMISOS_V23,
+};
+
+function rolCanonicoV23(rol) {
+  const raw = String(rol || "").trim();
+  const n = normalizarTextoV22(raw).replace(/\s+/g, " ");
+  if (n === "admin" || n === "administrador") return "Administrador";
+  if (n === "supervisor" || n === "encargado") return "Encargado";
+  if (n === "jefe turno" || n === "jefe de turno") return "Jefe de turno";
+  if (n === "jefe planta" || n === "jefe de planta") return "Jefe de planta";
+  if (n === "super intendente" || n === "superintendente") return "Super intendente";
+  if (n === "gerente") return "Gerente";
+  if (n === "operador") return "Operador";
+  return ROLES_SISTEMA_V23.includes(raw) ? raw : "Operador";
+}
+
+function usuarioEsAdminRaizV23(user) {
+  return String(user?.u || "").trim().toLowerCase() === ADMIN_USER_KEY_V23;
+}
+
+function normalizarUsuarioV23(u) {
+  const base = normalizarUsuario(u || {});
+  base.rol = usuarioEsAdminRaizV23(base) ? "Administrador" : rolCanonicoV23(base.rol);
+  if (base.u === ADMIN_USER_KEY_V23) {
+    base.activo = true;
+    base.area = base.area || AREA_FILTRO_TODAS_V10 || "Todas";
+    base.areaCelula = base.area;
+  }
+  base.permisosOverride = base.permisosOverride && typeof base.permisosOverride === "object" && !Array.isArray(base.permisosOverride) ? base.permisosOverride : {};
+  return base;
+}
+
+function normalizarUsuariosV23(lista = state.usuarios) {
+  let usuarios = Array.isArray(lista) ? lista.map(normalizarUsuarioV23) : [];
+  const adminIdx = usuarios.findIndex(u => u.u === ADMIN_USER_KEY_V23);
+  if (adminIdx < 0) usuarios.unshift(normalizarUsuarioV23({ u: "admin", p: "oxmo2024", rol: "Administrador", nombre: "Administrador", activo: true, area: AREA_FILTRO_TODAS_V10 || "Todas" }));
+  else usuarios[adminIdx] = normalizarUsuarioV23({ ...usuarios[adminIdx], u: "admin", rol: "Administrador", activo: true });
+  return usuarios;
+}
+
+try {
+  ROLES_USUARIO.splice(0, ROLES_USUARIO.length, ...ROLES_SISTEMA_V23);
+  state.usuarios = normalizarUsuariosV23(state.usuarios);
+  if (state.user) {
+    const fresh = state.usuarios.find(u => u.u === state.user.u);
+    if (fresh) state.user = fresh;
+  }
+  localStorage.setItem("oxmo:usuarios", JSON.stringify(state.usuarios));
+  if (state.user) localStorage.setItem("oxmo:user", JSON.stringify(state.user));
+} catch (e) { console.warn("migracion roles v23", e); }
+
+function permisosBaseRolV23(rol) {
+  return new Set(ROLE_PERMISSIONS_V23[rolCanonicoV23(rol)] || []);
+}
+function overridePermisosV23(user) {
+  return (user?.permisosOverride && typeof user.permisosOverride === "object" && !Array.isArray(user.permisosOverride)) ? user.permisosOverride : {};
+}
+function usuarioActualizadoV23(user = state.user) {
+  if (!user?.u) return null;
+  return (state.usuarios || []).map(normalizarUsuarioV23).find(u => u.u === String(user.u).trim().toLowerCase()) || null;
+}
+function tienePermisoV23(user, code) {
+  if (!user || !code) return false;
+  const u = normalizarUsuarioV23(user);
+  if (usuarioEsAdminRaizV23(u) || u.rol === "Administrador") return true;
+  const over = overridePermisosV23(u);
+  if (Object.prototype.hasOwnProperty.call(over, code)) return over[code] === true;
+  return permisosBaseRolV23(u.rol).has(code);
+}
+function permisosEfectivosV23(user) {
+  return Object.fromEntries(TODOS_PERMISOS_V23.map(code => [code, tienePermisoV23(user, code)]));
+}
+function estadoPermisoV23(user, code) {
+  const u = normalizarUsuarioV23(user);
+  const base = permisosBaseRolV23(u.rol).has(code) || u.rol === "Administrador";
+  const over = overridePermisosV23(u);
+  const hasOver = Object.prototype.hasOwnProperty.call(over, code);
+  const effective = tienePermisoV23(u, code);
+  if (usuarioEsAdminRaizV23(u)) return "Administrador total";
+  if (hasOver && effective && !base) return "Otorgado manualmente";
+  if (hasOver && !effective && base) return "Bloqueado manualmente";
+  if (base) return "Heredado por rol";
+  return "No permitido";
+}
+function aplicarPermisosSeleccionadosV23(userKeyEdit, checkedCodes) {
+  const idx = state.usuarios.findIndex(u => u.u === userKeyEdit);
+  if (idx < 0) return false;
+  const u = normalizarUsuarioV23(state.usuarios[idx]);
+  if (usuarioEsAdminRaizV23(u)) return false;
+  const base = permisosBaseRolV23(u.rol);
+  const nextOverride = {};
+  for (const code of TODOS_PERMISOS_V23) {
+    const checked = checkedCodes.has(code);
+    const baseHas = base.has(code);
+    if (checked !== baseHas) nextOverride[code] = checked;
+  }
+  state.usuarios[idx] = normalizarUsuarioV23({ ...u, permisosOverride: nextOverride });
+  saveUsuarios();
+  return true;
+}
+
+isSupervisor = function(user = state.user) { return rolCanonicoV23(user?.rol) === "Encargado"; };
+function isEncargadoV23(user = state.user) { return rolCanonicoV23(user?.rol) === "Encargado"; }
+isAdmin = function(user = state.user) {
+  const u = user ? normalizarUsuarioV23(user) : null;
+  return !!u && (u.rol === "Administrador" || usuarioEsAdminRaizV23(u));
+};
+
+function cerrarSesionForzadaV23(msg, showMessage = true) {
+  try { cerrarSesionUsuario(); } catch {}
+  state.user = null;
+  state.adminEditUser = "";
+  state.adminPermUser = "";
+  state.tab = "inventario";
+  try { localStorage.setItem("oxmo:user", "null"); } catch {}
+  if (showMessage && !state._forcedLogoutShowingV23) {
+    state._forcedLogoutShowingV23 = true;
+    setTimeout(() => { alert(msg || "La sesión fue cerrada por administración."); state._forcedLogoutShowingV23 = false; try { render(); } catch {} }, 30);
+  }
+}
+function sesionPuedeOperarV23(showMessage = true) {
+  if (!state.user) return true;
+  const fresh = usuarioActualizadoV23(state.user);
+  if (!fresh || fresh.activo === false) {
+    cerrarSesionForzadaV23(!fresh ? "Tu cuenta fue eliminada por administración. La sesión se cerró automáticamente." : "Tu cuenta fue pausada por administración. La sesión se cerró automáticamente.", showMessage);
+    return false;
+  }
+  state.user = fresh;
+  try { localStorage.setItem("oxmo:user", JSON.stringify(fresh)); } catch {}
+  return true;
+}
+
+const saveUsuariosV23Base = saveUsuarios;
+saveUsuarios = function() {
+  state.usuarios = normalizarUsuariosV23(state.usuarios);
+  saveUsuariosV23Base();
+};
+const saveV23Base = save;
+save = function(key, value) {
+  if (key !== "oxmo:user" && state.user && !sesionPuedeOperarV23(true)) return;
+  return saveV23Base(key, value);
+};
+const applyCloudValueV23Base = applyCloudValue;
+applyCloudValue = function(key, value) {
+  applyCloudValueV23Base(key, value);
+  if (key === "oxmo:usuarios") {
+    state.usuarios = normalizarUsuariosV23(state.usuarios);
+    sesionPuedeOperarV23(true);
+  }
+};
+const initCloudV23Base = initCloud;
+initCloud = async function() {
+  const out = await initCloudV23Base();
+  state.usuarios = normalizarUsuariosV23(state.usuarios);
+  sesionPuedeOperarV23(true);
+  return out;
+};
+
+const canViewTabV23Base = canViewTab;
+canViewTab = function(id, user = state.user) {
+  if (!user) return false;
+  const u = normalizarUsuarioV23(user);
+  if (u.activo === false) return false;
+  if (id === "perfil" || id === "miPerfil") return tienePermisoV23(u, "view_mi_perfil");
+  if (id === "inventario") return tienePermisoV23(u, "view_inventario");
+  if (id === "silos") return tienePermisoV23(u, "view_silos") || tienePermisoV23(u, "silo_view");
+  if (id === "lotesOxmo") return tienePermisoV23(u, "view_lotes_oxmo") || tienePermisoV23(u, "infodia_view_acp");
+  if (id === "mezclas") return tienePermisoV23(u, "view_mezclas") || tienePermisoV23(u, "mix_view");
+  if (id === "reportes") return tienePermisoV23(u, "view_reportes") || tienePermisoV23(u, "report_view");
+  if (id === "avisos") return tienePermisoV23(u, "view_avisos") || tienePermisoV23(u, "notice_view");
+  if (id === "admin") return tienePermisoV23(u, "view_admin");
+  if (id === "gerencial") return tienePermisoV23(u, "view_gerencial");
+  if (id === "registro") return tienePermisoV23(u, "lot_create");
+  if (id === "infodia") return tienePermisoV23(u, "infodia_upload");
+  if (["alertas", "alarma", "alarmas"].includes(id)) return false;
+  return canViewTabV23Base(id, u);
+};
+visibleTabs = function() {
+  const cfg = [["gerencial", "Dashboard"], ["inventario", "Inventario"], ["silos", "Silos"], ["lotesOxmo", "Lotes OXMO/BQA"], ["mezclas", "Mezclas"], ["reportes", "Reportes"], ["avisos", "Avisos"], ["admin", "Admin"], ["perfil", "Mi perfil"]];
+  return cfg.filter(([id]) => canViewTab(id));
+};
+puedeSubirInfodiaV22 = function(user = state.user) { return tienePermisoV23(user, "infodia_upload"); };
+
+function mismoOwnerV23(l, user = state.user) { return String(l?.createdBy || "").trim().toLowerCase() === String(user?.u || "").trim().toLowerCase(); }
+function mismaAreaV23(l, user = state.user) { try { return normalizarTextoArea(areaTrabajoLote(l)) === normalizarTextoArea(areaTrabajoUsuario(user)); } catch { return String(l?.area || l?.sector || "").toLowerCase().includes(String(user?.area || "").toLowerCase()); } }
+canEditLot = function(l, user = state.user) {
+  if (!l || !user || !sesionPuedeOperarV23(false)) return false;
+  if (tienePermisoV23(user, "lot_edit_all")) return true;
+  if (tienePermisoV23(user, "lot_edit_area") && mismaAreaV23(l, user)) return true;
+  if (tienePermisoV23(user, "lot_edit_own") && mismoOwnerV23(l, user)) return true;
+  return false;
+};
+function canDeleteLotV23(l, user = state.user) {
+  if (!l || !user || !sesionPuedeOperarV23(false)) return false;
+  if (tienePermisoV23(user, "lot_delete_all")) return true;
+  if (tienePermisoV23(user, "lot_delete_area") && mismaAreaV23(l, user)) return true;
+  if (tienePermisoV23(user, "lot_delete_own") && mismoOwnerV23(l, user)) return true;
+  return false;
+}
+const deleteLotV23Base = deleteLot;
+deleteLot = function(id) { const lote = state.lotes.find(l => l.id === id); if (!canDeleteLotV23(lote)) return alert("No tienes permiso para eliminar este lote."); return deleteLotV23Base(id); };
+
+const bindInventarioV23Base = bindInventario;
+bindInventario = function() {
+  bindInventarioV23Base();
+  const newBtn = document.querySelector("#newLot");
+  if (newBtn && !tienePermisoV23(state.user, "lot_create")) { newBtn.disabled = true; newBtn.title = "Sin permiso para crear lotes"; newBtn.textContent = "Nuevo lote bloqueado"; }
+  if (newBtn && tienePermisoV23(state.user, "lot_create")) newBtn.onclick = e => { e.preventDefault(); if (!sesionPuedeOperarV23(true)) return; state.editando = null; state.tab = "registro"; render(); };
+};
+
+const aplicarACPInventarioActualV23Base = aplicarACPInventarioActual;
+aplicarACPInventarioActual = function() { if (!tienePermisoV23(state.user, "infodia_apply_acp")) return alert("No tienes permiso para actualizar inventario con ACP."); return aplicarACPInventarioActualV23Base(); };
+const bindSilosV23Base = bindSilos;
+bindSilos = function() {
+  bindSilosV23Base();
+  if (!tienePermisoV23(state.user, "silo_manual_adjust")) { const form = document.querySelector("#comunForm"); if (form) form.querySelectorAll("input,select,textarea,button").forEach(el => { el.disabled = true; el.title = "Sin permiso para ajustar silos"; }); }
+  if (!tienePermisoV23(state.user, "silo_clear")) document.querySelectorAll("[data-silo-clear]").forEach(el => el.remove());
+  if (!tienePermisoV23(state.user, "silo_delete_common")) document.querySelectorAll("[data-comun-del]").forEach(el => el.remove());
+};
+const guardarComunManualV23Base = guardarComunManual;
+guardarComunManual = function(data, fuente = "manual") { if (String(fuente || "").startsWith("manual") && !tienePermisoV23(state.user, "silo_manual_adjust")) { alert("No tienes permiso para ajustar silos manualmente."); return false; } return guardarComunManualV23Base(data, fuente); };
+const bindMezclasV23Base = bindMezclas;
+bindMezclas = function() { bindMezclasV23Base(); if (!tienePermisoV23(state.user, "mix_calculate")) { const btn = document.querySelector("#autoMix"); if (btn) { btn.disabled = true; btn.textContent = "Cálculo bloqueado"; btn.title = "Sin permiso para calcular mezclas"; } } if (!tienePermisoV23(state.user, "mix_print")) document.querySelector("#printMixOptions")?.remove(); };
+const bindReportesV23Base = bindReportes;
+bindReportes = function() { bindReportesV23Base(); if (!tienePermisoV23(state.user, "report_print")) { const btn = document.querySelector("#printReport"); if (btn) { btn.disabled = true; btn.textContent = "PDF bloqueado"; } } };
+const adminAuditReportHTMLV23Base = adminAuditReportHTMLV18;
+adminAuditReportHTMLV18 = function() { if (!tienePermisoV23(state.user, "report_admin_history")) return ""; return adminAuditReportHTMLV23Base(); };
+
+function roleOptionsV23(selected = "Operador", includeAdmin = false) {
+  const roles = includeAdmin ? ROLES_SISTEMA_V23 : ROLES_OPERACION_V23;
+  const sel = rolCanonicoV23(selected);
+  return roles.map(r => `<option value="${esc(r)}" ${r === sel ? "selected" : ""}>${esc(r)}</option>`).join("");
+}
+
+adminUsersHTML = function(rows) {
+  const usuarios = normalizarUsuariosV23(rows.map(r => r.u || r));
+  const areas = areasTrabajoCatalogo();
+  const canCreate = tienePermisoV23(state.user, "user_create");
+  return `
+    <div class="area-admin-shell">
+      <div class="area-admin-card create-user-card">
+        <div class="section-title">Crear cuenta</div>
+        <div class="area-help">El Rol define el cargo operacional y los permisos base. El Administrador se mantiene como cuenta técnica inamovible.</div>
+        <div class="field"><label>Usuario</label><input id="newUserU" class="input" data-keep-case="true" placeholder="ej: turno_a" ${canCreate ? "" : "disabled"}></div>
+        <div class="field"><label>Nombre</label><input id="newUserNombre" class="input" data-keep-case="true" placeholder="Nombre visible" ${canCreate ? "" : "disabled"}></div>
+        <div class="field"><label>Contraseña inicial</label><input id="newUserPass" data-keep-case="true" type="password" class="input" placeholder="Contraseña inicial" ${canCreate ? "" : "disabled"}></div>
+        <div class="field"><label>Rol</label><select id="newUserRol" class="input" ${canCreate ? "" : "disabled"}>${roleOptionsV23("Operador")}</select></div>
+        <div class="field"><label>Área</label>${renderAreaSelectHTML({ id: "newUserArea", value: areaTrabajoDefault(), includeAdd: true })}</div>
+        <div class="field" id="newUserAreaAddWrap" style="display:none"><label>Nueva área</label><input id="newUserAreaAdd" class="input" data-keep-case="true" placeholder="Ej: Envase B, Logística, Centro Norte"></div>
+        <button class="btn primary" id="crearUsuario" style="width:100%;margin-top:4px" ${canCreate ? "" : "disabled"}>Crear usuario</button>
+      </div>
+      <div class="area-admin-card users-list-card">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:12px"><div><div class="section-title">Cuentas creadas — ${usuarios.length}</div><div class="area-help">Áreas activas: ${areas.map(a => areaBadgeHTML(a, true)).join(" ")}</div></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Área</th><th>Estado</th><th>Último uso</th><th>Control</th></tr></thead><tbody>
+          ${usuarios.map(u => { const stat = state.userStats[u.u] || {}; const root = usuarioEsAdminRaizV23(u); return `<tr>
+              <td class="mono" style="color:var(--blue-light);font-weight:900">${esc(u.u)}${root ? ` <span class="tag" style="color:${C.cyan};background:#00d4ff22;border-color:#00d4ff44">Fijo</span>` : ""}</td>
+              <td>${esc(u.nombre)}</td><td>${esc(u.rol)}</td><td>${areaBadgeHTML(u.area)}</td>
+              <td style="color:${u.activo !== false ? C.green : C.red}">● ${u.activo !== false ? "Activo" : "Deshabilitado"}</td><td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td>
+              <td><div class="mini-actions">${tienePermisoV23(state.user, "user_edit") ? `<button class="icon-btn" data-admin-edit="${esc(u.u)}">Editar</button>` : ""}${tienePermisoV23(state.user, "user_permissions_edit") ? `<button class="icon-btn" data-admin-perms="${esc(u.u)}">Permisos</button>` : ""}${!root && u.u !== userKey() && tienePermisoV23(state.user, "user_pause") ? `<button class="icon-btn" data-admin-toggle="${esc(u.u)}">${u.activo !== false ? "Pausar" : "Activar"}</button>` : ""}${!root && u.u !== userKey() && tienePermisoV23(state.user, "user_delete") ? `<button class="icon-btn" data-admin-del="${esc(u.u)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button>` : ""}</div></td>
+            </tr>`; }).join("")}
+        </tbody></table></div>
+      </div>
+    </div>
+    ${adminUserModalHTML()}${adminPermisosModalHTMLV23()}`;
+};
+
+adminUserModalHTML = function() {
+  const user = normalizarUsuarioV23(state.usuarios.find(u => u.u === state.adminEditUser));
+  if (!user?.u) return "";
+  const stat = state.userStats[user.u] || {};
+  const root = usuarioEsAdminRaizV23(user);
+  const canPass = tienePermisoV23(state.user, "user_password_view") || tienePermisoV23(state.user, "user_password_change");
+  return `<div class="modal-backdrop" data-admin-user-modal><div class="modal-card user-modal-card area-user-modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px"><div><div class="section-title">Editar usuario</div><h2 style="margin:4px 0 0">${esc(user.nombre)}</h2><div style="color:var(--txt2);font-size:12px;margin-top:4px">Administra cuenta, rol, área y contraseña. El usuario admin es inamovible.</div></div><button class="btn ghost" data-admin-edit-close>Cerrar</button></div>
+      <div class="area-modal-banner"><div><div class="area-modal-title">Área asignada</div><div class="area-modal-text">Define qué inventario puede ver el usuario.</div></div>${areaBadgeHTML(user.area)}</div>
+      <div class="profile-grid"><div class="field"><label>Usuario</label><input class="input" data-keep-case="true" data-admin-edit-u value="${esc(user.u)}" ${root ? "readonly" : ""}></div><div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" data-admin-edit-nombre value="${esc(user.nombre)}"></div><div class="field"><label>Contraseña visible / cambiar</label><input class="input mono" data-keep-case="true" data-admin-edit-pass type="${canPass ? "text" : "password"}" value="${canPass ? esc(user.p || "") : ""}" ${tienePermisoV23(state.user, "user_password_change") ? "" : "readonly"} autocomplete="off" spellcheck="false" placeholder="Sin permiso para ver/cambiar"></div><div class="field"><label>Rol</label><select class="input" data-admin-edit-rol ${root ? "disabled" : ""}>${roleOptionsV23(user.rol)}</select></div><div class="field"><label>Estado</label><select class="input" data-admin-edit-activo ${root ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div><div class="field"><label>Creado</label><input class="input" readonly value="${esc(user.creado || "-")}"></div></div>
+      <div class="card" style="margin-top:12px"><div class="section-title" style="margin-bottom:10px">Datos laborales y contacto</div><div class="profile-grid"><div class="field"><label>Área</label>${renderAreaSelectHTML({ value: user.area, dataAttr: "data-admin-edit-area", includeAdd: !root })}</div><div class="field" data-admin-edit-area-add-wrap style="display:none"><label>Nueva área</label><input class="input" data-keep-case="true" data-admin-edit-area-add placeholder="Ej: Envase B, Logística, Centro Norte"></div><div class="field"><label>Turno</label><input class="input" data-keep-case="true" data-admin-edit-turno value="${valorPerfil(user, "turno")}"></div><div class="field"><label>Teléfono</label><input class="input" data-keep-case="true" data-admin-edit-telefono value="${valorPerfil(user, "telefono")}"></div><div class="field"><label>Correo</label><input class="input" data-keep-case="true" data-admin-edit-correo value="${valorPerfil(user, "correo")}"></div><div class="field"><label>Dirección</label><input class="input" data-keep-case="true" data-admin-edit-direccion value="${valorPerfil(user, "direccion")}"></div></div></div>
+      <div class="card" style="margin-top:12px"><div class="section-title" style="margin-bottom:10px;color:${C.red}">Emergencia</div><div class="profile-grid"><div class="field"><label>Contacto emergencia</label><input class="input" data-keep-case="true" data-admin-edit-emerg-nombre value="${valorPerfil(user, "contactoEmergenciaNombre")}"></div><div class="field"><label>Relación</label><input class="input" data-keep-case="true" data-admin-edit-emerg-relacion value="${valorPerfil(user, "contactoEmergenciaRelacion")}"></div><div class="field"><label>Teléfono emergencia</label><input class="input" data-keep-case="true" data-admin-edit-emerg-telefono value="${valorPerfil(user, "contactoEmergenciaTelefono")}"></div><div class="field"><label>Observaciones</label><textarea class="input" data-keep-case="true" data-admin-edit-observaciones rows="3">${valorPerfil(user, "observacionesContacto")}</textarea></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;color:var(--txt2);font-size:12px;margin-top:8px"><div>Último uso: <b>${esc(stat.lastSeen || "-")}</b></div><div>Tiempo de uso: <b>${esc(formatDuration(tiempoUsuarioMs(user.u)))}</b></div></div></div>
+      ${root ? `<div class="notice" style="margin-top:12px;border-color:#00d4ff55;background:#00d4ff22;color:var(--cyan)">Administrador raíz: no se puede pausar, eliminar, renombrar ni cambiar de rol.</div>` : ""}
+      <button class="btn primary" data-admin-edit-save style="width:100%;margin-top:12px">Guardar cambios</button>
+    </div></div>`;
+};
+
+function adminPermisosModalHTMLV23() {
+  const user = normalizarUsuarioV23(state.usuarios.find(u => u.u === state.adminPermUser));
+  if (!user?.u) return "";
+  const root = usuarioEsAdminRaizV23(user); const eff = permisosEfectivosV23(user); const overrides = overridePermisosV23(user);
+  return `<div class="modal-backdrop" data-admin-perms-modal><div class="modal-card user-modal-card area-user-modal perm-modal-v23"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px"><div><div class="section-title">Otorgamiento de permisos</div><h2 style="margin:4px 0 0">${esc(user.nombre)}</h2><div style="color:var(--txt2);font-size:12px;margin-top:4px">Rol base: <b>${esc(user.rol)}</b>. Marcado = permitido. Desmarcado = bloqueado/no permitido.</div></div><button class="btn ghost" data-admin-perms-close>Cerrar</button></div>${root ? `<div class="notice" style="border-color:#00d4ff55;background:#00d4ff22;color:var(--cyan)">La cuenta Administrador tiene todos los permisos y es inamovible. Esta matriz es solo de consulta.</div>` : `<div class="notice" style="border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Los cambios se guardan como diferencias respecto del rol base. Puedes otorgar o quitar permisos puntuales.</div>`}<div class="perm-groups-v23">${PERMISOS_GRUPOS_V23.map(([grupo, ps]) => `<section class="card perm-group-v23"><div class="section-title" style="margin-bottom:8px;color:${C.cyan}">${esc(grupo)}</div>${ps.map(([code, label, desc]) => { const base = permisosBaseRolV23(user.rol).has(code) || root; const hasOver = Object.prototype.hasOwnProperty.call(overrides, code); const estado = estadoPermisoV23(user, code); return `<label class="perm-row-v23 ${eff[code] ? "perm-on" : ""}"><input type="checkbox" data-perm-code="${esc(code)}" ${eff[code] ? "checked" : ""} ${root ? "disabled" : ""}><span><b>${esc(label)}</b><small>${esc(desc)}</small><em>${esc(estado)}${hasOver ? " · override" : base ? "" : ""}</em></span></label>`; }).join("")}</section>`).join("")}</div><button class="btn primary" data-admin-perms-save style="width:100%;margin-top:12px" ${root ? "disabled" : ""}>Guardar permisos</button></div></div>`;
+}
+
+bindAdmin = function() {
+  document.querySelectorAll("[data-admin-view]").forEach(btn => btn.addEventListener("click", () => { state.adminView = btn.dataset.adminView; render(); }));
+  const toggleAddWrap = (sel, wrap) => { if (!sel || !wrap) return; const run = () => { wrap.style.display = sel.value === "__add__" ? "block" : "none"; }; sel.addEventListener("change", run); run(); };
+  toggleAddWrap(document.querySelector("#newUserArea"), document.querySelector("#newUserAreaAddWrap")); toggleAddWrap(document.querySelector("[data-admin-edit-area]"), document.querySelector("[data-admin-edit-area-add-wrap]"));
+  document.querySelector("#crearUsuario")?.addEventListener("click", () => {
+    if (!tienePermisoV23(state.user, "user_create")) return alert("No tienes permiso para crear usuarios.");
+    const u = (document.querySelector("#newUserU")?.value || "").trim().toLowerCase(); const nombre = (document.querySelector("#newUserNombre")?.value || "").trim(); const p = document.querySelector("#newUserPass")?.value || ""; const rol = rolCanonicoV23(document.querySelector("#newUserRol")?.value || "Operador"); const areaSel = (document.querySelector("#newUserArea")?.value || "").trim(); const areaNueva = (document.querySelector("#newUserAreaAdd")?.value || "").trim(); const area = areaSel === "__add__" ? areaNueva : areaSel;
+    if (!u || !nombre || !p) return alert("Completa usuario, nombre y contraseña."); if (u === ADMIN_USER_KEY_V23) return alert("La cuenta admin es inamovible y no puede duplicarse."); if (!area) return alert("Selecciona el área del usuario."); if (areaSel === "__add__" && !areaNueva) return alert("Ingresa el nombre de la nueva área."); if (!/^[a-z0-9._-]{3,24}$/.test(u)) return alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo."); if (state.usuarios.some(x => x.u === u)) return alert("Ese usuario ya existe.");
+    const nuevo = normalizarUsuarioV23({ u, nombre, p, rol, cargo: rol, area, areaCelula: area, creado: hoy(), activo: true, permisosOverride: {} }); state.usuarios.push(nuevo); ensureUserStat(nuevo); saveUsuarios(); save("oxmo:userStats", state.userStats); addHist("Usuario creado", u, `${rol} · ${area}`, C.green); render();
+  });
+  document.querySelectorAll("[data-admin-edit]").forEach(btn => btn.addEventListener("click", () => { if (!tienePermisoV23(state.user, "user_edit")) return alert("Sin permiso para editar usuarios."); state.adminEditUser = btn.dataset.adminEdit; state.adminPermUser = ""; render(); }));
+  document.querySelectorAll("[data-admin-perms]").forEach(btn => btn.addEventListener("click", () => { if (!tienePermisoV23(state.user, "user_permissions_edit")) return alert("Sin permiso para editar permisos."); state.adminPermUser = btn.dataset.adminPerms; state.adminEditUser = ""; render(); }));
+  document.querySelectorAll("[data-admin-edit-close]").forEach(btn => btn.addEventListener("click", () => { state.adminEditUser = ""; render(); })); document.querySelectorAll("[data-admin-perms-close]").forEach(btn => btn.addEventListener("click", () => { state.adminPermUser = ""; render(); }));
+  document.querySelector("[data-admin-perms-save]")?.addEventListener("click", () => { const key = state.adminPermUser; const u = state.usuarios.find(x => x.u === key); if (!u || usuarioEsAdminRaizV23(u)) return; const checked = new Set([...document.querySelectorAll("[data-perm-code]")].filter(x => x.checked).map(x => x.dataset.permCode)); if (!confirm(`¿Guardar permisos para ${u.nombre || u.u}?`)) return; aplicarPermisosSeleccionadosV23(key, checked); addHist("Permisos actualizados", key, "Matriz de permisos modificada", C.cyan); state.adminPermUser = ""; render(); });
+  document.querySelector("[data-admin-edit-save]")?.addEventListener("click", () => {
+    if (!tienePermisoV23(state.user, "user_edit")) return alert("Sin permiso para editar usuarios."); const oldU = state.adminEditUser; const old = normalizarUsuarioV23(state.usuarios.find(u => u.u === oldU)); if (!old?.u) return; const root = usuarioEsAdminRaizV23(old); const nextU = root ? ADMIN_USER_KEY_V23 : (document.querySelector("[data-admin-edit-u]")?.value || "").trim().toLowerCase(); const areaSel = (document.querySelector("[data-admin-edit-area]")?.value || "").trim(); const areaNueva = (document.querySelector("[data-admin-edit-area-add]")?.value || "").trim(); const area = root ? old.area : (areaSel === "__add__" ? areaNueva : areaSel); const passInput = document.querySelector("[data-admin-edit-pass]")?.value || old.p || ""; const passChanged = passInput !== old.p; if (passChanged && !tienePermisoV23(state.user, "user_password_change")) return alert("Sin permiso para cambiar contraseñas.");
+    const patch = { u: nextU, nombre: (document.querySelector("[data-admin-edit-nombre]")?.value || "").trim(), p: passInput, rol: root ? "Administrador" : rolCanonicoV23(document.querySelector("[data-admin-edit-rol]")?.value || old.rol), activo: root ? true : document.querySelector("[data-admin-edit-activo]")?.value !== "false", cargo: root ? old.cargo : rolCanonicoV23(document.querySelector("[data-admin-edit-rol]")?.value || old.rol), area, areaCelula: area, turno: (document.querySelector("[data-admin-edit-turno]")?.value || "").trim(), telefono: (document.querySelector("[data-admin-edit-telefono]")?.value || "").trim(), correo: (document.querySelector("[data-admin-edit-correo]")?.value || "").trim(), direccion: (document.querySelector("[data-admin-edit-direccion]")?.value || "").trim(), contactoEmergenciaNombre: (document.querySelector("[data-admin-edit-emerg-nombre]")?.value || "").trim(), contactoEmergenciaRelacion: (document.querySelector("[data-admin-edit-emerg-relacion]")?.value || "").trim(), contactoEmergenciaTelefono: (document.querySelector("[data-admin-edit-emerg-telefono]")?.value || "").trim(), observacionesContacto: (document.querySelector("[data-admin-edit-observaciones]")?.value || "").trim() };
+    if (!patch.u || !patch.nombre || !patch.p) return alert("Completa usuario, nombre y contraseña."); if (!patch.area) return alert("Selecciona el área del usuario."); if (!root && areaSel === "__add__" && !areaNueva) return alert("Ingresa el nombre de la nueva área."); if (!/^[a-z0-9._-]{3,24}$/.test(patch.u)) return alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo."); if (patch.u !== oldU && state.usuarios.some(u => u.u === patch.u)) return alert("Ese usuario ya existe.");
+    const cambiosCriticos = [old.u !== patch.u ? `usuario: ${old.u} → ${patch.u}` : "", old.nombre !== patch.nombre ? `nombre: ${old.nombre} → ${patch.nombre}` : "", old.rol !== patch.rol ? `rol: ${old.rol} → ${patch.rol}` : "", areaTrabajoUsuario(old) !== patch.area ? `área: ${areaTrabajoUsuario(old)} → ${patch.area}` : "", old.p !== patch.p ? "contraseña: modificada" : "", old.activo !== patch.activo ? `estado: ${old.activo !== false ? "Activo" : "Deshabilitado"} → ${patch.activo ? "Activo" : "Deshabilitado"}` : ""].filter(Boolean); if (!confirm(cambiosCriticos.length ? `Confirma modificación de usuario:\n\n${cambiosCriticos.join("\n")}\n\n¿Guardar cambios?` : "No se detectan cambios críticos. ¿Guardar de todas formas?")) return;
+    const next = normalizarUsuarioV23({ ...old, ...patch }); state.usuarios = state.usuarios.map(u => u.u === oldU ? next : u); if (patch.u !== oldU && state.userStats[oldU]) { state.userStats[patch.u] = state.userStats[oldU]; delete state.userStats[oldU]; state.lotes = state.lotes.map(l => l.createdBy === oldU ? { ...l, createdBy: patch.u, createdByName: next.nombre } : l); state.avisos = (state.avisos || []).map(a => a.autor === oldU ? { ...a, autor: patch.u, autorNombre: next.nombre } : a); save("oxmo:lotes", state.lotes); save("oxmo:avisos", state.avisos || []); } if (state.user?.u === oldU) { state.user = next; localStorage.setItem("oxmo:user", JSON.stringify(next)); } saveUsuarios(); save("oxmo:userStats", state.userStats); addHist("Usuario modificado", next.u, `${next.nombre} · ${next.area}`, C.cyan); state.adminEditUser = ""; render();
+  });
+  document.querySelectorAll("[data-admin-toggle]").forEach(btn => btn.addEventListener("click", () => { if (!tienePermisoV23(state.user, "user_pause")) return alert("Sin permiso para pausar usuarios."); const u = state.usuarios.find(x => x.u === btn.dataset.adminToggle); if (!u || usuarioEsAdminRaizV23(u)) return alert("La cuenta admin es inamovible."); if (!confirm(`${u.activo !== false ? "Pausar" : "Activar"} usuario ${u.u}?`)) return; u.activo = u.activo === false ? true : false; saveUsuarios(); addHist(u.activo ? "Usuario activado" : "Usuario pausado", u.u, u.activo ? "Acceso permitido" : "Cierre automático en dispositivos abiertos", u.activo ? C.green : C.yellow); render(); }));
+  document.querySelectorAll("[data-admin-del]").forEach(btn => btn.addEventListener("click", () => { if (!tienePermisoV23(state.user, "user_delete")) return alert("Sin permiso para eliminar usuarios."); const u = btn.dataset.adminDel; if (u === ADMIN_USER_KEY_V23) return alert("La cuenta admin es inamovible."); if (!confirm(`Eliminar usuario ${u}? Esta acción cerrará sus sesiones abiertas y no se puede deshacer.`)) return; state.usuarios = state.usuarios.filter(x => x.u !== u); delete state.userStats[u]; saveUsuarios(); save("oxmo:userStats", state.userStats); addHist("Usuario eliminado", u, "Cierre automático en dispositivos abiertos", C.red); render(); }));
+};
+
+const renderV23Base = render;
+render = function() {
+  state.usuarios = normalizarUsuariosV23(state.usuarios);
+  if (state.user && !sesionPuedeOperarV23(true)) return renderV23Base();
+  if (state.tab && !canViewTab(state.tab)) state.tab = visibleTabs()[0]?.[0] || "inventario";
+  const out = renderV23Base();
+  return out;
+};
+
+try { render(); } catch (e) { console.warn("render v23 permisos", e); }
+
+/* HOTFIX_V23B_PERMISOS_RENDER */
+const tabHTMLV23Base = tabHTML;
+tabHTML = function() {
+  if (state.tab === "gerencial" && canViewTab("gerencial")) return gerenteDashboardHTML();
+  return tabHTMLV23Base();
+};
