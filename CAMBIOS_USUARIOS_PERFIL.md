@@ -1,21 +1,23 @@
-# Hotfix v16 - Corrección de carga de la app
+# Cambios v17 - Cruce ACP/Inventario corregido
 
-## Problema detectado
-La versión anterior dejó `index.html` apuntando a una ruta inválida:
+## Corrección principal
+El cruce ACP → Inventario ahora reconoce códigos de proceso/inventario como:
 
-- `./P260627-v15-acp-o0`
+- `OO710-001-00303-26`
+- `O0710-001-00303-26`
+- `00710-001-00303-26`
+- `OO630-004-03001-26`
 
-Eso impedía cargar correctamente `styles.css` y `app.js`, provocando pantalla blanca.
+La comparación sigue siendo por código completo, pero normaliza diferencias visuales:
 
-## Corrección
-Se restauraron las rutas correctas:
+- Letra `O` → número `0` solo en segmentos numéricos.
+- Relleno de ceros por segmento: `710-1-303-26` queda comparable como `00710-001-00303-26`.
+- No cruza por los últimos números solamente.
 
-- `./styles.css?v=20260627-v16-index-fix`
-- `./app.js?v=20260627-v16-index-fix`
+## Importante
+Para que aparezcan los análisis que antes no se guardaron, se debe volver a subir el Infodia una vez con esta versión.
 
-## Archivos a subir
-- `index.html`
+## Archivos que subir
 - `app.js`
 - `styles.css`
-
-Aunque el cambio principal está en `index.html`, se recomienda subir los tres para mantener la versión sincronizada.
+- `index.html`

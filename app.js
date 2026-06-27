@@ -8036,3 +8036,192 @@ try {
 } catch (e) {
   console.warn("sync ACP exact v15", e);
 }
+
+/* =========================================================
+   HOTFIX_V17_20260627
+   ACP -> Inventario: coincidencia exacta por código completo,
+   aceptando O/0 y relleno de ceros por segmento.
+   También reconoce códigos PROCESO tipo OO710-001-00303-26.
+   ========================================================= */
+function normalizarSegmentoNumericoO0V17(seg) {
+  const s = String(seg || "").toUpperCase().replace(/O/g, "0");
+  return /^[0-9]+$/.test(s) ? s : String(seg || "").toUpperCase();
+}
+
+function codigoCanonicoExactoACPv17(codigo) {
+  const raw = String(codigo ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[‐‑‒–—―]/g, "-")
+    .replace(/\s+/g, "")
+    .replace(/_+/g, "-");
+  const base = raw.match(/^(.*-\d{2})(?:[-_].*)?$/)?.[1] || raw;
+  const parts = base.split("-").map(normalizarSegmentoNumericoO0V17);
+
+  // Formato industrial de inventario/ACP: 00710-001-00303-26.
+  // Mantiene coincidencia completa, pero corrige diferencias visuales:
+  // OO710 -> 00710 y 3001 -> 03001.
+  if (parts.length === 4 && parts.every(p => /^\d+$/.test(p))) {
+    return [
+      parts[0].padStart(5, "0"),
+      parts[1].padStart(3, "0"),
+      parts[2].padStart(5, "0"),
+      parts[3].slice(-2).padStart(2, "0"),
+    ].join("-");
+  }
+  return parts.join("-");
+}
+
+function esCodigoComunTurnoV17(codigo) {
+  return /^00300-001-\d{5}-\d{2}$/.test(codigoCanonicoExactoACPv17(codigo));
+}
+
+function esCodigoProcesoInventarioV17(codigo) {
+  const c = codigoCanonicoExactoACPv17(codigo);
+  return /^\d{5}-\d{3}-\d{5}-\d{2}$/.test(c) && !esCodigoComunTurnoV17(c);
+}
+
+const tipoAnalisisACPV17Base = typeof tipoAnalisisACP === "function" ? tipoAnalisisACP : null;
+tipoAnalisisACP = function(codigo) {
+  const raw = normalizarCodigoAnalisis(codigo);
+  const canon = codigoCanonicoExactoACPv17(raw);
+  if (/^00300-001-\d{5}-\d{2}$/.test(canon)) return "comun_turno";
+  if (/^\d{5}-\d{3}-\d{5}-\d{2}$/.test(canon)) return "lote_proceso";
+  if (/^OXMO\d+-\d{2}$/.test(raw)) return "lote_oxmo";
+  if (/^OXBR\d+-\d{2}$/.test(raw)) return "briqueta";
+  if (String(raw || "").includes("OSAC") && /-\d{2}$/.test(raw)) return "lote_osac";
+  if (tipoAnalisisACPV17Base) return tipoAnalisisACPV17Base(raw);
+  return "";
+};
+
+function labelTipoAnalisisV17(tipo, codigo) {
+  if (tipo === "lote_proceso") return "Proceso / Inventario";
+  if (tipo === "lote_oxmo") return "Lote OXMO";
+  if (tipo === "briqueta") return "Briqueta OXBR";
+  if (tipo === "lote_osac") return "OSAC";
+  if (tipo === "comun_turno") return "Común turno";
+  return codigo ? "Análisis" : "-";
+}
+
+function buscarAnalisisInventarioV17(lote, analisisACP) {
+  const idLote = codigoCanonicoExactoACPv17(lote?.id);
+  if (!idLote) return null;
+  const candidatos = (analisisACP || [])
+    .filter(a => a && a.tipoAnalisis !== "comun_turno" && hasAnalysis(a))
+    .filter(a => codigoCanonicoExactoACPv17(a.codigo) === idLote)
+    .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
+  return candidatos[0] || null;
+}
+
+actualizarInventarioConACP = function(lotes, analisisACP) {
+  let actualizados = 0;
+  let revisados = 0;
+  const updated = (lotes || []).map(l => {
+    if (isInfodiaProductionLote(l)) return l;
+    revisados += 1;
+    const match = buscarAnalisisInventarioV17(l, analisisACP);
+    if (!match) return l;
+    const quimica = {
+      cu: Number(Number(match.cu || 0).toFixed(3)),
+      mo: Number(Number(match.mo || 0).toFixed(3)),
+      s: Number(Number(match.s || 0).toFixed(4)),
+    };
+    const cl = clasificar(quimica);
+    const obsBase = String(l.obs || "").replace(/\s*\|?\s*ACP:[^|]+/g, "").trim();
+    const obsAcp = `ACP: ${match.codigo}${match.fecha ? ` ${match.fecha}` : ""}`;
+    const next = {
+      ...l,
+      ...quimica,
+      estado: l.estado === "Bloqueado" ? "Bloqueado" : cl.clase === "Fuera Esp" ? "Fuera Esp" : "Disponible",
+      acpMatch: match.codigo,
+      acpCodigoCanonico: codigoCanonicoExactoACPv17(match.codigo),
+      acpFecha: match.fecha,
+      obs: obsBase ? `${obsBase} | ${obsAcp}` : obsAcp,
+    };
+    if (
+      Number(l.cu || 0) !== next.cu ||
+      Number(l.mo || 0) !== next.mo ||
+      Number(l.s || 0) !== next.s ||
+      l.estado !== next.estado ||
+      l.acpMatch !== next.acpMatch ||
+      l.acpFecha !== next.acpFecha
+    ) actualizados += 1;
+    return next;
+  });
+  return { lotes: updated, actualizados, revisados };
+};
+
+syncInventarioACPExactV14 = function() {
+  const acp = state.infodia?.analisisACP?.length ? state.infodia.analisisACP : state.infodia?.analisisLotes || [];
+  if (!acp.length) return 0;
+  const result = actualizarInventarioConACP(state.lotes || [], acp);
+  if (result.actualizados) {
+    state.lotes = result.lotes;
+    save("oxmo:lotes", state.lotes);
+  }
+  return result.actualizados;
+};
+
+aplicarACPInventarioActual = function() {
+  const acp = state.infodia?.analisisACP?.length ? state.infodia.analisisACP : state.infodia?.analisisLotes || [];
+  const result = actualizarInventarioConACP(state.lotes || [], acp);
+  state.lotes = result.lotes;
+  save("oxmo:lotes", state.lotes);
+  addHist("Inventario actualizado con ACP", "", `${result.actualizados} lote(s) cruzados por código completo`, result.actualizados ? C.green : C.yellow);
+  alert(result.actualizados
+    ? `${result.actualizados} lote(s) actualizados con ACP.\nCruce por código completo normalizado: OO/O0/00 y ceros por segmento.\nEjemplo: OO710-001-00303-26 = 00710-001-00303-26.`
+    : `No hubo coincidencias exactas.\nACP cargados: ${acp.length}.\nInventario revisado: ${result.revisados || 0}.\nRevisa que el código completo exista en ambos lados.`);
+  render();
+};
+
+const aplicarInfodiaV17Base = aplicarInfodia;
+aplicarInfodia = function(info) {
+  aplicarInfodiaV17Base(info);
+  const actualizados = syncInventarioACPExactV14();
+  if (actualizados) addHist("ACP aplicado a inventario", "", `${actualizados} lote(s) actualizados por código completo`, C.green);
+  render();
+};
+
+// Cartilla ACP: incluir también códigos PROCESO / inventario completo, no solo OXMO/OXBR/OSAC.
+lotesOxmoHTML = function() {
+  const base = (state.infodia?.analisisACP || state.infodia?.analisisLotes || [])
+    .filter(a => a && a.tipoAnalisis !== "comun_turno")
+    .filter(a => {
+      const codigo = String(a.codigo || "").toUpperCase();
+      const tipo = tipoAnalisisACP(codigo);
+      return tipo === "lote_proceso" || tipo === "lote_oxmo" || tipo === "briqueta" || tipo === "lote_osac" || codigo.includes("OSAC");
+    });
+  const q = normalizarTextoAreaV9(state.acpSearch || "").toLowerCase();
+  const items = q ? base.filter(a => [a.codigo, codigoCanonicoExactoACPv17(a.codigo), labelTipoAnalisisV17(a.tipoAnalisis, a.codigo), a.fecha, a.cu, a.mo, a.s, clasificar(a).clase].join(" ").toLowerCase().includes(q)) : base;
+  const allItems = base;
+  const proceso = allItems.filter(a => tipoAnalisisACP(a.codigo) === "lote_proceso");
+  const oxmo = allItems.filter(a => a.tipoAnalisis === "lote_oxmo");
+  const briquetas = allItems.filter(a => a.tipoAnalisis === "briqueta");
+  const osac = allItems.filter(a => a.tipoAnalisis === "lote_osac" || String(a.codigo || "").toUpperCase().includes("OSAC"));
+  return `<div class="box">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px">
+      <div><div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Cartilla ACP</div><div style="color:var(--txt);font-size:18px;font-weight:900">Resultado de lotes OXMO - BQA</div><div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:860px;line-height:1.45">Listado de análisis ACP para lotes de inventario/proceso, OXMO, briquetas OXBR y OSAC. Estos datos son cartilla de laboratorio, no inventario físico.</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn secondary" id="applyAcpInventory">Actualizar inventario con ACP</button><button class="btn secondary cloud-upload-btn" data-tab="infodia">${iconoCloudUploadV14()} Subir Infodia</button></div>
+    </div>
+    <div class="grid-cards" style="margin-bottom:14px">
+      ${miniReport("Proceso/inventario", proceso.length, C.blueLight)}
+      ${miniReport("Lotes OXMO", oxmo.length, C.blueLight)}
+      ${miniReport("Briquetas OXBR", briquetas.length, C.copper)}
+      ${miniReport("OSAC", osac.length, C.cyan)}
+      ${miniReport("Con análisis", allItems.filter(hasAnalysis).length, C.green)}
+      ${miniReport("Fuera espec.", allItems.filter(x => clasificar(x).clase === "Fuera Esp").length, C.red)}
+    </div>
+    <div class="card" style="margin-bottom:14px"><div class="field" style="margin:0"><label>Buscar en cartilla</label><div style="display:flex;gap:8px;align-items:center"><input id="acpSearch" value="${esc(state.acpSearch || "")}" data-keep-case="true" placeholder="Ej: 00710-001-00303-26, OO710-001-00303-26, OXMO10065-26"><button class="btn secondary" id="acpSearchBtn" type="button">Buscar</button>${state.acpSearch ? `<button class="btn ghost" id="acpSearchClear" type="button">Limpiar</button>` : ""}</div></div></div>
+    ${items.length ? `<div class="table-wrap"><table><thead><tr><th>ID lote</th><th>Código normalizado</th><th>Tipo</th><th>Fecha análisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th></tr></thead><tbody>${items.map(a => { const c = clasificar(a); const tipo = labelTipoAnalisisV17(tipoAnalisisACP(a.codigo), a.codigo); return `<tr><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(a.codigo || "-")}</td><td class="mono" style="color:var(--txt2);font-size:11px">${esc(codigoCanonicoExactoACPv17(a.codigo))}</td><td>${esc(tipo)}</td><td class="mono">${esc(a.fecha || "-")}</td><td class="mono" style="color:${Number(a.cu || 0) >= 0.51 ? C.copper : C.green}">${Number(a.cu || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.mo || 0) >= moMinimo(a.cu) ? C.green : C.red}">${Number(a.mo || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.s || 0) < 0.1 ? C.green : C.red}">${Number(a.s || 0).toFixed(4)}</td><td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${esc(c.clase)}</span></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">No hay análisis de proceso/OXMO/OXBR/OSAC cargados o no hay resultados para la búsqueda.</div>`}
+  </div>`;
+};
+
+try {
+  const actualizadosV17 = syncInventarioACPExactV14();
+  if (actualizadosV17) console.info(`ACP v17: ${actualizadosV17} lote(s) actualizados por código completo normalizado`);
+  render();
+} catch (e) {
+  console.warn("sync ACP exact v17", e);
+}
