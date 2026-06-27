@@ -372,6 +372,72 @@ button:disabled {
   gap: 8px;
   margin-top: 8px;
 }
+
+.agenda-task-input-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.agenda-task-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #040a14;
+  color: var(--txt);
+  padding: 9px 10px;
+  font-size: 12px;
+  outline: none;
+}
+.agenda-task-list {
+  display: grid;
+  gap: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.agenda-task {
+  display: grid;
+  grid-template-columns: 28px 1fr 26px;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid #173250;
+  border-radius: 8px;
+  background: #06111f;
+  padding: 6px;
+}
+.agenda-task-check,
+.agenda-task-del,
+.agenda-task-text {
+  border: 0;
+  background: transparent;
+  color: var(--txt);
+}
+.agenda-task-check {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--green);
+  font-weight: 900;
+  display: grid;
+  place-items: center;
+}
+.agenda-task-text {
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--txt);
+}
+.agenda-task.done .agenda-task-text {
+  color: var(--txt3);
+  text-decoration: line-through;
+}
+.agenda-task-del {
+  color: var(--red);
+  font-size: 16px;
+  line-height: 1;
+}
 .agenda-help {
   color: var(--txt3);
   font-size: 11px;

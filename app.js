@@ -145,13 +145,34 @@ function canonicalRoleName(rol) {
 }
 
 function normalizeAgendaEntry(value) {
-  if (!value) return { type: "nota", text: "", done: false };
-  if (typeof value === "string") return { type: "nota", text: value, done: false };
-  return {
-    type: value.type === "tarea" ? "tarea" : "nota",
-    text: String(value.text || value.note || ""),
-    done: Boolean(value.done)
-  };
+  if (!value) return { mode: "nota", note: "", tasks: [] };
+  if (typeof value === "string") return { mode: "nota", note: value, tasks: [] };
+  const legacyType = value.type === "tarea" ? "tarea" : value.type === "nota" ? "nota" : "";
+  const mode = value.mode === "tarea" || legacyType === "tarea" ? "tarea" : "nota";
+  let note = String(value.note || "");
+  let tasks = Array.isArray(value.tasks) ? value.tasks : [];
+  if (!note && legacyType === "nota" && value.text) note = String(value.text || "");
+  if (!tasks.length && legacyType === "tarea" && value.text) {
+    tasks = [{ id: "legacy-0", text: String(value.text || ""), done: Boolean(value.done) }];
+  }
+  tasks = tasks
+    .map((t, i) => ({
+      id: String(t?.id || `t-${i}`),
+      text: String(t?.text || "").trim(),
+      done: Boolean(t?.done)
+    }))
+    .filter(t => t.text);
+  return { mode, note, tasks };
+}
+function agendaEntryHasContent(entry) {
+  const e = normalizeAgendaEntry(entry);
+  return Boolean(e.note.trim() || e.tasks.length);
+}
+function saveAgendaEntry(key, entry) {
+  const clean = normalizeAgendaEntry(entry);
+  if (agendaEntryHasContent(clean)) state.agenda[key] = clean;
+  else delete state.agenda[key];
+  save("oxmo:agenda", state.agenda);
 }
 
 function normalizarUsuario(u) {
@@ -727,13 +748,23 @@ function agendaCardHTML() {
     const key = `${monthKey}-${String(day).padStart(2, "0")}`;
     const item = normalizeAgendaEntry(state.agenda[key]);
     const classes = ["agenda-day"];
+    const hasPendingTasks = item.tasks.some(t => !t.done);
+    const hasDoneTasks = item.tasks.length && item.tasks.every(t => t.done);
     if (key === todayKey) classes.push("today");
     if (key === activeDay) classes.push("selected");
-    if (item.text) classes.push("has-note");
-    if (item.type === "tarea") classes.push(item.done ? "task-done" : "task-pending");
-    cells.push(`<button class="${classes.join(" ")}" type="button" data-agenda-day="${key}" title="${item.text ? esc(item.text) : "Agregar nota"}"><span>${day}</span></button>`);
+    if (item.note) classes.push("has-note");
+    if (hasPendingTasks) classes.push("task-pending");
+    if (hasDoneTasks) classes.push("task-done");
+    const title = item.note || (item.tasks.length ? `${item.tasks.filter(t => t.done).length}/${item.tasks.length} tareas hechas` : "Agregar nota o tarea");
+    cells.push(`<button class="${classes.join(" ")}" type="button" data-agenda-day="${key}" title="${esc(title)}"><span>${day}</span></button>`);
   }
   while (cells.length % 7 !== 0) cells.push('<button class="agenda-day empty" type="button" disabled></button>');
+  const taskList = entry.tasks.length ? entry.tasks.map(t => `
+    <div class="agenda-task ${t.done ? "done" : ""}">
+      <button class="agenda-task-check" type="button" data-agenda-task-toggle="${esc(t.id)}">${t.done ? "✓" : ""}</button>
+      <button class="agenda-task-text" type="button" data-agenda-task-toggle="${esc(t.id)}">${esc(t.text)}</button>
+      <button class="agenda-task-del" type="button" data-agenda-task-del="${esc(t.id)}">×</button>
+    </div>`).join("") : `<div class="agenda-help">No hay tareas para este día.</div>`;
   return `<aside class="agenda-panel">
     <div class="agenda-header">
       <div>
@@ -751,15 +782,22 @@ function agendaCardHTML() {
       ${activeDay ? `
         <div class="agenda-editor-title">${esc(new Date(activeDay + 'T00:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long' }))}</div>
         <div class="agenda-type-row">
-          <button class="chip ${entry.type === "nota" ? "active" : ""}" type="button" data-agenda-type="nota">Nota</button>
-          <button class="chip ${entry.type === "tarea" ? "active" : ""}" type="button" data-agenda-type="tarea">Tarea</button>
-          <button class="chip ${entry.done ? "active success" : ""}" type="button" data-agenda-done="toggle">${entry.done ? "Hecho" : "Pendiente"}</button>
+          <button class="chip ${entry.mode === "nota" ? "active" : ""}" type="button" data-agenda-mode="nota">Nota</button>
+          <button class="chip ${entry.mode === "tarea" ? "active" : ""}" type="button" data-agenda-mode="tarea">Tarea</button>
         </div>
-        <textarea id="agendaNoteInput" class="agenda-note-input" rows="3" placeholder="Escribe una nota o tarea para el día seleccionado">${esc(entry.text)}</textarea>
-        <div class="agenda-editor-actions">
-          <button class="btn" type="button" id="agendaSaveBtn">Guardar</button>
-          <button class="btn secondary" type="button" id="agendaClearBtn" ${entry.text ? "" : "disabled"}>Limpiar</button>
-        </div>
+        ${entry.mode === "tarea" ? `
+          <div class="agenda-task-input-row">
+            <input id="agendaTaskInput" class="agenda-task-input" placeholder="Agregar tarea para este día" />
+            <button class="btn" type="button" id="agendaAddTaskBtn">Agregar</button>
+          </div>
+          <div class="agenda-task-list">${taskList}</div>
+        ` : `
+          <textarea id="agendaNoteInput" class="agenda-note-input" rows="3" placeholder="Escribe una nota para el día seleccionado">${esc(entry.note)}</textarea>
+          <div class="agenda-editor-actions">
+            <button class="btn" type="button" id="agendaSaveBtn">Guardar nota</button>
+            <button class="btn secondary" type="button" id="agendaClearBtn" ${entry.note ? "" : "disabled"}>Limpiar nota</button>
+          </div>
+        `}
       ` : `<div class="agenda-help">Selecciona un día para agregar una nota o tarea.</div>`}
     </div>
   </aside>`;
@@ -795,21 +833,11 @@ function bindShell() {
     save("oxmo:agendaDay", state.agendaDay);
     render();
   }));
-  document.querySelectorAll("[data-agenda-type]").forEach(btn => btn.addEventListener("click", () => {
+  document.querySelectorAll("[data-agenda-mode]").forEach(btn => btn.addEventListener("click", () => {
     const key = state.agendaDay;
     if (!key) return;
     const entry = normalizeAgendaEntry(state.agenda[key]);
-    entry.type = btn.dataset.agendaType === "tarea" ? "tarea" : "nota";
-    state.agenda[key] = entry;
-    save("oxmo:agenda", state.agenda);
-    render();
-  }));
-  document.querySelectorAll("[data-agenda-done]").forEach(btn => btn.addEventListener("click", () => {
-    const key = state.agendaDay;
-    if (!key) return;
-    const entry = normalizeAgendaEntry(state.agenda[key]);
-    entry.type = entry.type || "tarea";
-    entry.done = !entry.done;
+    entry.mode = btn.dataset.agendaMode === "tarea" ? "tarea" : "nota";
     state.agenda[key] = entry;
     save("oxmo:agenda", state.agenda);
     render();
@@ -817,21 +845,52 @@ function bindShell() {
   document.querySelector("#agendaSaveBtn")?.addEventListener("click", () => {
     const key = state.agendaDay;
     if (!key) return;
-    const value = document.querySelector("#agendaNoteInput")?.value?.trim() || "";
     const entry = normalizeAgendaEntry(state.agenda[key]);
-    entry.text = value;
-    if (value) state.agenda[key] = entry;
-    else delete state.agenda[key];
-    save("oxmo:agenda", state.agenda);
+    entry.mode = "nota";
+    entry.note = document.querySelector("#agendaNoteInput")?.value?.trim() || "";
+    saveAgendaEntry(key, entry);
     render();
   });
   document.querySelector("#agendaClearBtn")?.addEventListener("click", () => {
     const key = state.agendaDay;
     if (!key) return;
-    delete state.agenda[key];
-    save("oxmo:agenda", state.agenda);
+    const entry = normalizeAgendaEntry(state.agenda[key]);
+    entry.note = "";
+    saveAgendaEntry(key, entry);
     render();
   });
+  document.querySelector("#agendaAddTaskBtn")?.addEventListener("click", () => {
+    const key = state.agendaDay;
+    if (!key) return;
+    const input = document.querySelector("#agendaTaskInput");
+    const value = input?.value?.trim() || "";
+    if (!value) return;
+    const entry = normalizeAgendaEntry(state.agenda[key]);
+    entry.mode = "tarea";
+    entry.tasks.push({ id: `t-${Date.now()}-${Math.random().toString(16).slice(2)}`, text: value, done: false });
+    saveAgendaEntry(key, entry);
+    render();
+  });
+  document.querySelector("#agendaTaskInput")?.addEventListener("keydown", e => {
+    if (e.key === "Enter") document.querySelector("#agendaAddTaskBtn")?.click();
+  });
+  document.querySelectorAll("[data-agenda-task-toggle]").forEach(btn => btn.addEventListener("click", () => {
+    const key = state.agendaDay;
+    if (!key) return;
+    const entry = normalizeAgendaEntry(state.agenda[key]);
+    const task = entry.tasks.find(t => t.id === btn.dataset.agendaTaskToggle);
+    if (task) task.done = !task.done;
+    saveAgendaEntry(key, entry);
+    render();
+  }));
+  document.querySelectorAll("[data-agenda-task-del]").forEach(btn => btn.addEventListener("click", () => {
+    const key = state.agendaDay;
+    if (!key) return;
+    const entry = normalizeAgendaEntry(state.agenda[key]);
+    entry.tasks = entry.tasks.filter(t => t.id !== btn.dataset.agendaTaskDel);
+    saveAgendaEntry(key, entry);
+    render();
+  }));
   bindCloudPanel();
   bindTab();
 }
