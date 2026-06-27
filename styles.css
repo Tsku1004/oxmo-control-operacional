@@ -1424,3 +1424,10 @@ body {
 @media (max-width: 760px) {
   .inventory-tools-v12 .inventory-search-line { grid-template-columns: 1fr; }
 }
+
+/* HOTFIX V14 visual */
+.kpi-label small{display:inline-block;font-size:.68em;color:var(--txt2);font-weight:700;letter-spacing:1px;margin-left:4px;vertical-align:middle;text-transform:none}
+.cloud-upload-icon{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:999px;background:linear-gradient(135deg,#00d4ff33,#00e5a033);border:1px solid #00d4ff55;color:var(--cyan);font-weight:900;margin-right:6px;box-shadow:0 0 12px #00d4ff22}
+.cloud-upload-pill,.cloud-upload-btn{display:inline-flex!important;align-items:center;gap:4px;font-weight:900}
+.infodia-upload-strip{border-color:#00d4ff22;background:linear-gradient(135deg,#07182d,#0a2537)}
+.exec-soft-kpi-label small{font-size:.7em;color:#8aa4bf;margin-left:4px}

@@ -7672,3 +7672,261 @@ initCloud().then(() => setTimeout(() => {
     console.warn("Post-sync v12", e);
   }
 }, 1200));
+
+/* =========================================================
+   HOTFIX_V14_20260627
+   - Cartilla ACP sin columna Fuente
+   - Infodia actualiza inventario solo con coincidencia exacta completa
+   - Botón de Infodia con icono nube upload
+   - KPIs superiores: Masa disponible (con análisis) y Masa sin análisis
+   - Dashboard gerencial en Mo fino + Cu promedio
+   ========================================================= */
+
+function iconoCloudUploadV14() {
+  return `<span class="cloud-upload-icon" aria-hidden="true">☁</span>`;
+}
+
+function codigoExactoInventarioACPv14(codigo) {
+  return String(codigo ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[‐‑‒–—―]/g, "-")
+    .replace(/\s+/g, "");
+}
+
+function buscarAnalisisExactoInventarioV14(lote, analisisACP) {
+  const idLote = codigoExactoInventarioACPv14(lote?.id);
+  if (!idLote) return null;
+  const candidatos = (analisisACP || [])
+    .filter(a => a && a.tipoAnalisis !== "comun_turno" && hasAnalysis(a))
+    .filter(a => codigoExactoInventarioACPv14(a.codigo) === idLote)
+    .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
+  return candidatos[0] || null;
+}
+
+actualizarInventarioConACP = function(lotes, analisisACP) {
+  let actualizados = 0;
+  const updated = (lotes || []).map(l => {
+    const match = buscarAnalisisExactoInventarioV14(l, analisisACP);
+    if (!match) return l;
+    const quimica = {
+      cu: Number(Number(match.cu || 0).toFixed(3)),
+      mo: Number(Number(match.mo || 0).toFixed(3)),
+      s: Number(Number(match.s || 0).toFixed(4)),
+    };
+    const cl = clasificar(quimica);
+    const obsBase = String(l.obs || "").replace(/\s*\|?\s*ACP:[^|]+/g, "").trim();
+    const obsAcp = `ACP: ${match.codigo}${match.fecha ? ` ${match.fecha}` : ""}`;
+    const next = {
+      ...l,
+      ...quimica,
+      estado: l.estado === "Bloqueado" ? "Bloqueado" : cl.clase === "Fuera Esp" ? "Fuera Esp" : "Disponible",
+      acpMatch: match.codigo,
+      acpFecha: match.fecha,
+      obs: obsBase ? `${obsBase} | ${obsAcp}` : obsAcp,
+    };
+    if (
+      Number(l.cu || 0) !== next.cu ||
+      Number(l.mo || 0) !== next.mo ||
+      Number(l.s || 0) !== next.s ||
+      l.estado !== next.estado ||
+      l.acpMatch !== next.acpMatch ||
+      l.acpFecha !== next.acpFecha
+    ) actualizados += 1;
+    return next;
+  });
+  return { lotes: updated, actualizados };
+};
+
+function syncInventarioACPExactV14() {
+  const acp = state.infodia?.analisisACP?.length ? state.infodia.analisisACP : state.infodia?.analisisLotes || [];
+  if (!acp.length) return 0;
+  const result = actualizarInventarioConACP((state.lotes || []).filter(l => !isInfodiaProductionLote(l)), acp);
+  if (result.actualizados) {
+    state.lotes = result.lotes;
+    save("oxmo:lotes", state.lotes);
+  }
+  return result.actualizados;
+}
+
+const aplicarInfodiaV14Base = aplicarInfodia;
+aplicarInfodia = function(info) {
+  aplicarInfodiaV14Base(info);
+  const actualizados = syncInventarioACPExactV14();
+  if (actualizados) addHist("Inventario actualizado exacto", "", `${actualizados} lote(s) cruzados por código completo`, C.green);
+  render();
+};
+
+aplicarACPInventarioActual = function() {
+  const result = actualizarInventarioConACP((state.lotes || []).filter(l => !isInfodiaProductionLote(l)), state.infodia?.analisisACP || state.infodia?.analisisLotes || []);
+  state.lotes = result.lotes;
+  save("oxmo:lotes", state.lotes);
+  addHist("Inventario actualizado con ACP", "", `${result.actualizados} lote(s) cruzados con coincidencia exacta completa`, result.actualizados ? C.green : C.yellow);
+  render();
+};
+
+function kpiDataAreaV14(lotes = lotesScopeAreaV10()) {
+  const analizados = lotes.filter(hasAnalysis);
+  const dispAnalizados = lotes.filter(l => l.estado === "Disponible" && hasAnalysis(l));
+  const sinAnalisis = lotes.filter(l => !hasAnalysis(l));
+  const fuera = lotes.filter(l => l.estado === "Fuera Esp" || clasificar(l).clase === "Fuera Esp");
+  const masaDispAnalizada = dispAnalizados.reduce((a,l)=>a+Number(l.masa||0),0);
+  const masaSinAnalisis = sinAnalisis.reduce((a,l)=>a+Number(l.masa||0),0);
+  const masaAnalizada = analizados.reduce((a,l)=>a+Number(l.masa||0),0);
+  const cuProm = masaAnalizada ? analizados.reduce((a,l)=>a+Number(l.cu||0)*Number(l.masa||0),0)/masaAnalizada : 0;
+  const finoMoKg = analizados.reduce((a,l)=>a+Number(l.masa||0)*Number(l.mo||0)/100,0);
+  return {
+    analizados,
+    disp: dispAnalizados,
+    sinAnalisis,
+    fuera,
+    masaDisp: masaDispAnalizada,
+    masaSinAnalisis,
+    cuProm,
+    finoMoKg,
+    total: lotes.length,
+  };
+}
+
+function kpiV14(label, value, unit, sub, color, icon, dec = 0) {
+  const shown = typeof value === "number" ? value.toFixed(dec) : value;
+  return `<div class="kpi" style="--accent:${color}"><div class="icon">${icon}</div><div class="kpi-label">${label}</div><div class="kpi-value">${shown}</div><div class="kpi-sub">${unit} · ${sub}</div></div>`;
+}
+
+function infodiaUploadPillV14() {
+  return canViewTab("infodia") ? `<div class="filters infodia-upload-strip" style="margin-bottom:12px"><button class="pill cloud-upload-pill ${state.tab === "infodia" ? "active" : ""}" data-tab="infodia">${iconoCloudUploadV14()} Subir Infodia</button></div>` : "";
+}
+
+shellHTML = function() {
+  if (isGerente()) return gerenteShellHTML();
+  const lotesScope = lotesScopeAreaV10();
+  const d = kpiDataAreaV14(lotesScope);
+  const areaLabel = areaScopeGlobalV10();
+  return `
+    <header class="topbar">
+      <div class="brand" style="justify-content:flex-start;margin:0"><div class="brand-mark" style="height:38px"></div><div><div style="font-weight:900;letter-spacing:3px">CONTROL OPERACIONAL</div><div class="brand-sub">OXMO · ENVASE · TRAZABILIDAD</div></div></div>
+      <div class="top-user-center"><div class="top-user-role">${esc(state.user.rol.toUpperCase())}</div><div class="top-user-name">${esc(state.user.nombre)}</div></div>
+      <div class="top-actions"><div style="text-align:right"><div id="clock" class="mono" style="color:var(--green);font-size:13px;font-weight:800">${new Date().toLocaleTimeString("es-CL")}</div><div style="color:var(--txt3);font-size:8px;letter-spacing:1px">${hoy()}</div></div><button class="btn secondary" id="cloudConfigBtn" title="Configurar tiempo real">NUBE: ${esc(cloud.status.toUpperCase())}</button><button class="btn danger" id="logoutBtn">SALIR</button></div>
+    </header>
+    <div class="status">${d.fuera.length ? `⚠ ${d.fuera.length} lote(s) fuera de especificación` : "Estado normal"} · Área: ${esc(areaLabel)} · Masa disponible con análisis: ${kgToTon(d.masaDisp)} · ${d.sinAnalisis.length} sin análisis · Lotes totales: ${d.total}</div>
+    <main class="main main-v10-soft">
+      <section class="kpis">
+        ${kpiV14('Masa disponible <small>(con análisis)</small>', d.masaDisp / 1000, 't', `${d.disp.length} lotes`, C.green, 'INV', 2)}
+        ${kpiV14('Masa sin análisis', d.masaSinAnalisis / 1000, 't', `${d.sinAnalisis.length} lotes`, C.yellow, 'LAB', 2)}
+        ${kpiV14('Fino Mo', d.finoMoKg / 1000, 't', 'todos los analizados', C.copper, '◆', 2)}
+        ${kpiV14('Cu Promedio', d.cuProm, '%', 'ponderado por masa', C.cyan, 'CU', 2)}
+        ${kpiV14('Total Lotes', d.total, '', 'según área/filtro', C.blue, 'LOT', 0)}
+        ${kpiV14('Fuera Esp.', d.fuera.length, '', 'lotes afectados', C.red, '!', 0)}
+      </section>
+      <nav class="tabs">${visibleTabs().map(([id,label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}</nav>
+      ${infodiaUploadPillV14()}
+      <section id="tabView">${tabHTML()}</section>
+    </main>
+    <footer class="footer"><span>OXMO CONTROL · ${esc(state.user.nombre)} (${esc(state.user.rol)}) · Área ${esc(areaTrabajoUsuario())}</span><span>DATOS PERSISTENTES · SGI COMPATIBLE</span></footer>
+    ${state.cloudPanel ? cloudPanelHTML() : ""}`;
+};
+
+const infodiaHTMLV14Base = infodiaHTML;
+infodiaHTML = function() {
+  return infodiaHTMLV14Base()
+    .replace(/SUBIR INFODIA/g, `${iconoCloudUploadV14()} Subir Infodia`)
+    .replace(/Importar nuevo Infodia/g, `${iconoCloudUploadV14()} Subir nuevo Infodia`);
+};
+
+lotesOxmoHTML = function() {
+  const base = (state.infodia?.analisisLotes || [])
+    .filter(a => a.tipoAnalisis !== "comun_turno")
+    .filter(a => /^(OXMO|OXBR)\d+-\d{2}$/.test(normalizarCodigoAnalisis(a.codigo)) || String(a.codigo || "").toUpperCase().includes("OSAC"));
+  const q = normalizarTextoAreaV9(state.acpSearch || "").toLowerCase();
+  const items = q ? base.filter(a => [a.codigo, a.tipoAnalisis, a.fecha, a.cu, a.mo, a.s, clasificar(a).clase].join(" ").toLowerCase().includes(q)) : base;
+  const allItems = base;
+  const oxmo = allItems.filter(a => a.tipoAnalisis === "lote_oxmo");
+  const briquetas = allItems.filter(a => a.tipoAnalisis === "briqueta");
+  const osac = allItems.filter(a => a.tipoAnalisis === "lote_osac" || String(a.codigo || "").toUpperCase().includes("OSAC"));
+  return `<div class="box">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px">
+      <div><div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Cartilla ACP</div><div style="color:var(--txt);font-size:18px;font-weight:900">Resultado de lotes OXMO - BQA</div><div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:860px;line-height:1.45">Listado de análisis ACP para lotes OXMO, briquetas OXBR y registros OSAC. Estos datos son cartilla de laboratorio, no inventario físico.</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn secondary" id="applyAcpInventory">Actualizar inventario con ACP</button><button class="btn secondary cloud-upload-btn" data-tab="infodia">${iconoCloudUploadV14()} Subir Infodia</button></div>
+    </div>
+    <div class="grid-cards" style="margin-bottom:14px">
+      ${miniReport("Lotes OXMO", oxmo.length, C.blueLight)}
+      ${miniReport("Briquetas OXBR", briquetas.length, C.copper)}
+      ${miniReport("OSAC", osac.length, C.cyan)}
+      ${miniReport("Con análisis", allItems.filter(hasAnalysis).length, C.green)}
+      ${miniReport("Fuera espec.", allItems.filter(x => clasificar(x).clase === "Fuera Esp").length, C.red)}
+    </div>
+    <div class="card" style="margin-bottom:14px"><div class="field" style="margin:0"><label>Buscar en cartilla</label><div style="display:flex;gap:8px;align-items:center"><input id="acpSearch" value="${esc(state.acpSearch || "")}" data-keep-case="true" placeholder="Ej: OXMO10065-26, OXBR1305-26, OSAC, 2026-06-14"><button class="btn secondary" id="acpSearchBtn" type="button">Buscar</button>${state.acpSearch ? `<button class="btn ghost" id="acpSearchClear" type="button">Limpiar</button>` : ""}</div></div></div>
+    ${items.length ? `<div class="table-wrap"><table><thead><tr><th>ID lote</th><th>Tipo</th><th>Fecha análisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th></tr></thead><tbody>${items.map(a => { const c = clasificar(a); return `<tr><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(a.codigo || "-")}</td><td>${esc(a.tipoAnalisis === "briqueta" ? "Briqueta" : a.tipoAnalisis === "lote_osac" ? "OSAC" : "Lote OXMO")}</td><td class="mono">${esc(a.fecha || "-")}</td><td class="mono" style="color:${Number(a.cu || 0) >= 0.51 ? C.copper : C.green}">${Number(a.cu || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.mo || 0) >= moMinimo(a.cu) ? C.green : C.red}">${Number(a.mo || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.s || 0) < 0.1 ? C.green : C.red}">${Number(a.s || 0).toFixed(4)}</td><td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${esc(c.clase)}</span></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">No hay análisis OXMO/OXBR/OSAC cargados o no hay resultados para la búsqueda.</div>`}
+  </div>`;
+};
+
+function calcularFinoMoKgV14(lotes) {
+  return (lotes || []).filter(hasAnalysis).reduce((a,l)=>a+Number(l.masa||0)*Number(l.mo||0)/100,0);
+}
+function cuPromPondKgV14(lotes) {
+  const analizados = (lotes || []).filter(hasAnalysis);
+  const masa = analizados.reduce((a,l)=>a+Number(l.masa||0),0);
+  return masa ? analizados.reduce((a,l)=>a+Number(l.cu||0)*Number(l.masa||0),0)/masa : 0;
+}
+
+const gerenteDashboardDataV14Base = gerenteDashboardData;
+gerenteDashboardData = function() {
+  const d = gerenteDashboardDataV14Base();
+  const lotes = d.lotes || [];
+  const fineTotal = calcularFinoMoKgV14(lotes);
+  const fineDisponible = calcularFinoMoKgV14(lotes.filter(l => l.estado === "Disponible"));
+  const fineFuera = calcularFinoMoKgV14(lotes.filter(l => l.estado === "Fuera Esp" || clasificar(l).clase === "Fuera Esp"));
+  const fineNoDisp = calcularFinoMoKgV14(lotes.filter(l => l.estado !== "Disponible"));
+  const cuProm = cuPromPondKgV14(lotes);
+  const classRowsFine = (d.classRows || []).map(r => ({
+    ...r,
+    masaKg: calcularFinoMoKgV14(r.lots || []),
+  }));
+  const sectoresFine = (d.sectores || []).map(s => ({
+    ...s,
+    masaKg: calcularFinoMoKgV14(s.rows || []),
+    masaT: calcularFinoMoKgV14(s.rows || []) / 1000,
+  })).sort((a,b)=>b.masaKg-a.masaKg);
+  return {
+    ...d,
+    masaFisicaTotalKg: d.masaTotalKg,
+    masaFisicaDisponibleKg: d.masaDisponibleKg,
+    masaTotalKg: fineTotal,
+    masaDisponibleKg: fineDisponible,
+    masaRetenidaKg: fineNoDisp,
+    masaFueraKg: fineFuera,
+    finoMoKg: fineTotal,
+    cuPromedioPond: cuProm,
+    classRows: classRowsFine,
+    sectores: sectoresFine,
+  };
+};
+
+const gerenteDashboardHTMLV14Base = gerenteDashboardHTML;
+gerenteDashboardHTML = function() {
+  const d = gerenteDashboardData();
+  const sparkProd = d.trend30.slice(-12).map(x => x.finoMoEstimadoT || 0);
+  const sparkCons = d.trend30.slice(-12).map(x => (x.consumoT || 0) * ((d.cuPromedioPond || 0) / 100));
+  const userInitials = String(state.user?.nombre || state.user?.u || "GM").split(/\s+/).filter(Boolean).slice(0,2).map(x => x[0]).join("").toUpperCase() || "GM";
+  return `<section class="exec-soft-board-v4">
+    <header class="exec-v4-header"><button class="exec-v4-brand" data-tab="gerencial" title="Volver al resumen"><span></span><b>MOLYB</b></button><div class="exec-v4-user"><span>Gerente</span><button class="exec-v4-avatar" data-tab="perfil" title="Mi perfil">${esc(userInitials)}</button><button class="exec-v4-logout" id="logoutBtn" title="Cerrar sesión">Salir</button></div></header>
+    <div class="exec-area-filter-card"><label>Área dashboard</label>${areaFilterSelectV10("gerenteAreaFilter", normalizarTextoAreaV9(state.gerenteAreaFilter || AREA_FILTRO_TODAS_V10))}</div>
+    <div class="exec-v4-layout"><section class="exec-v4-content"><div class="exec-soft-hero exec-v4-hero"><div><h1>Control Operacional Molyb</h1><p>Vista gerencial en Mo fino. Consolida inventario valorizado como masa × %Mo, clasificación, producción, consumos y alertas sin exponer operación técnica detallada.</p></div></div>
+      <div class="exec-soft-kpis exec-v4-kpis">
+        ${gerenteKpiHTML('Mo fino total', kgToTon(d.masaTotalKg, 2), `${d.lotes.length} lotes registrados`, C.blueLight, '◈', d.sectores.map(s => s.masaT))}
+        ${gerenteKpiHTML('Mo fino disponible', kgToTon(d.masaDisponibleKg, 2), `Base física ${kgToTon(d.masaFisicaDisponibleKg || 0, 2)}`, C.green, '◎', sparkProd)}
+        ${gerenteKpiHTML('Mo fino retenido', kgToTon(d.masaRetenidaKg, 2), `${d.retenidos.length} lotes no disponibles`, C.yellow, '▣', d.classRows.map(s => s.masaKg/1000))}
+        ${gerenteKpiHTML('Mo fino fuera espec.', kgToTon(d.masaFueraKg, 2), `${d.fuera.length} lote(s) afectados`, C.red, '△', d.classRows.map(s => s.masaKg/1000))}
+        ${gerenteKpiHTML('Producción Mo fino mes', kgToTon(d.totals.kgMo || 0, 2), `${d.totals.lotes || 0} registros Infodia`, C.green, '▥', sparkProd)}
+        ${gerenteKpiHTML('Cu promedio', `${gerenteNumber(d.cuPromedioPond || 0, 2)}%`, 'ponderado por masa física', C.cyan, 'CU', d.sectores.map(s => s.cuAvg || 0))}
+      </div>
+      <div class="exec-soft-panels exec-v4-panels">${gerenteTrendCardHTML(d)}${gerenteDonutHTML(d)}</div><div class="exec-soft-update">• Última actualización: ${esc(d.updatedAt)}</div></section>
+      <aside class="exec-soft-side exec-v4-side">${gerenteCalendarHTML()}${gerenteClockHTML()}<div class="exec-soft-side-card exec-v4-observaciones"><div class="exec-soft-side-title">Observaciones</div>${d.alerts.map(a => `<div class="exec-soft-alert ${a.level}"><b>${esc(a.title)}</b><p>${esc(a.text)}</p></div>`).join('')}</div></aside></div>
+  </section>`;
+};
+
+// Sincronización final de datos ACP luego de cargar esta versión.
+try { syncInventarioACPExactV14(); } catch (e) { console.warn("sync ACP exact v14", e); }
+try { render(); } catch (e) { console.warn("render v14", e); }

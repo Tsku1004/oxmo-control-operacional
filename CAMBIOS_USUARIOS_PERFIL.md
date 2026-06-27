@@ -1,42 +1,34 @@
-# Cambios v13 - Hotfix coincidencia exacta ACP / Infodia
+# Cambios v14 - Infodia, KPIs y dashboard Mo fino
 
-Se corrigió el cruce automático entre inventario y cartilla ACP/Infodia.
+## Cambios solicitados
 
-## Corrección principal
+- Se eliminó la columna **Fuente** de la pestaña **Lotes OXMO/BQA**.
+- El botón de **Importar/Subir Infodia** se reemplazó visualmente por un botón con icono de nube upload.
+- Se reforzó la actualización automática de inventario al cargar Infodia:
+  - Solo cruza ACP ↔ inventario con **coincidencia exacta del código completo**.
+  - Ya no usa coincidencia parcial por correlativo final.
+- El indicador superior **Masa Retenida** pasa a llamarse **Masa sin análisis**.
+- El indicador **Masa disponible** ahora se muestra como **Masa disponible (con análisis)**.
+- Los KPIs superiores se calculan por área/filtro activo.
+- El dashboard gerencial ahora presenta el inventario en **Mo fino**:
+  - Mo fino total
+  - Mo fino disponible
+  - Mo fino retenido
+  - Mo fino fuera de especificación
+  - Producción Mo fino del mes
+  - Cu promedio ponderado por masa física
 
-Antes el sistema podía actualizar un lote usando solo el último correlativo y el año, por ejemplo:
+## Fórmulas usadas
 
-- `03001-26`
+- **Mo fino:** masa × (%Mo / 100)
+- **Cu promedio:** Σ(masa × Cu%) / Σ(masa con análisis)
 
-Eso podía provocar cruces incorrectos entre códigos distintos, como:
+## Archivos a subir
 
-- `00630-004-03001-26`
-- otro lote con distinto prefijo/familia pero mismo final `03001-26`
-
-## Nueva regla
-
-Desde esta versión, el inventario solo se actualiza con ACP cuando hay coincidencia exacta del código completo normalizado.
-
-Ejemplo válido:
-
-- Inventario: `00630-004-03001-26`
-- ACP: `00630-004-03001-26`
-
-Ejemplo no válido:
-
-- Inventario: `00710-001-03001-26`
-- ACP: `00630-004-03001-26`
-
-Aunque ambos terminen en `03001-26`, ya no se cruzan.
-
-## Archivos clave
+Subir a GitHub, en la raíz del repositorio:
 
 - `app.js`
-- `index.html`
 - `styles.css`
+- `index.html`
 
-Después de subir a GitHub/Vercel, abrir con `Ctrl + F5`.
-
-## Nota operacional
-
-Si ya se actualizó un lote con un cruce incorrecto antes de instalar este hotfix, hay que corregir ese lote manualmente o volver a cargar sus datos correctos. Esta versión evita que vuelva a ocurrir.
+Luego esperar redeploy de Vercel y abrir con `Ctrl + F5`.
