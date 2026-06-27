@@ -1,3 +1,6 @@
+/* OXMO Control Operacional v20-clean-deep
+   Base: v19-clean-safe. Limpieza profunda segura: duplicados retirados, Alertas fuera, clave personal removida de vistas visibles.
+*/
 /* =========================================================
    OXMO CONTROL OPERACIONAL - v19-clean-safe
    Limpieza segura generada desde v18.
@@ -28,7 +31,7 @@ const DEFAULT_CLOUD_CONFIG = {
 };
 const PUBLIC_APP_URL = "https://oxmo-control-operacional.vercel.app/";
 const SHARED_KEYS = new Set(["oxmo:lotes", "oxmo:hist", "oxmo:sectores", "oxmo:silos", "oxmo:comunes", "oxmo:siloNiveles", "oxmo:siloHistorial", "oxmo:infodia", "oxmo:usuarios", "oxmo:userStats", "oxmo:avisos"]);
-const HIDDEN_TABS = new Set(["quimica", "siloHistorial", "comunesTurno", "etiquetas"]);
+const HIDDEN_TABS = new Set(["quimica", "siloHistorial", "comunesTurno", "etiquetas", "alertas"]);
 const cloud = { client: null, channel: null, ready: false, applying: false, status: "local", lastError: "", needsLotesCleanup: false, needsSiloCleanup: false };
 let tabRenderFrame = 0;
 
@@ -372,7 +375,6 @@ function visibleTabs() {
     ["mezclas", "Mezclas"],
     ["etiquetas", "Etiquetas"],
     ["reportes", "Reportes"],
-    ["alertas", "Alertas"],
     ["avisos", "Avisos"],
     ["admin", "Admin"],
   ].filter(([id]) => canViewTab(id));
@@ -604,7 +606,7 @@ function shellHTML() {
       <section id="tabView">${tabHTML()}</section>
     </main>
     <footer class="footer">
-      <span>OXMO CONTROL v1.1 · ${state.user.nombre} (${state.user.rol}) · ${state.historial.length} eventos</span>
+      <span>OXMO CONTROL v20 · ${state.user.nombre} (${state.user.rol}) · ${state.historial.length} eventos</span>
       <span>DATOS PERSISTENTES · SGI COMPATIBLE</span>
     </footer>
     ${state.cloudPanel ? cloudPanelHTML() : ""}
@@ -656,7 +658,8 @@ function tabHTML() {
   if (state.tab === "siloHistorial") return siloHistorialHTML();
   if (state.tab === "etiquetas") return etiquetasHTML();
   if (state.tab === "reportes") return reportesHTML();
-  return alertasHTML();
+  state.tab = "inventario";
+  return inventarioHTML();
 }
 function bindTab() {
   if (state.tab === "inventario") bindInventario();
@@ -674,48 +677,7 @@ function bindTab() {
   if (state.tab === "quimica") bindQuimica();
 }
 
-function inventarioHTML() {
-  const lotesBase = state.filtro === "Todos" ? state.lotes : state.lotes.filter(l => l.estado === state.filtro);
-  const lotes = lotesRecientes(lotesBase);
-  const dist = allSectores().map(s => ({s, v: state.lotes.filter(l => l.sector === s).reduce((a,l) => a + l.masa, 0)}));
-  const max = Math.max(1, ...dist.map(d => d.v));
-  return `
-    <div class="filters">
-      ${["Todos","Disponible","Bloqueado","Pendiente","Fuera Esp"].map(f => `<button class="pill ${state.filtro === f ? "active" : ""}" data-filter="${f}">${f} (${f === "Todos" ? state.lotes.length : state.lotes.filter(l => l.estado === f).length})</button>`).join("")}
-      <button class="pill" id="newLot" style="margin-left:auto;border-color:#00e5a055;color:var(--green)">+ Nuevo lote</button>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr>${["ID","Tipo","Masa","Sector","Cu%","Mo%","S%","Clasif.","Estado","Fecha",""].map(h => `<th>${h}</th>`).join("")}</tr></thead>
-        <tbody>${lotes.map(l => rowHTML(l)).join("")}</tbody>
-      </table>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px">
-      <div class="card">
-        <div class="muted-title" style="margin-bottom:10px">Por sector</div>
-        ${dist.map(d => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:128px;color:var(--txt2);font-size:11px">${d.s}</span><div class="bar" style="flex:1;--accent:var(--blue)"><span style="--w:${(d.v/max)*100}%"></span></div><span class="mono" style="color:var(--txt2);font-size:11px">${kgToTon(d.v, 1)}</span></div>`).join("")}
-      </div>
-      <div class="card">
-        <div class="muted-title" style="margin-bottom:10px">Estados</div>
-        ${["Disponible","Bloqueado","Pendiente","Fuera Esp"].map(e => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a2e4a33"><span style="color:${eColor(e)}">● ${e}</span><span class="mono" style="font-weight:800">${state.lotes.filter(l => l.estado === e).length}</span></div>`).join("")}
-      </div>
-    </div>
-  `;
-}
-/* v19-clean-safe: definición antigua removida: rowHTML */
 
-function bindInventario() {
-  document.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => { state.filtro = btn.dataset.filter; render(); }));
-  document.querySelector("#newLot").addEventListener("click", () => { state.editando = null; state.tab = "registro"; render(); });
-  document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => {
-    const lote = state.lotes.find(l => l.id === btn.dataset.edit);
-    if (!canEditLot(lote)) { alert("No tienes permiso para modificar este lote."); return; }
-    state.editando = lote;
-    state.tab = "registro";
-    render();
-  }));
-  document.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => deleteLot(btn.dataset.del)));
-}
 function cartillaManualLotes() {
   return CARTILLA_MANUAL_SIMULADA.map(item => {
     const lote = {
@@ -917,43 +879,7 @@ function adminHTML() {
     </div>
   `;
 }
-function adminUsersHTML(rows) {
-  return `
-    <div style="display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:16px;align-items:start">
-      <div class="card">
-        <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Crear cuenta</div>
-        <form id="adminUserForm">
-          <div class="field"><label>Usuario</label><input name="u" autocomplete="off" placeholder="ej: turno_a"></div>
-          <div class="field"><label>Nombre</label><input name="nombre" autocomplete="off" placeholder="Nombre visible"></div>
-          <div class="field"><label>Contraseña</label><input name="p" type="password" autocomplete="new-password" placeholder="Contraseña inicial"></div>
-          ${selectField("rol", "Rol", "Operador", ROLES_USUARIO)}
-          <button class="btn" style="width:100%">CREAR USUARIO</button>
-        </form>
-      </div>
-      <div class="card">
-        <div class="muted-title" style="margin-bottom:12px">Cuentas creadas — ${rows.length}</div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Creado</th><th>Último uso</th><th>Control</th></tr></thead>
-            <tbody>${rows.map(({u, stat}) => `<tr>
-              <td class="mono" style="color:var(--blue-light);font-weight:900">${esc(u.u)}</td>
-              <td>${esc(u.nombre)}</td>
-              <td>${esc(u.rol)}</td>
-              <td style="color:${u.activo !== false ? C.green : C.red}">● ${u.activo !== false ? "Activo" : "Inactivo"}</td>
-              <td class="mono" style="color:var(--txt3)">${esc(u.creado || "-")}</td>
-              <td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td>
-              <td><div class="mini-actions">
-                <button class="icon-btn" data-edit-user="${esc(u.u)}">Editar</button>
-                <button class="icon-btn" data-pass-user="${esc(u.u)}">Clave</button>
-                ${u.u !== "admin" && u.u !== userKey() ? `<button class="icon-btn" data-toggle-user="${esc(u.u)}">${u.activo !== false ? "Pausar" : "Activar"}</button><button class="icon-btn" data-delete-user="${esc(u.u)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button>` : ""}
-              </div></td>
-            </tr>`).join("")}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  `;
-}
+
 function adminStatsHTML(rows) {
   return `
     <div class="grid-cards" style="margin-bottom:14px">
@@ -1218,58 +1144,6 @@ function bindComunesTurno() {
   }));
 }
 
-function mezclasHTML() {
-  const m = state.mix;
-  const disponibles = state.lotes.filter(l => l.estado === "Disponible" && l.cu > 0);
-  const sel = disponibles.filter(l => m.sel.includes(l.id));
-  const masa = sel.reduce((a,l) => a + l.masa, 0);
-  const cu = masa ? sel.reduce((a,l) => a + l.cu * (l.masa / masa), 0) : 0;
-  const mo = masa ? sel.reduce((a,l) => a + l.mo * (l.masa / masa), 0) : 0;
-  const ss = masa ? sel.reduce((a,l) => a + l.s * (l.masa / masa), 0) : 0;
-  const checks = [Math.abs(cu - m.cu) <= 0.1, mo >= m.mo, ss < m.s, masa >= m.masa*.9 && masa <= m.masa*1.1];
-  const score = checks.filter(Boolean).length;
-  const shown = m.sector === "Todos" ? state.lotes : state.lotes.filter(l => l.sector === m.sector);
-  return `<div class="mix-layout">
-    <div class="box">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Objetivo</div>
-      ${range("Cu objetivo", "cu", m.cu, 0, 2, .01, "%", C.green)}
-      ${range("Mo mínimo", "mo", m.mo, 50, 65, .1, "%", C.blueLight)}
-      ${range("S máximo", "s", m.s, 0, .5, .01, "%", C.yellow)}
-      ${range("Masa objetivo", "masa", m.masa, 500, 8000, 100, "kg", C.cyan)}
-      <button class="btn" id="autoMix" style="width:100%;margin-top:8px">AUTO-SELECCIONAR</button>
-      <button class="btn secondary" id="clearMix" style="width:100%;margin-top:6px">Limpiar</button>
-      <div class="filters" style="margin-top:12px">${["Todos", ...allSectores()].map(s => `<button class="pill ${m.sector === s ? "active" : ""}" data-mix-sector="${s}">${s}</button>`).join("")}</div>
-    </div>
-    <div class="box">
-      <div style="display:flex;justify-content:space-between;margin-bottom:12px"><div class="muted-title" style="color:var(--cyan)">Loza de materiales</div><div style="color:var(--txt3);font-size:10px">${m.sel.length} selec. · ${kgToTon(masa)}</div></div>
-      <div class="yard">${allSectores().map(sec => {
-        const ls = shown.filter(l => l.sector === sec);
-        if (!ls.length) return "";
-        return `<div class="sector-title"><span class="tag" style="background:#0f3a6e;color:var(--blue-light)">${sec}</span></div><div class="tile-row">${ls.map(l => {
-          const c = clasificar(l);
-          const isDis = l.estado === "Disponible" && l.cu > 0;
-          const selected = m.sel.includes(l.id);
-          return `<div class="lot-tile ${l.tipo === "Tambor" ? "tambor" : ""} ${isDis ? "available" : "disabled"} ${selected ? "selected" : ""}" data-mix-lot="${isDis ? l.id : ""}" style="--accent:${c.color}"><div class="mono" style="font-size:9px;font-weight:900">${l.id}<br>${l.cu ? `${l.cu}%` : "LAB"}</div></div>`;
-        }).join("")}</div>`;
-      }).join("")}</div>
-    </div>
-    <div class="box">
-      <div style="text-align:center;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:12px">
-        <div class="muted-title">Resultado</div>
-        <div class="mono" style="font-size:34px;font-weight:900;color:${score === 4 ? C.green : score >= 2 ? C.yellow : C.red}">${score === 4 ? "OK" : score === 0 ? "—" : `${score}/4`}</div>
-      </div>
-      ${chemResult("Cu", cu, m.cu, checks[0], 2)}
-      ${chemResult("Mo", mo, m.mo, checks[1], 70)}
-      ${chemResult("S", ss, m.s, checks[2], 1)}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px">
-        ${mini("Masa sel.", kgToTon(masa), checks[3] ? C.green : C.yellow)}
-        ${mini("Objetivo", kgToTon(m.masa), C.txt2)}
-        ${mini("Diferencia", kgToTon(masa - m.masa), checks[3] ? C.green : C.red)}
-        ${mini("Lotes", String(m.sel.length), C.blueLight)}
-      </div>
-    </div>
-  </div>`;
-}
 /* v19-clean-safe: definición antigua removida: range */
 
 function chemResult(label, value, target, ok, max) {
@@ -1412,68 +1286,6 @@ function generarOpcionesMezcla() {
   return opts.sort((a, b) => b.score - a.score).slice(0, 8);
 }
 
-function mezclasHTML() {
-  const disponibles = state.lotes.filter(l => hasAnalysis(l));
-  const seleccionados = disponibles.filter(l => state.mix.sel.includes(l.id));
-  const manualItems = seleccionados.map(l => ({lote: l, kg: Math.min(l.masa, 20000 / Math.max(1, seleccionados.length))}));
-  const manualMix = manualItems.length ? mezclaDe(manualItems) : null;
-  const opciones = generarOpcionesMezcla();
-  return `<div style="display:grid;grid-template-columns:280px 1fr;gap:12px">
-    <div class="box">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Objetivo lote producción</div>
-      ${mini("Masa lote", "20.00 t", C.cyan)}
-      ${mini("S máximo", "< 0.10%", C.yellow)}
-      ${mini("Mo alto cobre", ">= 55%", C.copper)}
-      ${mini("Mo bajo cobre", "> 57%", C.green)}
-      <button class="btn" id="autoMix" style="width:100%;margin-top:10px">BUSCAR OPCIONES</button>
-      <button class="btn secondary" id="clearMix" style="width:100%;margin-top:6px">Limpiar selección</button>
-      <div class="filters" style="margin-top:12px">${["Todos", ...allSectores()].map(s => `<button class="pill ${state.mix.sector === s ? "active" : ""}" data-mix-sector="${s}">${s}</button>`).join("")}</div>
-    </div>
-    <div>
-      <div class="box" style="margin-bottom:12px">
-        <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Materiales disponibles para mezcla</div>
-        <div class="grid-cards">${disponibles.filter(l => state.mix.sector === "Todos" || l.sector === state.mix.sector).map(l => {
-          const c = clasificar(l);
-          const selected = state.mix.sel.includes(l.id);
-          return `<div class="card" data-mix-lot="${l.id}" style="cursor:pointer;border:2px solid ${selected ? c.color : "var(--line)"}">
-            <div style="display:flex;justify-content:space-between;gap:8px"><b class="mono" style="color:var(--blue-light)">${l.id}</b><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span></div>
-            <div style="color:var(--txt2);font-size:10px;margin-top:6px">${l.tipo} · ${l.sector} · ${(l.masa/1000).toFixed(2)}t</div>
-            <div class="mono" style="font-size:11px;margin-top:4px">Cu ${l.cu}% · Mo ${l.mo}% · S ${l.s}%</div>
-          </div>`;
-        }).join("") || `<div style="color:var(--txt3);font-size:11px">No hay materiales con análisis.</div>`}</div>
-      </div>
-      <div class="box">
-        <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Opciones de mezcla 20 t</div>
-        ${opciones.length ? opciones.map((op, idx) => mezclaOpcionHTML(op, idx)).join("") : `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px">No hay combinaciones que cumplan con los materiales actuales. Registra más lotes o análisis.</div>`}
-      </div>
-      ${manualMix ? `<div class="box" style="margin-top:12px;border-top:3px solid ${manualMix.color}"><div class="muted-title" style="color:var(--cyan);margin-bottom:10px">Cálculo selección manual</div>${mezclaDetalleHTML({items:manualItems, mix:manualMix})}</div>` : ""}
-    </div>
-  </div>`;
-}
-/* v19-clean-safe: definición antigua removida: mezclaOpcionHTML */
-
-/* v19-clean-safe: definición antigua removida: mezclaDetalleHTML */
-
-/* v19-clean-safe: definición antigua removida: bindMezclas */
-
-/* v19-clean-safe: definición antigua removida: silosHTML */
-
-/* v19-clean-safe: definición antigua removida: bindSilos */
-
-/* v19-clean-safe: definición antigua removida: bindReportes */
-
-
-function alertasHTML() {
-  const disp = state.lotes.filter(l => l.estado === "Disponible");
-  const alerts = [
-    ...state.lotes.filter(l => l.estado === "Fuera Esp").map(l => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`${l.id} FUERA DE ESPECIFICACIÓN`,detalle:`Mo:${l.mo}% Cu:${l.cu}% S:${l.s}% · ${l.sector}`})),
-    ...silosPonderados().filter(s => s.nivel > 85).map(s => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`Silo ${s.id} al ${s.nivel.toFixed(0)}%`,detalle:`Masa est: ${s.masa.toFixed(1)}t · Programar despacho`})),
-    ...silosPonderados().filter(s => s.muestras && s.clase === "Fuera Esp").map(s => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`Silo ${s.id} fuera de especificación`,detalle:`Cu:${s.cu.toFixed(2)}% Mo:${s.mo.toFixed(2)}% S:${s.s.toFixed(2)}%`})),
-    ...state.lotes.filter(l => l.estado === "Pendiente").map(l => ({nivel:"AVISO",color:C.yellow,icon:"⚠️",msg:`${l.id} sin análisis`,detalle:`${l.tipo} · ${l.masa}kg · ${l.sector} · ${l.fecha}`})),
-    {nivel:"INFO",color:C.green,icon:"ℹ️",msg:"Sistema activo",detalle:`${state.lotes.length} lotes · ${disp.length} disponibles · ${new Date().toLocaleTimeString("es-CL")}`}
-  ];
-  return `<div style="display:flex;flex-direction:column;gap:8px">${alerts.map(a => `<div class="card" style="border-left:4px solid ${a.color};display:flex;gap:12px"><span style="font-size:20px">${a.icon}</span><div><div><span class="tag" style="background:${a.color}22;color:${a.color};border-color:${a.color}44">${a.nivel}</span> <b style="font-size:12px">${a.msg}</b></div><div style="color:var(--txt2);font-size:11px;margin-top:4px">${a.detalle}</div></div></div>`).join("")}</div>`;
-}
 /* v19-clean-safe: definición antigua removida: buscarMejoresMezclas2 */
 
 
@@ -3423,7 +3235,7 @@ function adminUserModalHTML() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div><label>Usuario</label><input class="input" data-keep-case="true" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
         <div><label>Nombre visible</label><input class="input" data-keep-case="true" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
-        <div><label>Contraseña visible</label><input class="input" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p)}"></div>
+        <div><label>Nueva contraseña (opcional)</label><input class="input" data-keep-case="true" data-admin-edit-pass type="password" value="" placeholder="Dejar en blanco para mantener"></div>
         <div><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
         <div><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
         <div><label>Creado</label><input class="input" readonly value="${esc(user.creado || "-")}"></div>
@@ -3447,7 +3259,7 @@ function adminUsersHTML(rows) {
         <div class="section-title">Crear cuenta</div>
         <label>Usuario</label><input id="newUserU" class="input" data-keep-case="true" placeholder="ej: turno_a">
         <label>Nombre</label><input id="newUserNombre" class="input" data-keep-case="true" placeholder="Nombre visible">
-        <label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial">
+        <label>Contraseña inicial</label><input id="newUserPass" data-keep-case="true" type="password" class="input" placeholder="Contraseña inicial">
         <label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select>
         <button class="btn primary" id="crearUsuario" style="width:100%;margin-top:12px">Crear usuario</button>
       </div>
@@ -3734,7 +3546,7 @@ adminUserModalHTML = function() {
       <div class="profile-grid">
         <div class="field"><label>Usuario</label><input class="input" data-keep-case="true" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
         <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
-        <div class="field"><label>Contraseña visible</label><input class="input" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p)}"></div>
+        <div class="field"><label>Nueva contraseña (opcional)</label><input class="input" data-keep-case="true" data-admin-edit-pass type="password" value="" placeholder="Dejar en blanco para mantener"></div>
         <div class="field"><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
         <div class="field"><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
         <div class="field"><label>Creado</label><input class="input" readonly value="${esc(user.creado || "-")}"></div>
@@ -3783,7 +3595,7 @@ adminUsersHTML = function(rows) {
         <div class="section-title">Crear cuenta</div>
         <div class="field"><label>Usuario</label><input id="newUserU" class="input" data-keep-case="true" placeholder="ej: turno_a"></div>
         <div class="field"><label>Nombre</label><input id="newUserNombre" class="input" data-keep-case="true" placeholder="Nombre visible"></div>
-        <div class="field"><label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial"></div>
+        <div class="field"><label>Contraseña inicial</label><input id="newUserPass" data-keep-case="true" type="password" class="input" placeholder="Contraseña inicial"></div>
         <div class="field"><label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select></div>
         <div class="field"><label>Cargo</label><input id="newUserCargo" class="input" data-keep-case="true" placeholder="Opcional"></div>
         <div class="field"><label>Área / célula</label><select id="newUserArea" class="input" data-keep-case="true">${areaTrabajoOptionsHTML()}</select></div>
@@ -3864,7 +3676,7 @@ bindAdmin = function() {
     const patch = {
       u: nextU,
       nombre: (document.querySelector("[data-admin-edit-nombre]")?.value || "").trim(),
-      p: document.querySelector("[data-admin-edit-pass]")?.value || "",
+      p: document.querySelector("[data-admin-edit-pass]")?.value || old.p || "",
       rol: document.querySelector("[data-admin-edit-rol]")?.value || "Operador",
       activo: old.u === "admin" ? true : document.querySelector("[data-admin-edit-activo]")?.value !== "false",
       cargo: (document.querySelector("[data-admin-edit-cargo]")?.value || "").trim(),
@@ -4686,7 +4498,7 @@ adminUsersHTML = function(rows) {
         <div class="area-help">Cada usuario queda asociado a un área/célula. Los roles operativos solo verán inventario de su área.</div>
         <div class="field"><label>Usuario</label><input id="newUserU" class="input" data-keep-case="true" placeholder="ej: turno_a"></div>
         <div class="field"><label>Nombre</label><input id="newUserNombre" class="input" data-keep-case="true" placeholder="Nombre visible"></div>
-        <div class="field"><label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial"></div>
+        <div class="field"><label>Contraseña inicial</label><input id="newUserPass" data-keep-case="true" type="password" class="input" placeholder="Contraseña inicial"></div>
         <div class="field"><label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select></div>
         <div class="field"><label>Cargo</label><input id="newUserCargo" class="input" data-keep-case="true" placeholder="Opcional"></div>
         <div class="field"><label>Área / célula</label>${renderAreaSelectHTML({ id: "newUserArea", value: AREA_CELULA_DEFAULT, includeAdd: true })}</div>
@@ -4751,7 +4563,7 @@ adminUserModalHTML = function() {
       <div class="profile-grid">
         <div class="field"><label>Usuario</label><input class="input" data-keep-case="true" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
         <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
-        <div class="field"><label>Contraseña visible</label><input class="input" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p)}"></div>
+        <div class="field"><label>Nueva contraseña (opcional)</label><input class="input" data-keep-case="true" data-admin-edit-pass type="password" value="" placeholder="Dejar en blanco para mantener"></div>
         <div class="field"><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
         <div class="field"><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
         <div class="field"><label>Creado</label><input class="input" readonly value="${esc(user.creado || "-")}"></div>
@@ -4882,7 +4694,7 @@ bindAdmin = function() {
     const patch = {
       u: nextU,
       nombre: (document.querySelector("[data-admin-edit-nombre]")?.value || "").trim(),
-      p: document.querySelector("[data-admin-edit-pass]")?.value || "",
+      p: document.querySelector("[data-admin-edit-pass]")?.value || old.p || "",
       rol: document.querySelector("[data-admin-edit-rol]")?.value || "Operador",
       activo: old.u === "admin" ? true : document.querySelector("[data-admin-edit-activo]")?.value !== "false",
       cargo: (document.querySelector("[data-admin-edit-cargo]")?.value || "").trim(),
@@ -5280,7 +5092,7 @@ adminUsersHTML = function(rows) {
         <div class="area-help">Cada usuario queda asociado a un área/célula. Usuarios de otras áreas solo ven su inventario y su perfil.</div>
         <div class="field"><label>Usuario</label><input id="newUserU" class="input" data-keep-case="true" placeholder="ej: turno_a"></div>
         <div class="field"><label>Nombre</label><input id="newUserNombre" class="input" data-keep-case="true" placeholder="Nombre visible"></div>
-        <div class="field"><label>Contraseña visible</label><input id="newUserPass" data-keep-case="true" type="text" class="input" placeholder="Contraseña inicial"></div>
+        <div class="field"><label>Contraseña inicial</label><input id="newUserPass" data-keep-case="true" type="password" class="input" placeholder="Contraseña inicial"></div>
         <div class="field"><label>Rol</label><select id="newUserRol" class="input">${roleOptions}</select></div>
         <div class="field"><label>Cargo</label><input id="newUserCargo" class="input" data-keep-case="true" placeholder="Opcional"></div>
         <div class="field"><label>Área / célula</label>${renderAreaSelectHTML({ id: "newUserArea", value: areaTrabajoDefault(), includeAdd: true })}</div>
@@ -5294,7 +5106,7 @@ adminUsersHTML = function(rows) {
             <div class="area-help">Áreas activas: ${areas.map(a => areaBadgeHTML(a, true)).join(" ")}</div>
           </div>
         </div>
-        <div class="table-wrap"><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Área / célula</th><th>Contraseña</th><th>Estado</th><th>Último uso</th><th>Control</th></tr></thead><tbody>
+        <div class="table-wrap"><table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Área / célula</th><th>Estado</th><th>Último uso</th><th>Control</th></tr></thead><tbody>
           ${usuarios.map(u => {
             const stat = state.userStats[u.u] || {};
             return `<tr>
@@ -5302,7 +5114,7 @@ adminUsersHTML = function(rows) {
               <td>${esc(u.nombre)}</td>
               <td>${esc(u.rol)}</td>
               <td>${areaBadgeHTML(u.area)}</td>
-              <td><span class="pass-chip mono">${esc(u.p || "-")}</span></td>
+              
               <td style="color:${u.activo !== false ? C.green : C.red}">● ${u.activo !== false ? "Activo" : "Deshabilitado"}</td>
               <td style="color:var(--txt2)">${esc(stat.lastSeen || "-")}</td>
               <td><div class="mini-actions">
@@ -5329,7 +5141,7 @@ adminUserModalHTML = function() {
         <div>
           <div class="section-title">Editar usuario</div>
           <h2 style="margin:4px 0 0">${esc(user.nombre)}</h2>
-          <div style="color:var(--txt2);font-size:12px;margin-top:4px">Administra cuenta, rol, contraseña, área/célula y datos personales.</div>
+          <div style="color:var(--txt2);font-size:12px;margin-top:4px">Administra cuenta, rol, área/célula y datos personales. La contraseña solo se reemplaza si escribes una nueva.</div>
         </div>
         <button class="btn ghost" data-admin-edit-close>Cerrar</button>
       </div>
@@ -5345,7 +5157,7 @@ adminUserModalHTML = function() {
       <div class="profile-grid">
         <div class="field"><label>Usuario</label><input class="input" data-keep-case="true" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
         <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
-        <div class="field"><label>Contraseña visible</label><input class="input" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p)}"></div>
+        <div class="field"><label>Nueva contraseña (opcional)</label><input class="input" data-keep-case="true" data-admin-edit-pass type="password" value="" placeholder="Dejar en blanco para mantener"></div>
         <div class="field"><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
         <div class="field"><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
         <div class="field"><label>Creado</label><input class="input" readonly value="${esc(user.creado || "-")}"></div>
@@ -5435,7 +5247,7 @@ bindAdmin = function() {
     const patch = {
       u: nextU,
       nombre: (document.querySelector("[data-admin-edit-nombre]")?.value || "").trim(),
-      p: document.querySelector("[data-admin-edit-pass]")?.value || "",
+      p: document.querySelector("[data-admin-edit-pass]")?.value || old.p || "",
       rol: document.querySelector("[data-admin-edit-rol]")?.value || "Operador",
       activo: old.u === "admin" ? true : document.querySelector("[data-admin-edit-activo]")?.value !== "false",
       cargo: (document.querySelector("[data-admin-edit-cargo]")?.value || "").trim(),
@@ -5711,7 +5523,7 @@ perfilUsuarioHTML = function() {
 analisisACPHTML = function({ titulo, subtitulo, items, kpis, empty }) {
   const q = (state.acpSearch || "").trim().toLowerCase();
   const filtered = q ? items.filter(a => [a.codigo, a.fecha, a.tipoAnalisis, a.clase].join(" ").toLowerCase().includes(q)) : items;
-  return `<div class="box"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px"><div><div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Cartilla ACP</div><div style="color:var(--txt);font-size:20px;font-weight:900">${esc(titulo)}</div><div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:820px;line-height:1.45">${esc(subtitulo)}</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn secondary" id="applyAcpInventory">Actualizar inventario con ACP</button><button class="btn secondary" id="importInfodiaTop">Importar Infodia</button></div></div><div class="grid-cards" style="margin-bottom:14px">${kpis.map(([label,value,color])=>miniReport(label,String(value),color)).join("")}</div><div class="card" style="margin-bottom:14px"><div class="field" style="margin:0"><label>Buscar en cartilla</label><div style="display:flex;gap:8px"><input id="acpSearch" value="${esc(state.acpSearch || "")}" dir="ltr" style="direction:ltr;text-align:left" placeholder="Ej: OXMO8635-26, OXBR1305-26, OO300-001-06149-26, 2026-05-16"><button class="btn secondary" id="clearAcpSearch" type="button">Limpiar</button></div></div></div>${filtered.length ? `<div class="table-wrap"><table><thead><tr><th>ID lote</th><th>Tipo</th><th>Fecha análisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th>Fuente</th></tr></thead><tbody>${filtered.map(a=>{ const c=clasificar(a); return `<tr><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(a.codigo)}</td><td>${esc(labelTipoAnalisis(a.tipoAnalisis))}</td><td class="mono">${esc(a.fecha || "-")}</td><td class="mono" style="color:${Number(a.cu) >= 0.51 ? C.copper : C.green}">${fmt(a.cu,3)}</td><td class="mono" style="color:${Number(a.mo) >= moMinimo(a.cu) ? C.green : C.red}">${fmt(a.mo,3)}</td><td class="mono" style="color:${Number(a.s) < 0.1 ? C.green : C.red}">${fmt(a.s,4)}</td><td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span></td><td style="color:var(--txt3);font-size:10px">${esc(a.fuente || "")}</td></tr>`;}).join("")}</tbody></table></div>` : `<div class="notice">${esc(empty)}</div>`}</div>`;
+  return `<div class="box"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px"><div><div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Cartilla ACP</div><div style="color:var(--txt);font-size:20px;font-weight:900">${esc(titulo)}</div><div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:820px;line-height:1.45">${esc(subtitulo)}</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn secondary" id="applyAcpInventory">Actualizar inventario con ACP</button><button class="btn secondary" id="importInfodiaTop">Importar Infodia</button></div></div><div class="grid-cards" style="margin-bottom:14px">${kpis.map(([label,value,color])=>miniReport(label,String(value),color)).join("")}</div><div class="card" style="margin-bottom:14px"><div class="field" style="margin:0"><label>Buscar en cartilla</label><div style="display:flex;gap:8px"><input id="acpSearch" value="${esc(state.acpSearch || "")}" dir="ltr" style="direction:ltr;text-align:left" placeholder="Ej: OXMO8635-26, OXBR1305-26, OO300-001-06149-26, 2026-05-16"><button class="btn secondary" id="clearAcpSearch" type="button">Limpiar</button></div></div></div>${filtered.length ? `<div class="table-wrap"><table><thead><tr><th>ID lote</th><th>Tipo</th><th>Fecha análisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th></tr></thead><tbody>${filtered.map(a=>{ const c=clasificar(a); return `<tr><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(a.codigo)}</td><td>${esc(labelTipoAnalisis(a.tipoAnalisis))}</td><td class="mono">${esc(a.fecha || "-")}</td><td class="mono" style="color:${Number(a.cu) >= 0.51 ? C.copper : C.green}">${fmt(a.cu,3)}</td><td class="mono" style="color:${Number(a.mo) >= moMinimo(a.cu) ? C.green : C.red}">${fmt(a.mo,3)}</td><td class="mono" style="color:${Number(a.s) < 0.1 ? C.green : C.red}">${fmt(a.s,4)}</td><td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span></td></tr>`;}).join("")}</tbody></table></div>` : `<div class="notice">${esc(empty)}</div>`}</div>`;
 };
 
 // S por defecto en mezcla: 0.2%, editable.
@@ -6180,7 +5992,7 @@ lotesOxmoHTML = function() {
       ${miniReport("Fuera espec.", allItems.filter(x => clasificar(x).clase === "Fuera Esp").length, C.red)}
     </div>
     <div class="card" style="margin-bottom:14px"><div class="field" style="margin:0"><label>Buscar en cartilla</label><div style="display:flex;gap:8px;align-items:center"><input id="acpSearch" value="${esc(state.acpSearch || "")}" data-keep-case="true" placeholder="Ej: OXMO10065-26, OXBR1305-26, OSAC, 2026-06-14"><button class="btn secondary" id="acpSearchBtn" type="button">Buscar</button>${state.acpSearch ? `<button class="btn ghost" id="acpSearchClear" type="button">Limpiar</button>` : ""}</div></div></div>
-    ${items.length ? `<div class="table-wrap"><table><thead><tr><th>ID lote</th><th>Tipo</th><th>Fecha análisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th>Fuente</th></tr></thead><tbody>${items.map(a => { const c = clasificar(a); return `<tr><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(a.codigo || "-")}</td><td>${esc(a.tipoAnalisis === "briqueta" ? "Briqueta" : a.tipoAnalisis === "lote_osac" ? "OSAC" : "Lote OXMO")}</td><td class="mono">${esc(a.fecha || "-")}</td><td class="mono" style="color:${Number(a.cu || 0) >= 0.51 ? C.copper : C.green}">${Number(a.cu || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.mo || 0) >= moMinimo(a.cu) ? C.green : C.red}">${Number(a.mo || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.s || 0) < 0.1 ? C.green : C.red}">${Number(a.s || 0).toFixed(4)}</td><td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${esc(c.clase)}</span></td><td style="color:var(--txt3);font-size:10px">${esc(a.fuente || "-")}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">No hay análisis OXMO/OXBR/OSAC cargados o no hay resultados para la búsqueda.</div>`}
+    ${items.length ? `<div class="table-wrap"><table><thead><tr><th>ID lote</th><th>Tipo</th><th>Fecha análisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th></tr></thead><tbody>${items.map(a => { const c = clasificar(a); return `<tr><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(a.codigo || "-")}</td><td>${esc(a.tipoAnalisis === "briqueta" ? "Briqueta" : a.tipoAnalisis === "lote_osac" ? "OSAC" : "Lote OXMO")}</td><td class="mono">${esc(a.fecha || "-")}</td><td class="mono" style="color:${Number(a.cu || 0) >= 0.51 ? C.copper : C.green}">${Number(a.cu || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.mo || 0) >= moMinimo(a.cu) ? C.green : C.red}">${Number(a.mo || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.s || 0) < 0.1 ? C.green : C.red}">${Number(a.s || 0).toFixed(4)}</td><td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${esc(c.clase)}</span></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">No hay análisis OXMO/OXBR/OSAC cargados o no hay resultados para la búsqueda.</div>`}
   </div>`;
 };
 
@@ -6682,6 +6494,17 @@ tipoAnalisisACP = function(codigo) {
   if (tipoAnalisisACPV17Base) return tipoAnalisisACPV17Base(raw);
   return "";
 };
+
+
+function labelTipoAnalisis(tipo) {
+  if (typeof labelTipoAnalisisV17 === "function") return labelTipoAnalisisV17(tipo);
+  if (tipo === "lote_proceso") return "Proceso / Inventario";
+  if (tipo === "briqueta") return "Briqueta";
+  if (tipo === "comun_turno") return "Común turno";
+  if (tipo === "lote_osac") return "OSAC";
+  if (tipo === "otro_lote") return "Otro lote";
+  return "Lote OXMO";
+}
 
 function labelTipoAnalisisV17(tipo, codigo) {
   if (tipo === "lote_proceso") return "Proceso / Inventario";
