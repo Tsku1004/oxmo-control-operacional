@@ -1,36 +1,21 @@
-# Cambios v15 - Cruce ACP exacto normalizado O/0
+# Hotfix v16 - Corrección de carga de la app
 
-Corrección enfocada en el cruce de inventario con cartilla ACP al subir Infodia o usar "Actualizar inventario con ACP".
+## Problema detectado
+La versión anterior dejó `index.html` apuntando a una ruta inválida:
 
-## Problema corregido
-Algunos códigos de la cartilla ACP vienen con letra **O** en segmentos que visualmente corresponden a cero, por ejemplo:
+- `./P260627-v15-acp-o0`
 
-- ACP: `OO710-001-00303-26`
-- Inventario: `00710-001-00303-26`
+Eso impedía cargar correctamente `styles.css` y `app.js`, provocando pantalla blanca.
 
-La versión anterior exigía coincidencia exacta literal, por lo que esos casos no cruzaban aunque fueran el mismo código operacional.
+## Corrección
+Se restauraron las rutas correctas:
 
-## Nueva regla
-El cruce sigue siendo por **código completo**, pero antes normaliza solo los segmentos numéricos convirtiendo `O` en `0`.
-
-Ejemplos válidos:
-
-- `OO710-001-00303-26` = `00710-001-00303-26`
-- `OO630-004-03001-26` = `00630-004-03001-26`
-- `OO300-001-06179-26` = `00300-001-06179-26`
-
-Ejemplos que NO cruzan:
-
-- `OO630-004-03001-26` ≠ `OO410-001-03001-26`
-- `OO710-001-00303-26` ≠ `OO710-001-00302-26`
-
-## Seguridad del cambio
-- No vuelve a cruzar por últimos números.
-- No toca códigos alfanuméricos reales como `OXMO10065-26`, `OXBR1305-26` u `OSAC`.
-- Mantiene la coincidencia por código completo.
-- Agrega alerta indicando cuántos lotes fueron actualizados.
+- `./styles.css?v=20260627-v16-index-fix`
+- `./app.js?v=20260627-v16-index-fix`
 
 ## Archivos a subir
+- `index.html`
 - `app.js`
 - `styles.css`
-- `index.html`
+
+Aunque el cambio principal está en `index.html`, se recomienda subir los tres para mantener la versión sincronizada.
