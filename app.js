@@ -6978,6 +6978,207 @@ render = function() {
   return renderAnteriorGerente();
 };
 
+
+/* =========================================================
+   AREA_FILTROS_KPI_V10_20260627
+   - Filtro/buscador de inventario
+   - KPIs ponderados por área seleccionada
+   - Cu y Fino Mo consideran TODO lote con análisis, incluido Fuera Esp
+   - Etiquetas Área sin término célula
+   - ACP sin columna Producto
+   - S mezcla por defecto 0.2%
+   ========================================================= */
+const AREA_FILTRO_TODAS_V10 = "Todas las áreas";
+
+function areaScopeGlobalV10() {
+  if (!areaTrabajoEsGlobal()) return areaTrabajoUsuario();
+  return normalizarTextoAreaV9(state.invAreaFilter || AREA_FILTRO_TODAS_V10) || AREA_FILTRO_TODAS_V10;
+}
+function lotesScopeAreaV10(lotes = state.lotes) {
+  const base = lotesVisiblesAreaV9(lotes).filter(l => !isInfodiaProductionLote(l));
+  if (!areaTrabajoEsGlobal()) return base;
+  const filtro = areaScopeGlobalV10();
+  if (!filtro || filtro === AREA_FILTRO_TODAS_V10) return base;
+  return base.filter(l => areaTrabajoLote(l) === filtro);
+}
+function lotesInventarioFiltradoV10() {
+  let lotes = lotesScopeAreaV10();
+  if (state.filtro && state.filtro !== "Todos") lotes = lotes.filter(l => l.estado === state.filtro);
+  const q = normalizarTextoAreaV9(state.invSearch || "").toLowerCase();
+  if (q) lotes = lotes.filter(l => [l.id, areaTrabajoLote(l), l.tipo, l.sector, l.estado, l.fecha, clasificar(l).clase, l.cu, l.mo, l.s].join(" ").toLowerCase().includes(q));
+  return lotesRecientesAnteriorAreaCelula(lotes);
+}
+function kpiDataAreaV10(lotes = lotesScopeAreaV10()) {
+  const disp = lotes.filter(l => l.estado === "Disponible");
+  const retenidos = lotes.filter(l => l.estado !== "Disponible");
+  const analizados = lotes.filter(hasAnalysis);
+  const masaDisp = disp.reduce((a,l)=>a+Number(l.masa||0),0);
+  const masaRet = retenidos.reduce((a,l)=>a+Number(l.masa||0),0);
+  const masaAnalizada = analizados.reduce((a,l)=>a+Number(l.masa||0),0);
+  const cuProm = masaAnalizada ? analizados.reduce((a,l)=>a+Number(l.cu||0)*Number(l.masa||0),0)/masaAnalizada : 0;
+  const finoMoKg = analizados.reduce((a,l)=>a+Number(l.masa||0)*Number(l.mo||0)/100,0);
+  const pend = lotes.filter(l => !hasAnalysis(l) || l.estado === "Pendiente");
+  const fuera = lotes.filter(l => l.estado === "Fuera Esp" || clasificar(l).clase === "Fuera Esp");
+  return { disp, retenidos, analizados, masaDisp, masaRet, masaAnalizada, cuProm, finoMoKg, pend, fuera, total:lotes.length };
+}
+function areaFilterSelectV10(id="inventoryAreaFilter", selected=areaScopeGlobalV10()) {
+  const opts = [AREA_FILTRO_TODAS_V10, ...areasTrabajoCatalogo()];
+  return `<select id="${id}" class="input area-filter-select">${opts.map(a => `<option value="${esc(a)}" ${a === selected ? "selected" : ""}>${esc(a)}</option>`).join("")}</select>`;
+}
+function areaScopeNoticeV10() {
+  if (areaTrabajoEsGlobal()) {
+    const filtro = areaScopeGlobalV10();
+    return `<div class="area-scope-card area-filter-card"><div><b>${filtro === AREA_FILTRO_TODAS_V10 ? "Totalizado general" : `Área ${esc(filtro)}`}</b><span>${filtro === AREA_FILTRO_TODAS_V10 ? "Indicadores consolidados de todas las áreas." : "Indicadores y tabla cuantifican solo el área seleccionada."}</span></div><div class="area-filter-box"><label>Filtro área</label>${areaFilterSelectV10()}</div></div>`;
+  }
+  const area = areaTrabajoUsuario();
+  const extra = areaEsEnvaseV9() ? "Área Envase: acceso según rol asignado." : "Área independiente: solo Inventario y Mi perfil.";
+  return `<div class="area-scope-card"><div><b>${esc(area)}</b><span>${esc(extra)}</span></div>${areaBadgeHTML(area)}</div>`;
+}
+
+shellHTML = function() {
+  if (isGerente()) return gerenteShellHTML();
+  const lotesScope = lotesScopeAreaV10();
+  const d = kpiDataAreaV10(lotesScope);
+  const areaLabel = areaScopeGlobalV10();
+  return `
+    <header class="topbar">
+      <div class="brand" style="justify-content:flex-start;margin:0"><div class="brand-mark" style="height:38px"></div><div><div style="font-weight:900;letter-spacing:3px">CONTROL OPERACIONAL</div><div class="brand-sub">OXMO · ENVASE · TRAZABILIDAD</div></div></div>
+      <div class="top-user-center"><div class="top-user-role">${esc(state.user.rol.toUpperCase())}</div><div class="top-user-name">${esc(state.user.nombre)}</div></div>
+      <div class="top-actions"><div style="text-align:right"><div id="clock" class="mono" style="color:var(--green);font-size:13px;font-weight:800">${new Date().toLocaleTimeString("es-CL")}</div><div style="color:var(--txt3);font-size:8px;letter-spacing:1px">${hoy()}</div></div><button class="btn secondary" id="cloudConfigBtn" title="Configurar tiempo real">NUBE: ${esc(cloud.status.toUpperCase())}</button><button class="btn danger" id="logoutBtn">SALIR</button></div>
+    </header>
+    <div class="status">${d.fuera.length ? `⚠ ${d.fuera.length} lote(s) fuera de especificación` : "Estado normal"} · Área: ${esc(areaLabel)} · Masa disponible: ${kgToTon(d.masaDisp)} · ${d.pend.length} pendientes análisis · Lotes totales: ${d.total}</div>
+    <main class="main main-v10-soft">
+      <section class="kpis">
+        ${kpi("Masa Disponible", d.masaDisp / 1000, "t", `${d.disp.length} lotes`, C.green, "INV", 2)}
+        ${kpi("Masa Retenida", d.masaRet / 1000, "t", `${d.retenidos.length} lotes`, C.red, "RET", 2)}
+        ${kpi("Fino Mo", d.finoMoKg / 1000, "t", "todos los analizados", C.copper, "◆", 2)}
+        ${kpi("Cu Promedio", d.cuProm, "%", "ponderado por masa", C.cyan, "CU", 2)}
+        ${kpi("Total Lotes", d.total, "", "según área/filtro", C.blue, "LOT", 0)}
+        ${kpi("Sin Análisis", lotesScope.filter(l=>!hasAnalysis(l)).length, "", "Pendientes lab", C.yellow, "LAB", 0)}
+      </section>
+      <nav class="tabs">${visibleTabs().map(([id,label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}</nav>
+      ${canViewTab("infodia") ? `<div class="filters" style="margin-bottom:12px"><button class="pill ${state.tab === "infodia" ? "active" : ""}" data-tab="infodia">Importar Infodia</button></div>` : ""}
+      <section id="tabView">${tabHTML()}</section>
+    </main>
+    <footer class="footer"><span>OXMO CONTROL · ${esc(state.user.nombre)} (${esc(state.user.rol)}) · Área ${esc(areaTrabajoUsuario())}</span><span>DATOS PERSISTENTES · SGI COMPATIBLE</span></footer>
+    ${state.cloudPanel ? cloudPanelHTML() : ""}`;
+};
+
+inventarioHTML = function() {
+  const base = lotesScopeAreaV10();
+  const lotes = lotesInventarioFiltradoV10();
+  const selected = new Set(state.inventorySelected || []);
+  const editableIds = lotes.filter(l => canEditLot(l)).map(l => l.id);
+  const dist = allSectores().map(s => ({ s, v: base.filter(l => l.sector === s).reduce((a,l)=>a+Number(l.masa||0),0) })).filter(d=>d.v>0);
+  const max = Math.max(1, ...dist.map(d=>d.v));
+  const countEstado = f => f === "Todos" ? base.length : base.filter(l=>l.estado===f).length;
+  return `${areaScopeNoticeV10()}
+    <div class="inventory-tools-v10">
+      <div class="field"><label>Buscar inventario</label><input id="inventorySearch" class="input" data-keep-case="true" value="${esc(state.invSearch || "")}" placeholder="Buscar por ID, área, sector, clasificación, estado, fecha, Cu/Mo/S..."></div>
+      <div class="filters filters-soft">${["Todos","Disponible","Bloqueado","Pendiente","Fuera Esp"].map(f=>`<button class="pill ${state.filtro===f?"active":""}" data-filter="${f}">${f} (${countEstado(f)})</button>`).join("")}${selected.size ? `<button class="pill" id="deleteSelectedLots" style="border-color:#ff456055;color:var(--red)">Eliminar seleccionados (${selected.size})</button>` : ""}<button class="pill" id="newLot" style="margin-left:auto;border-color:#00e5a055;color:var(--green)">+ Nuevo lote</button></div>
+    </div>
+    <div class="table-wrap inventory-soft-table"><table><thead><tr><th><input id="invSelectAll" type="checkbox" ${editableIds.length && editableIds.every(id=>selected.has(id)) ? "checked" : ""}></th>${["ID","Área","Tipo","Masa","Sector","Cu%","Mo%","S%","Clasif.","Estado","Fecha",""] .map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${lotes.length ? lotes.map(l=>rowHTMLAreaV9(l)).join("") : `<tr><td colspan="12" style="text-align:center;color:var(--txt2);padding:26px">Sin inventario registrado para este filtro.</td></tr>`}</tbody></table></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px"><div class="card"><div class="muted-title" style="margin-bottom:10px">Por sector</div>${dist.length ? dist.map(d=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:128px;color:var(--txt2);font-size:11px">${esc(d.s)}</span><div class="bar" style="flex:1;--accent:var(--blue)"><span style="--w:${(d.v/max)*100}%"></span></div><span class="mono" style="color:var(--txt2);font-size:11px">${kgToTon(d.v,1)}</span></div>`).join("") : `<span style="color:var(--txt3);font-size:12px">Sin inventario en esta área.</span>`}</div><div class="card"><div class="muted-title" style="margin-bottom:10px">Estados</div>${["Disponible","Bloqueado","Pendiente","Fuera Esp"].map(e=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a2e4a33"><span style="color:${eColor(e)}">● ${e}</span><span class="mono" style="font-weight:800">${base.filter(l=>l.estado===e).length}</span></div>`).join("")}</div></div>`;
+};
+
+const bindInventarioV10Base = bindInventario;
+bindInventario = function() {
+  bindInventarioV10Base();
+  document.querySelector("#inventorySearch")?.addEventListener("input", e => { state.invSearch = e.target.value; renderTabSoon(); });
+  document.querySelector("#inventoryAreaFilter")?.addEventListener("change", e => { state.invAreaFilter = e.target.value; state.filtro = "Todos"; state.invSearch = ""; render(); });
+};
+
+// Etiquetas de área sin el término célula.
+areaTrabajoOptionsHTML = function(selected = "", { includeAdd = false } = {}) {
+  const sel = normalizarTextoArea(selected) || AREA_CELULA_DEFAULT;
+  const options = areasTrabajoCatalogo();
+  if (sel && !options.includes(sel)) options.push(sel);
+  return options.map(a => `<option value="${esc(a)}" ${a === sel ? "selected" : ""}>${esc(a)}</option>`).join("") + (includeAdd ? `<option value="__add__">+ Añadir área...</option>` : "");
+};
+
+// Reemplazos visuales de textos de administración/perfil.
+const adminUsersHTMLV10Base = adminUsersHTML;
+adminUsersHTML = function(rows) {
+  return adminUsersHTMLV10Base(rows)
+    .replaceAll("área/célula", "área")
+    .replaceAll("Área / célula", "Área")
+    .replaceAll("Nueva área / célula", "Nueva área")
+    .replaceAll("+ Añadir área / célula...", "+ Añadir área...")
+    .replaceAll("áreas/células", "áreas")
+    .replaceAll("células", "áreas");
+};
+const adminUserModalHTMLV10Base = adminUserModalHTML;
+adminUserModalHTML = function() {
+  return adminUserModalHTMLV10Base()
+    .replaceAll("área/célula", "área")
+    .replaceAll("Área / célula", "Área")
+    .replaceAll("Nueva área / célula", "Nueva área")
+    .replaceAll("+ Añadir área / célula...", "+ Añadir área...")
+    .replaceAll("célula", "área");
+};
+const perfilUsuarioHTMLV10Base = perfilUsuarioHTML;
+perfilUsuarioHTML = function() {
+  return perfilUsuarioHTMLV10Base()
+    .replaceAll("área/célula", "área")
+    .replaceAll("Área / célula", "Área")
+    .replaceAll("célula", "área");
+};
+
+// Cartilla ACP sin columna Producto.
+analisisACPHTML = function({ titulo, subtitulo, items, kpis, empty }) {
+  const q = (state.acpSearch || "").trim().toLowerCase();
+  const filtered = q ? items.filter(a => [a.codigo, a.fecha, a.tipoAnalisis, a.clase].join(" ").toLowerCase().includes(q)) : items;
+  return `<div class="box"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px"><div><div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Cartilla ACP</div><div style="color:var(--txt);font-size:20px;font-weight:900">${esc(titulo)}</div><div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:820px;line-height:1.45">${esc(subtitulo)}</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn secondary" id="applyAcpInventory">Actualizar inventario con ACP</button><button class="btn secondary" id="importInfodiaTop">Importar Infodia</button></div></div><div class="grid-cards" style="margin-bottom:14px">${kpis.map(([label,value,color])=>miniReport(label,String(value),color)).join("")}</div><div class="card" style="margin-bottom:14px"><div class="field" style="margin:0"><label>Buscar en cartilla</label><div style="display:flex;gap:8px"><input id="acpSearch" value="${esc(state.acpSearch || "")}" dir="ltr" style="direction:ltr;text-align:left" placeholder="Ej: OXMO8635-26, OXBR1305-26, OO300-001-06149-26, 2026-05-16"><button class="btn secondary" id="clearAcpSearch" type="button">Limpiar</button></div></div></div>${filtered.length ? `<div class="table-wrap"><table><thead><tr><th>ID lote</th><th>Tipo</th><th>Fecha análisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th>Fuente</th></tr></thead><tbody>${filtered.map(a=>{ const c=clasificar(a); return `<tr><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(a.codigo)}</td><td>${esc(labelTipoAnalisis(a.tipoAnalisis))}</td><td class="mono">${esc(a.fecha || "-")}</td><td class="mono" style="color:${Number(a.cu) >= 0.51 ? C.copper : C.green}">${fmt(a.cu,3)}</td><td class="mono" style="color:${Number(a.mo) >= moMinimo(a.cu) ? C.green : C.red}">${fmt(a.mo,3)}</td><td class="mono" style="color:${Number(a.s) < 0.1 ? C.green : C.red}">${fmt(a.s,4)}</td><td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span></td><td style="color:var(--txt3);font-size:10px">${esc(a.fuente || "")}</td></tr>`;}).join("")}</tbody></table></div>` : `<div class="notice">${esc(empty)}</div>`}</div>`;
+};
+
+// S por defecto en mezcla: 0.2%, editable.
+if (state.mix && (Number(state.mix.s) === 0.1 || !Number.isFinite(Number(state.mix.s)))) state.mix.s = 0.2;
+const mezclasHTMLV10Base = mezclasHTML;
+mezclasHTML = function() { if (state.mix && Number(state.mix.s) === 0.1) state.mix.s = 0.2; return mezclasHTMLV10Base(); };
+
+// Silos: color de llenado según caracterización química Cu/Mo/S.
+const ponderarSiloV10Base = ponderarSilo;
+ponderarSilo = function(base) {
+  const s = ponderarSiloV10Base(base);
+  const c = hasAnalysis(s) ? clasificar(s) : { clase: "Sin comunes", color: C.txt3 };
+  return { ...s, clase: c.clase, color: c.color };
+};
+
+// Gerencia: filtro de área para el dashboard sin exponer módulos técnicos.
+const gerenteDashboardDataV10Base = gerenteDashboardData;
+gerenteDashboardData = function() {
+  const original = state.lotes;
+  const area = normalizarTextoAreaV9(state.gerenteAreaFilter || AREA_FILTRO_TODAS_V10);
+  if (area && area !== AREA_FILTRO_TODAS_V10) state.lotes = original.filter(l => areaTrabajoLote(l) === area);
+  try { return gerenteDashboardDataV10Base(); }
+  finally { state.lotes = original; }
+};
+const gerenteDashboardHTMLV10Base = gerenteDashboardHTML;
+gerenteDashboardHTML = function() {
+  const select = `<div class="exec-area-filter-card"><label>Área dashboard</label>${areaFilterSelectV10("gerenteAreaFilter", normalizarTextoAreaV9(state.gerenteAreaFilter || AREA_FILTRO_TODAS_V10))}</div>`;
+  return gerenteDashboardHTMLV10Base().replace(`<div class="exec-v4-layout">`, `${select}<div class="exec-v4-layout">`);
+};
+const bindShellV10Base = bindShell;
+bindShell = function() {
+  bindShellV10Base();
+  document.querySelector("#gerenteAreaFilter")?.addEventListener("change", e => { state.gerenteAreaFilter = e.target.value; render(); });
+};
+
+// Comunes: aceptar OO300 y O0300 en vistas y reconstrucción al reimportar.
+tipoAnalisisACP = function(codigo) {
+  codigo = normalizarCodigoAnalisis(codigo);
+  if (/^O[O0]300-001-\d+-\d{2}$/.test(codigo)) return "comun_turno";
+  if (/^OXMO\d+-\d{2}$/.test(codigo)) return "lote_oxmo";
+  if (/^OXBR\d+-\d{2}$/.test(codigo)) return "briqueta";
+  if (codigo.includes("OSAC") && /-\d{2}$/.test(codigo)) return "lote_osac";
+  if (/^[A-Z]{2,12}\d+-\d{2}$/.test(codigo)) return "otro_lote";
+  return "";
+};
+
+migrarAreaCelulaV9();
+if (state.infodia?.days?.length && state.infodia?.analisis?.length) recalcularSiloHistorialInfodiaV9();
+
+
 // Inicialización final segura.
 syncInventarioACP();
 repararIdsLotesManuales();
