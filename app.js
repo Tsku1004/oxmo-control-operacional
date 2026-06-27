@@ -144,6 +144,16 @@ function canonicalRoleName(rol) {
   return map[raw] || raw;
 }
 
+function normalizeAgendaEntry(value) {
+  if (!value) return { type: "nota", text: "", done: false };
+  if (typeof value === "string") return { type: "nota", text: value, done: false };
+  return {
+    type: value.type === "tarea" ? "tarea" : "nota",
+    text: String(value.text || value.note || ""),
+    done: Boolean(value.done)
+  };
+}
+
 function normalizarUsuario(u) {
   return {
     u: String(u?.u || "").trim().toLowerCase(),
@@ -633,6 +643,17 @@ function shellHTML() {
   const finoMoKg = disp.filter(l => Number(l.mo) > 0).reduce((a, l) => a + (Number(l.masa || 0) * Number(l.mo || 0) / 100), 0);
   const pend = state.lotes.filter(l => l.estado === "Pendiente");
   const fuera = state.lotes.filter(l => l.estado === "Fuera Esp");
+  const kpiCards = [
+    kpi("Masa Disponible", masaDisp / 1000, "t", `${disp.length} lotes`, C.green, "INV", 2),
+    kpi("Masa sin análisis", pend.reduce((a, l) => a + l.masa, 0) / 1000, "t", `${pend.length} lotes`, C.yellow, "LAB", 2),
+    kpi("Fino Mo Total", finoMoKg / 1000, "t", "todos los analizados", C.copper, "◆", 2),
+    kpi("Cu Promedio", cuProm, "%", "ponderado por masa", C.cyan, "CU", 2),
+    kpi("Mo fino BC", state.lotes.filter(l => l.clasificacion === "Bajo Cobre" && l.mo > 0).reduce((a, l) => a + (Number(l.masa || 0) * Number(l.mo || 0) / 100), 0) / 1000, "t", "material Bajo Cobre", C.green, "BC", 2),
+    kpi("Mo fino Alto Cu", state.lotes.filter(l => l.clasificacion === "Alto Cobre" && l.mo > 0).reduce((a, l) => a + (Number(l.masa || 0) * Number(l.mo || 0) / 100), 0) / 1000, "t", "material Alto Cobre", C.copper, "AC", 2),
+    kpi("Mo fino Fuera Esp.", state.lotes.filter(l => l.estado === "Fuera Esp" && l.mo > 0).reduce((a, l) => a + (Number(l.masa || 0) * Number(l.mo || 0) / 100), 0) / 1000, "t", "material fuera de especificación", C.red, "FE", 2),
+    kpi("Total Lotes", state.lotes.length, "", "según área/filtro", C.blue, "LOT", 0),
+    kpi("Fuera Esp.", fuera.length, "", "lotes afectados", C.red, "!", 0)
+  ];
   return `
     <header class="topbar">
       <div class="brand" style="justify-content:flex-start;margin:0">
@@ -655,15 +676,10 @@ function shellHTML() {
         <button class="btn danger" id="logoutBtn">SALIR</button>
       </div>
     </header>
-    <div class="status">${fuera.length ? `⚠ ${fuera.length} lote(s) fuera de especificación` : "Estado normal"} · Masa disponible: ${kgToTon(masaDisp)} · ${pend.length} pendientes análisis · Lotes totales: ${state.lotes.length}</div>
+    <div class="status">${fuera.length ? `⚠ ${fuera.length} lote(s) fuera de especificación` : "Estado normal"} · Área: ${esc(state.areaFiltro || state.user.area || "Envase")} · Masa disponible con análisis: ${kgToTon(masaDisp)} · ${pend.length} sin análisis · Lotes totales: ${state.lotes.length}</div>
     <main class="main">
-      <section class="kpis kpis-dashboard">
-        ${kpi("Masa Disponible", masaDisp / 1000, "t", `${disp.length} lotes`, C.green, "INV", 2)}
-        ${kpi("Masa Retenida", masaRet / 1000, "t", `${state.lotes.length - disp.length} lotes`, C.red, "RET", 2)}
-        ${kpi("Fino Mo", finoMoKg / 1000, "t", "Masa x %Mo", C.copper, "◆", 2)}
-        ${kpi("Cu Promedio", cuProm, "%", "Lotes analizados", C.cyan, "CU", 2)}
-        ${kpi("Total Lotes", state.lotes.length, "", "Todos los sectores", C.blue, "LOT", 0)}
-        ${kpi("Sin Análisis", pend.length, "", "Pendientes lab", C.yellow, "LAB", 0)}
+      <section class="dashboard-top">
+        <section class="kpis kpis-dashboard">${kpiCards.join("")}</section>
         ${agendaCardHTML()}
       </section>
       <nav class="tabs">
@@ -703,20 +719,22 @@ function agendaCardHTML() {
   const daysInMonth = new Date(year, month, 0).getDate();
   const todayKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`;
   const activeDay = state.agendaDay && state.agendaDay.startsWith(monthKey) ? state.agendaDay : "";
-  const activeNote = activeDay ? (state.agenda[activeDay] || "") : "";
+  const entry = normalizeAgendaEntry(activeDay ? state.agenda[activeDay] : null);
   const weekdays = ["L", "M", "M", "J", "V", "S", "D"].map(d => `<span>${d}</span>`).join("");
   const cells = [];
   for (let i = 0; i < startOffset; i += 1) cells.push('<button class="agenda-day empty" type="button" disabled></button>');
   for (let day = 1; day <= daysInMonth; day += 1) {
     const key = `${monthKey}-${String(day).padStart(2, "0")}`;
+    const item = normalizeAgendaEntry(state.agenda[key]);
     const classes = ["agenda-day"];
     if (key === todayKey) classes.push("today");
     if (key === activeDay) classes.push("selected");
-    if (state.agenda[key]) classes.push("has-note");
-    cells.push(`<button class="${classes.join(" ")}" type="button" data-agenda-day="${key}" title="${state.agenda[key] ? esc(state.agenda[key]) : "Agregar nota"}"><span>${day}</span></button>`);
+    if (item.text) classes.push("has-note");
+    if (item.type === "tarea") classes.push(item.done ? "task-done" : "task-pending");
+    cells.push(`<button class="${classes.join(" ")}" type="button" data-agenda-day="${key}" title="${item.text ? esc(item.text) : "Agregar nota"}"><span>${day}</span></button>`);
   }
   while (cells.length % 7 !== 0) cells.push('<button class="agenda-day empty" type="button" disabled></button>');
-  return `<div class="kpi agenda-card" style="--accent:${C.cyan}">
+  return `<aside class="agenda-panel">
     <div class="agenda-header">
       <div>
         <div class="kpi-label">Agenda</div>
@@ -729,17 +747,22 @@ function agendaCardHTML() {
     </div>
     <div class="agenda-weekdays">${weekdays}</div>
     <div class="agenda-grid">${cells.join("")}</div>
-    <div class="agenda-editor">
+    <div class="agenda-editor compact">
       ${activeDay ? `
         <div class="agenda-editor-title">${esc(new Date(activeDay + 'T00:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long' }))}</div>
-        <textarea id="agendaNoteInput" class="agenda-note-input" rows="3" placeholder="Agregar nota o evento para el día seleccionado">${esc(activeNote)}</textarea>
+        <div class="agenda-type-row">
+          <button class="chip ${entry.type === "nota" ? "active" : ""}" type="button" data-agenda-type="nota">Nota</button>
+          <button class="chip ${entry.type === "tarea" ? "active" : ""}" type="button" data-agenda-type="tarea">Tarea</button>
+          <button class="chip ${entry.done ? "active success" : ""}" type="button" data-agenda-done="toggle">${entry.done ? "Hecho" : "Pendiente"}</button>
+        </div>
+        <textarea id="agendaNoteInput" class="agenda-note-input" rows="3" placeholder="Escribe una nota o tarea para el día seleccionado">${esc(entry.text)}</textarea>
         <div class="agenda-editor-actions">
           <button class="btn" type="button" id="agendaSaveBtn">Guardar</button>
-          <button class="btn secondary" type="button" id="agendaClearBtn" ${activeNote ? "" : "disabled"}>Limpiar</button>
+          <button class="btn secondary" type="button" id="agendaClearBtn" ${entry.text ? "" : "disabled"}>Limpiar</button>
         </div>
-      ` : `<div class="agenda-help">Selecciona un día para agregar una nota o evento.</div>`}
+      ` : `<div class="agenda-help">Selecciona un día para agregar una nota o tarea.</div>`}
     </div>
-  </div>`;
+  </aside>`;
 }
 function bindShell() {
   document.querySelector("#logoutBtn").addEventListener("click", () => {
@@ -772,11 +795,32 @@ function bindShell() {
     save("oxmo:agendaDay", state.agendaDay);
     render();
   }));
+  document.querySelectorAll("[data-agenda-type]").forEach(btn => btn.addEventListener("click", () => {
+    const key = state.agendaDay;
+    if (!key) return;
+    const entry = normalizeAgendaEntry(state.agenda[key]);
+    entry.type = btn.dataset.agendaType === "tarea" ? "tarea" : "nota";
+    state.agenda[key] = entry;
+    save("oxmo:agenda", state.agenda);
+    render();
+  }));
+  document.querySelectorAll("[data-agenda-done]").forEach(btn => btn.addEventListener("click", () => {
+    const key = state.agendaDay;
+    if (!key) return;
+    const entry = normalizeAgendaEntry(state.agenda[key]);
+    entry.type = entry.type || "tarea";
+    entry.done = !entry.done;
+    state.agenda[key] = entry;
+    save("oxmo:agenda", state.agenda);
+    render();
+  }));
   document.querySelector("#agendaSaveBtn")?.addEventListener("click", () => {
     const key = state.agendaDay;
     if (!key) return;
     const value = document.querySelector("#agendaNoteInput")?.value?.trim() || "";
-    if (value) state.agenda[key] = value;
+    const entry = normalizeAgendaEntry(state.agenda[key]);
+    entry.text = value;
+    if (value) state.agenda[key] = entry;
     else delete state.agenda[key];
     save("oxmo:agenda", state.agenda);
     render();
@@ -1387,7 +1431,7 @@ function avisosHTML() {
         <div>
           <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Avisos operacionales</div>
           <div style="font-size:20px;font-weight:900">Condiciones, notas y respaldo visual</div>
-          <div style="color:var(--txt2);font-size:12px;margin-top:6px">El operador informa condiciones relevantes. Supervisor y administrador pueden revisar el historial.</div>
+          <div style="color:var(--txt2);font-size:12px;margin-top:6px">El operador informa condiciones relevantes. Encargado y administrador pueden revisar el historial.</div>
         </div>
         <div class="tag" style="color:${C.green};background:${C.green}22;border-color:${C.green}44">${avisos.length} aviso(s)</div>
       </div>
