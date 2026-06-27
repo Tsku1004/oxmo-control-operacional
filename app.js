@@ -7179,6 +7179,255 @@ migrarAreaCelulaV9();
 if (state.infodia?.days?.length && state.infodia?.analisis?.length) recalcularSiloHistorialInfodiaV9();
 
 
+
+
+/* =========================================================
+   HOTFIX_V11_20260627
+   - Lotes OXMO/BQA abre directo
+   - Buscador inventario con debounce estable
+   - S mezcla por defecto 0.01%
+   - Gerente inicia en dashboard
+   - Cierre de cambio de clave vuelve sin quedar bloqueado
+   ========================================================= */
+state.mix = state.mix || { cu: 0.5, mo: 57, s: 0.01, masa: 20000, sel: [], sector: "Todos" };
+if ([0.1, 0.2].includes(Number(state.mix.s)) || !Number.isFinite(Number(state.mix.s))) state.mix.s = 0.01;
+
+function tabHTMLDirectV11() {
+  if (isGerente() && state.tab === "gerencial") return gerenteDashboardHTML();
+  if (state.tab === "inventario") return inventarioHTML();
+  if (state.tab === "silos") return silosHTML();
+  if (state.tab === "quimica") return quimicaHTML();
+  if (state.tab === "lotesOxmo") return lotesOxmoHTML();
+  if (state.tab === "avisos") return avisosHTML();
+  if (state.tab === "comunesTurno") return comunesTurnoHTML();
+  if (state.tab === "admin") return adminHTML();
+  if (state.tab === "mezclas") return mezclasHTML();
+  if (state.tab === "registro") return registroHTML();
+  if (state.tab === "infodia") return infodiaHTML();
+  if (state.tab === "siloHistorial") return siloHistorialHTML();
+  if (state.tab === "etiquetas") return etiquetasHTML();
+  if (state.tab === "reportes") return reportesHTML();
+  if (state.tab === "perfil") return perfilUsuarioHTML();
+  return inventarioHTML();
+}
+
+tabHTML = tabHTMLDirectV11;
+
+bindTab = function() {
+  if (state.tab === "inventario") bindInventario();
+  if (state.tab === "silos") bindSilos();
+  if (state.tab === "registro") bindRegistro();
+  if (state.tab === "mezclas") bindMezclas();
+  if (state.tab === "infodia") bindInfodia();
+  if (state.tab === "siloHistorial") bindSiloHistorial();
+  if (state.tab === "lotesOxmo") bindAnalisisACP();
+  if (state.tab === "avisos") bindAvisos();
+  if (state.tab === "comunesTurno") bindComunesTurno();
+  if (state.tab === "admin") bindAdmin();
+  if (state.tab === "etiquetas") bindEtiquetas();
+  if (state.tab === "reportes") bindReportes();
+  if (state.tab === "quimica") bindQuimica();
+  if (state.tab === "perfil") bindPerfilUsuario();
+};
+
+const mezclasHTMLV11Base = mezclasHTML;
+mezclasHTML = function() {
+  if (!state.mix) state.mix = { cu: 0.5, mo: 57, s: 0.01, masa: 20000, sel: [], sector: "Todos" };
+  if ([0.1, 0.2].includes(Number(state.mix.s)) || !Number.isFinite(Number(state.mix.s))) state.mix.s = 0.01;
+  return mezclasHTMLV11Base();
+};
+
+function lotesInventarioActualesV11() {
+  return typeof lotesInventarioFiltradoV10 === "function" ? lotesInventarioFiltradoV10() : (state.filtro === "Todos" ? lotesRecientes() : lotesRecientes().filter(l => l.estado === state.filtro));
+}
+
+bindInventario = function() {
+  document.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => {
+    state.filtro = btn.dataset.filter;
+    state.inventorySelected = [];
+    render();
+  }));
+
+  document.querySelector("#newLot")?.addEventListener("click", () => {
+    state.editando = null;
+    state.tab = "registro";
+    render();
+  });
+
+  document.querySelector("#inventoryAreaFilter")?.addEventListener("change", e => {
+    state.invAreaFilter = e.target.value;
+    state.filtro = "Todos";
+    state.inventorySelected = [];
+    render();
+  });
+
+  const search = document.querySelector("#inventorySearch");
+  if (search) {
+    search.addEventListener("input", e => {
+      state.invSearch = e.target.value;
+      clearTimeout(state._invSearchTimer);
+      state._invSearchTimer = setTimeout(() => {
+        state.inventorySelected = [];
+        if (state.tab === "inventario") render();
+      }, 350);
+    });
+    search.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        clearTimeout(state._invSearchTimer);
+        state.inventorySelected = [];
+        render();
+      }
+    });
+  }
+
+  document.querySelector("#invSelectAll")?.addEventListener("change", e => {
+    const visibles = lotesInventarioActualesV11();
+    state.inventorySelected = e.target.checked ? visibles.filter(l => canEditLot(l)).map(l => l.id) : [];
+    render();
+  });
+
+  document.querySelectorAll("[data-inv-select]").forEach(chk => chk.addEventListener("change", e => {
+    const id = e.target.dataset.invSelect;
+    const set = new Set(state.inventorySelected || []);
+    e.target.checked ? set.add(id) : set.delete(id);
+    state.inventorySelected = [...set];
+    render();
+  }));
+
+  document.querySelector("#deleteSelectedLots")?.addEventListener("click", () => {
+    const ids = (state.inventorySelected || []).filter(id => canEditLot(state.lotes.find(l => l.id === id)));
+    if (!ids.length) return;
+    if (!confirm(`¿Eliminar ${ids.length} lote(s) seleccionados? Esta acción no se puede deshacer.`)) return;
+    state.lotes = state.lotes.filter(l => !ids.includes(l.id));
+    state.inventorySelected = [];
+    persistLotes();
+    addHist("Lotes eliminados", `${ids.length}`, ids.slice(0, 6).join(", "), C.red);
+    render();
+  });
+
+  document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => {
+    const lote = state.lotes.find(l => l.id === btn.dataset.edit);
+    if (!canEditLot(lote)) { alert("No tienes permiso para modificar este lote."); return; }
+    state.editando = lote;
+    state.tab = "registro";
+    render();
+  }));
+
+  document.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => deleteLot(btn.dataset.del)));
+  document.querySelectorAll("[data-label-lot]").forEach(btn => btn.addEventListener("click", () => {
+    state.etiquetaSel = [btn.dataset.labelLot];
+    printLabels();
+  }));
+};
+
+passwordUsuarioModalHTML = function() {
+  if (!state.selfPassOpen || !state.user) return "";
+  return `<div class="modal-backdrop" data-self-pass-modal>
+    <div class="modal-card" style="max-width:460px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div><div class="section-title">MI CLAVE</div><h2 style="margin:4px 0 0">Cambiar contraseña</h2></div>
+        <button class="btn ghost" type="button" data-self-pass-close>Cerrar</button>
+      </div>
+      <div class="alert info">Si pierdes la clave, contacta al Administrador para reiniciarla.</div>
+      <label>Clave actual</label><input data-keep-case="true" data-self-pass-old type="text" class="input" value="" autocomplete="off">
+      <label>Nueva clave visible</label><input data-keep-case="true" data-self-pass-new type="text" class="input" value="" autocomplete="off">
+      <label>Repetir nueva clave</label><input data-keep-case="true" data-self-pass-repeat type="text" class="input" value="" autocomplete="off">
+      <button class="btn primary" data-self-pass-save style="width:100%;margin-top:12px">Guardar nueva clave</button>
+    </div>
+  </div>`;
+};
+
+bindSelfPasswordFinal = function() {
+  insertarBotonClavePropiaFinal();
+  document.querySelector("[data-self-pass-open]")?.addEventListener("click", () => {
+    state.selfPassOpen = true;
+    render();
+  });
+  if (state.selfPassOpen && !document.querySelector("[data-self-pass-modal]")) {
+    document.body.insertAdjacentHTML("beforeend", passwordUsuarioModalHTML());
+  }
+  const closePassModal = () => {
+    state.selfPassOpen = false;
+    if (isGerente()) state.tab = "gerencial";
+    render();
+  };
+  document.querySelectorAll("[data-self-pass-close]").forEach(btn => btn.addEventListener("click", closePassModal));
+  document.querySelector("[data-self-pass-modal]")?.addEventListener("click", e => {
+    if (e.target?.matches?.("[data-self-pass-modal]")) closePassModal();
+  });
+  document.querySelector("[data-self-pass-save]")?.addEventListener("click", () => {
+    const oldPass = document.querySelector("[data-self-pass-old]")?.value || "";
+    const newPass = document.querySelector("[data-self-pass-new]")?.value || "";
+    const repeat = document.querySelector("[data-self-pass-repeat]")?.value || "";
+    if (oldPass !== state.user.p) { alert("La clave actual no coincide."); return; }
+    if (!newPass || newPass !== repeat) { alert("La nueva clave debe coincidir en ambos campos."); return; }
+    if (!confirm("¿Guardar nueva contraseña?")) return;
+    state.usuarios = state.usuarios.map(u => u.u === state.user.u ? { ...u, p: newPass } : u);
+    state.user = { ...state.user, p: newPass };
+    saveUsuarios();
+    save("oxmo:user", state.user);
+    addHist("Usuario cambió su clave", state.user.u, "", C.cyan);
+    state.selfPassOpen = false;
+    if (isGerente()) state.tab = "gerencial";
+    render();
+  });
+};
+
+const bindLoginV11Base = bindLogin;
+bindLogin = function() {
+  bindLoginV11Base();
+  const btn = document.querySelector("#loginBtn");
+  const originalHandlersNote = true;
+  // El listener base valida credenciales; este segundo paso corrige la pestaña
+  // inmediatamente después del login si el usuario es Gerente.
+  btn?.addEventListener("click", () => setTimeout(() => {
+    if (state.user && isGerente(state.user)) { state.tab = "gerencial"; state._gerenteTabTouched = false; render(); }
+  }, 0));
+  document.querySelectorAll("#loginUser,#loginPass").forEach(el => el.addEventListener("keydown", e => {
+    if (e.key === "Enter") setTimeout(() => {
+      if (state.user && isGerente(state.user)) { state.tab = "gerencial"; state._gerenteTabTouched = false; render(); }
+    }, 0);
+  }));
+};
+
+const bindShellV11Base = bindShell;
+bindShell = function() {
+  if (isGerente()) {
+    document.querySelector("#logoutBtn")?.addEventListener("click", () => {
+      cerrarSesionUsuario();
+      state.user = null;
+      state._gerenteTabTouched = false;
+      save("oxmo:user", null);
+      render();
+    });
+    document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => {
+      state._gerenteTabTouched = true;
+      state.tab = btn.dataset.tab;
+      render();
+    }));
+    document.querySelector("#gerenteAreaFilter")?.addEventListener("change", e => { state.gerenteAreaFilter = e.target.value; render(); });
+    aplicarMayusculasFinal(document);
+    bindTab();
+    bindSelfPasswordFinal();
+    return;
+  }
+  bindShellV11Base();
+};
+
+const renderV11Base = render;
+render = function() {
+  if (state.user && isGerente(state.user) && !state._gerenteTabTouched && state.tab === "perfil") {
+    state.tab = "gerencial";
+  }
+  if (state.user && isGerente(state.user) && !canViewTab(state.tab)) {
+    state.tab = "gerencial";
+  }
+  return renderV11Base();
+};
+
+if (state.user && isGerente(state.user) && state.tab === "perfil") state.tab = "gerencial";
+
 // Inicialización final segura.
 syncInventarioACP();
 repararIdsLotesManuales();

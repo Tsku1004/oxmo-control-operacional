@@ -1,35 +1,30 @@
-# Cambios v10 - Área, inventario, KPIs, silos e Infodia
+# Cambios v11 - Hotfix pestañas, buscador, mezcla y clave
 
-## Permisos por área
-- Los usuarios de áreas distintas a **Envase** solo ven las pestañas **Inventario** y **Mi perfil**.
-- Estos usuarios pueden crear lotes propios dentro de su área.
-- Los roles con vista totalizada son: **Administrador**, **Gerente**, **Jefe de planta**, **Super intendente** y **Superintendente**.
+Esta versión corrige problemas detectados en la versión v10.
 
-## Inventario
-- Se agregó buscador en la pestaña Inventario.
-- Se agregó filtro por área para usuarios con permiso de vista totalizada.
-- Los KPIs superiores ahora recalculan según el área filtrada.
-- Si no hay filtro de área, se totalizan todas las áreas.
-- El inventario histórico sin área sigue asignado automáticamente a **Envase**.
+## Correcciones principales
 
-## KPIs corregidos
-- **Cu promedio** ahora se calcula ponderado por masa y considera todos los lotes con análisis, incluyendo fuera de especificación.
-- **Fino Mo** ahora considera todos los lotes con análisis, incluyendo fuera de especificación.
+- Se corrigió la apertura de la pestaña **Lotes OXMO/BQA**.
+- Se estabilizó el buscador de **Inventario** para evitar que quede pegado al escribir.
+- El valor inicial de **S máximo** en Mezclas queda en **0.01%**, editable.
+- La cuenta **Gerente** vuelve a iniciar directamente en el **Dashboard**, no en Mi perfil.
+- Se corrigió el cierre de la ventana **Mi clave** para que no quede bloqueada.
+- Al cambiar contraseña se solicita confirmación antes de guardar.
 
-## Usuarios
-- En creación y edición de usuarios se reemplazó el texto “Área / célula” por **Área**.
-- El área sigue siendo una lista desplegable administrada por el administrador.
-- El admin puede ver y modificar contraseñas visibles, con confirmación antes de cambios críticos.
+## Cambios que se mantienen desde versiones anteriores
 
-## Silos e Infodia
-- El color de llenado de los silos ahora se basa en la caracterización química Cu/Mo/S usando los colores de clasificación.
-- Se reforzó lectura de comunes de turno con códigos **OO300-001-...** y **O0300-001-...**.
-- No se reescribió la importación principal de Infodia: se mantuvo la lógica existente y se reforzó alrededor.
+- Control de inventario por área.
+- Usuarios de áreas distintas a Envase con acceso solo a Inventario y Mi perfil.
+- Usuarios por área pueden crear sus propios lotes.
+- Roles globales ven totalizado general y pueden filtrar por área.
+- KPIs superiores se recalculan según área/filtro.
+- Cu promedio y Fino Mo consideran todos los materiales con análisis, incluidos fuera de especificación.
+- Infodia, silos y comunes de turno se conservan.
 
-## Mezclas
-- El valor S máximo parte por defecto en **0.2%** y sigue siendo editable.
+## Archivos clave para subir a GitHub
 
-## Cartilla ACP
-- Se eliminó la columna **Producto** de la vista de cartilla ACP para dejarla más limpia.
+- `app.js`
+- `styles.css`
+- `index.html`
 
-Subir mínimo: `app.js`, `styles.css`, `index.html`.
+Después del redeploy, abrir con `Ctrl + F5` para evitar caché vieja.
