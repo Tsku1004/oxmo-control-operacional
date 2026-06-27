@@ -7428,6 +7428,240 @@ render = function() {
 
 if (state.user && isGerente(state.user) && state.tab === "perfil") state.tab = "gerencial";
 
+
+/* =========================================================
+   HOTFIX_V12_20260627
+   - Lotes OXMO/BQA con render seguro.
+   - Buscador de Inventario no re-renderiza mientras escribes.
+   - Silos: color de llenado según caracterización química Cu/Mo/S.
+   - S mezcla por defecto 0.01%.
+   ========================================================= */
+state.mix = state.mix || { cu: 0.5, mo: 57, s: 0.01, masa: 20000, sel: [], sector: "Todos" };
+if ([0.1, 0.2].includes(Number(state.mix.s)) || !Number.isFinite(Number(state.mix.s))) state.mix.s = 0.01;
+
+function valorBusquedaInventarioV12(l) {
+  const c = clasificar(l);
+  return [
+    l.id,
+    areaTrabajoLote(l),
+    l.tipo,
+    l.sector,
+    l.estado,
+    l.fecha,
+    c.clase,
+    l.cu,
+    l.mo,
+    l.s,
+    l.obs,
+  ].join(" ").toLowerCase();
+}
+
+function lotesInventarioFiltradoV12() {
+  let base = typeof lotesScopeAreaV10 === "function" ? lotesScopeAreaV10() : lotesVisiblesAreaV9(state.lotes);
+  base = base.filter(l => !isInfodiaProductionLote(l));
+  if (state.filtro && state.filtro !== "Todos") base = base.filter(l => l.estado === state.filtro);
+  const q = String(state.invSearch || "").trim().toLowerCase();
+  if (q) base = base.filter(l => valorBusquedaInventarioV12(l).includes(q));
+  return lotesRecientesAnteriorAreaCelula(base);
+}
+
+inventarioHTML = function() {
+  const base = typeof lotesScopeAreaV10 === "function" ? lotesScopeAreaV10() : lotesVisiblesAreaV9(state.lotes);
+  const lotes = lotesInventarioFiltradoV12();
+  const selected = new Set(state.inventorySelected || []);
+  const editableIds = lotes.filter(l => canEditLot(l)).map(l => l.id);
+  const dist = allSectores().map(s => ({
+    s,
+    v: base.filter(l => l.sector === s).reduce((a,l) => a + Number(l.masa || 0), 0),
+  })).filter(d => d.v > 0);
+  const max = Math.max(1, ...dist.map(d => d.v));
+  const countEstado = f => f === "Todos" ? base.length : base.filter(l => l.estado === f).length;
+  return `${typeof areaScopeNoticeV10 === "function" ? areaScopeNoticeV10() : areaScopeNoticeV9()}
+    <div class="inventory-tools-v10 inventory-tools-v12">
+      <div class="field inventory-search-field"><label>Buscar inventario</label>
+        <div class="inventory-search-line">
+          <input id="inventorySearch" class="input" data-keep-case="true" value="${esc(state.invSearch || "")}" placeholder="Buscar por ID, área, sector, clasificación, estado, fecha, Cu/Mo/S...">
+          <button class="btn secondary" id="inventorySearchBtn" type="button">Buscar</button>
+          ${state.invSearch ? `<button class="btn ghost" id="inventorySearchClear" type="button">Limpiar</button>` : ""}
+        </div>
+      </div>
+      <div class="filters filters-soft">
+        ${["Todos","Disponible","Bloqueado","Pendiente","Fuera Esp"].map(f => `<button class="pill ${state.filtro===f ? "active" : ""}" data-filter="${f}">${f} (${countEstado(f)})</button>`).join("")}
+        ${selected.size ? `<button class="pill" id="deleteSelectedLots" style="border-color:#ff456055;color:var(--red)">Eliminar seleccionados (${selected.size})</button>` : ""}
+        <button class="pill" id="newLot" style="margin-left:auto;border-color:#00e5a055;color:var(--green)">+ Nuevo lote</button>
+      </div>
+    </div>
+    <div class="table-wrap inventory-soft-table"><table><thead><tr><th><input id="invSelectAll" type="checkbox" ${editableIds.length && editableIds.every(id => selected.has(id)) ? "checked" : ""}></th>${["ID","Área","Tipo","Masa","Sector","Cu%","Mo%","S%","Clasif.","Estado","Fecha",""] .map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${lotes.length ? lotes.map(l => rowHTMLAreaV9(l)).join("") : `<tr><td colspan="12" style="text-align:center;color:var(--txt2);padding:26px">Sin inventario registrado para este filtro.</td></tr>`}</tbody></table></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px">
+      <div class="card"><div class="muted-title" style="margin-bottom:10px">Por sector</div>${dist.length ? dist.map(d => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:128px;color:var(--txt2);font-size:11px">${esc(d.s)}</span><div class="bar" style="flex:1;--accent:var(--blue)"><span style="--w:${(d.v/max)*100}%"></span></div><span class="mono" style="color:var(--txt2);font-size:11px">${kgToTon(d.v,1)}</span></div>`).join("") : `<span style="color:var(--txt3);font-size:12px">Sin inventario en esta área.</span>`}</div>
+      <div class="card"><div class="muted-title" style="margin-bottom:10px">Estados</div>${["Disponible","Bloqueado","Pendiente","Fuera Esp"].map(e => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a2e4a33"><span style="color:${eColor(e)}">● ${e}</span><span class="mono" style="font-weight:800">${base.filter(l => l.estado===e).length}</span></div>`).join("")}</div>
+    </div>`;
+};
+
+function aplicarBusquedaInventarioV12() {
+  const el = document.querySelector("#inventorySearch");
+  state.invSearch = el ? el.value : "";
+  state.inventorySelected = [];
+  render();
+  setTimeout(() => focusInputEnd("#inventorySearch"), 0);
+}
+
+bindInventario = function() {
+  document.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => {
+    state.filtro = btn.dataset.filter;
+    state.inventorySelected = [];
+    render();
+  }));
+  document.querySelector("#newLot")?.addEventListener("click", () => { state.editando = null; state.tab = "registro"; render(); });
+  document.querySelector("#inventoryAreaFilter")?.addEventListener("change", e => {
+    state.invAreaFilter = e.target.value;
+    state.filtro = "Todos";
+    state.invSearch = "";
+    state.inventorySelected = [];
+    render();
+  });
+  const search = document.querySelector("#inventorySearch");
+  if (search) {
+    search.addEventListener("input", e => { state.invSearchDraft = e.target.value; });
+    search.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); aplicarBusquedaInventarioV12(); }
+      if (e.key === "Escape") { e.preventDefault(); state.invSearch = ""; render(); }
+    });
+  }
+  document.querySelector("#inventorySearchBtn")?.addEventListener("click", aplicarBusquedaInventarioV12);
+  document.querySelector("#inventorySearchClear")?.addEventListener("click", () => { state.invSearch = ""; state.invSearchDraft = ""; render(); });
+  document.querySelector("#invSelectAll")?.addEventListener("change", e => {
+    const visibles = lotesInventarioFiltradoV12();
+    state.inventorySelected = e.target.checked ? visibles.filter(l => canEditLot(l)).map(l => l.id) : [];
+    render();
+  });
+  document.querySelectorAll("[data-inv-select]").forEach(chk => chk.addEventListener("change", e => {
+    const id = e.target.dataset.invSelect;
+    const set = new Set(state.inventorySelected || []);
+    e.target.checked ? set.add(id) : set.delete(id);
+    state.inventorySelected = [...set];
+    render();
+  }));
+  document.querySelector("#deleteSelectedLots")?.addEventListener("click", () => {
+    const ids = (state.inventorySelected || []).filter(id => canEditLot(state.lotes.find(l => l.id === id)));
+    if (!ids.length) return;
+    if (!confirm(`¿Eliminar ${ids.length} lote(s) seleccionados? Esta acción no se puede deshacer.`)) return;
+    state.lotes = state.lotes.filter(l => !ids.includes(l.id));
+    state.inventorySelected = [];
+    persistLotes();
+    addHist("Lotes eliminados", `${ids.length}`, ids.slice(0, 6).join(", "), C.red);
+    render();
+  });
+  document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => {
+    const lote = state.lotes.find(l => l.id === btn.dataset.edit);
+    if (!canEditLot(lote)) { alert("No tienes permiso para modificar este lote."); return; }
+    state.editando = lote;
+    state.tab = "registro";
+    render();
+  }));
+  document.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => deleteLot(btn.dataset.del)));
+  document.querySelectorAll("[data-label-lot]").forEach(btn => btn.addEventListener("click", () => {
+    state.etiquetaSel = [btn.dataset.labelLot];
+    printLabels();
+  }));
+};
+
+function esCodigoLoteBqaV12(codigo, tipoAnalisis="") {
+  const raw = String(codigo || "").trim().toUpperCase();
+  const norm = normalizarCodigoAnalisis(raw);
+  const tipo = String(tipoAnalisis || "").toLowerCase();
+  return tipo === "lote_oxmo" || tipo === "briqueta" || tipo === "lote_osac" || /^OXMO\d+-\d{2}$/.test(norm) || /^OXBR\d+-\d{2}$/.test(norm) || raw.includes("OSAC");
+}
+
+lotesOxmoHTML = function() {
+  const source = state.infodia?.analisisACP || state.infodia?.analisisLotes || [];
+  const q = String(state.acpSearch || "").trim().toLowerCase();
+  let items = source.filter(a => esCodigoLoteBqaV12(a.codigo, a.tipoAnalisis));
+  if (q) items = items.filter(a => [a.codigo, a.fecha, a.tipoAnalisis, a.clase, a.fuente, a.cu, a.mo, a.s].join(" ").toLowerCase().includes(q));
+  items = items.sort((a,b) => {
+    const nb = correlativoAnalisis(b.codigo);
+    const na = correlativoAnalisis(a.codigo);
+    return (nb - na) || String(b.fecha || "").localeCompare(String(a.fecha || "")) || String(b.codigo || "").localeCompare(String(a.codigo || ""));
+  });
+  const allItems = source.filter(a => esCodigoLoteBqaV12(a.codigo, a.tipoAnalisis));
+  const oxmo = allItems.filter(a => a.tipoAnalisis === "lote_oxmo" || /^OXMO\d+-\d{2}$/.test(normalizarCodigoAnalisis(a.codigo)));
+  const briquetas = allItems.filter(a => a.tipoAnalisis === "briqueta" || /^OXBR\d+-\d{2}$/.test(normalizarCodigoAnalisis(a.codigo)));
+  const osac = allItems.filter(a => a.tipoAnalisis === "lote_osac" || String(a.codigo || "").toUpperCase().includes("OSAC"));
+  return `<div class="box">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
+      <div><div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Cartilla ACP</div><div style="color:var(--txt);font-size:18px;font-weight:900">Resultado de lotes OXMO - BQA</div><div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:860px;line-height:1.45">Listado de análisis ACP para lotes OXMO, briquetas OXBR y registros OSAC. Estos datos son cartilla de laboratorio, no inventario físico.</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn secondary" id="applyAcpInventory">Actualizar inventario con ACP</button><button class="btn secondary" data-tab="infodia">Importar Infodia</button></div>
+    </div>
+    <div class="grid-cards" style="margin-bottom:14px">
+      ${miniReport("Lotes OXMO", oxmo.length, C.blueLight)}
+      ${miniReport("Briquetas OXBR", briquetas.length, C.copper)}
+      ${miniReport("OSAC", osac.length, C.cyan)}
+      ${miniReport("Con análisis", allItems.filter(hasAnalysis).length, C.green)}
+      ${miniReport("Fuera espec.", allItems.filter(x => clasificar(x).clase === "Fuera Esp").length, C.red)}
+    </div>
+    <div class="card" style="margin-bottom:14px"><div class="field" style="margin:0"><label>Buscar en cartilla</label><div style="display:flex;gap:8px;align-items:center"><input id="acpSearch" value="${esc(state.acpSearch || "")}" data-keep-case="true" placeholder="Ej: OXMO10065-26, OXBR1305-26, OSAC, 2026-06-14"><button class="btn secondary" id="acpSearchBtn" type="button">Buscar</button>${state.acpSearch ? `<button class="btn ghost" id="acpSearchClear" type="button">Limpiar</button>` : ""}</div></div></div>
+    ${items.length ? `<div class="table-wrap"><table><thead><tr><th>ID lote</th><th>Tipo</th><th>Fecha análisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th>Fuente</th></tr></thead><tbody>${items.map(a => { const c = clasificar(a); return `<tr><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(a.codigo || "-")}</td><td>${esc(a.tipoAnalisis === "briqueta" ? "Briqueta" : a.tipoAnalisis === "lote_osac" ? "OSAC" : "Lote OXMO")}</td><td class="mono">${esc(a.fecha || "-")}</td><td class="mono" style="color:${Number(a.cu || 0) >= 0.51 ? C.copper : C.green}">${Number(a.cu || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.mo || 0) >= moMinimo(a.cu) ? C.green : C.red}">${Number(a.mo || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.s || 0) < 0.1 ? C.green : C.red}">${Number(a.s || 0).toFixed(4)}</td><td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${esc(c.clase)}</span></td><td style="color:var(--txt3);font-size:10px">${esc(a.fuente || "-")}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">No hay análisis OXMO/OXBR/OSAC cargados o no hay resultados para la búsqueda.</div>`}
+  </div>`;
+};
+
+bindAnalisisACP = function() {
+  const input = document.querySelector("#acpSearch");
+  const searchBtn = document.querySelector("#acpSearchBtn");
+  const clearBtn = document.querySelector("#acpSearchClear");
+  const applyBtn = document.querySelector("#applyAcpInventory");
+  if (input) {
+    input.addEventListener("input", e => { state.acpSearchDraft = e.target.value; });
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); state.acpSearch = e.target.value; render(); setTimeout(()=>focusInputEnd("#acpSearch"),0); }
+      if (e.key === "Escape") { e.preventDefault(); state.acpSearch = ""; render(); }
+    });
+  }
+  searchBtn?.addEventListener("click", () => { state.acpSearch = document.querySelector("#acpSearch")?.value || ""; render(); setTimeout(()=>focusInputEnd("#acpSearch"),0); });
+  clearBtn?.addEventListener("click", () => { state.acpSearch = ""; render(); });
+  applyBtn?.addEventListener("click", aplicarACPInventarioActual);
+};
+
+function colorSiloPorQuimicaV12(s) {
+  const tieneQuimica = hasAnalysis(s);
+  if (!tieneQuimica) return { color: C.txt3, clase: "Sin comunes", tieneQuimica: false };
+  const cl = clasificar(s);
+  return { color: cl.color, clase: cl.clase, tieneQuimica: true };
+}
+
+silosHTML = function() {
+  const silos = silosPonderados();
+  const comunes = comunesAsignados();
+  return `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start">
+    <section class="box" style="min-width:0"><div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Silos de almacenamiento</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;max-height:640px;overflow:auto;padding-right:4px">${silos.map(s => {
+      const cx = colorSiloPorQuimicaV12(s);
+      const color = cx.color;
+      const source = s.nivelImportado?.fuente === "infodia" ? `${hasAnalysis(s.nivelImportado) ? "Infodia/ACP" : "Infodia nivel"} ${s.nivelImportado.fecha || ""}` : cx.tieneQuimica ? "Manual / común" : "Sin datos";
+      return `<div class="card" style="border-top:3px solid ${color}"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="muted-title" style="color:var(--cyan);font-weight:800">${esc(s.id)}</div><span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${esc(cx.clase)}</span></div><div style="height:118px;width:76px;margin:0 auto 10px;border:1px solid var(--line);background:#2d4a6a33;border-radius:5px;position:relative;overflow:hidden"><div style="position:absolute;left:0;right:0;bottom:0;height:${Number(s.nivel || 0)}%;background:linear-gradient(180deg,${color}dd,${color}66)"></div><div class="mono" style="position:absolute;inset:0;display:grid;place-items:center;font-weight:900">${Number(s.nivel || 0).toFixed(0)}%</div></div><div class="mono" style="text-align:center;color:${color};font-weight:900">${Number(s.masa || 0).toFixed(1)} / ${s.cap} t</div><div style="text-align:center;color:var(--txt3);font-size:9px;margin-top:4px">${esc(source)}${s.nivelImportado?.horaInicio ? ` · ${esc(s.nivelImportado.horaInicio)}-${esc(s.nivelImportado.horaTermino)}` : ""}</div><div style="text-align:center;color:var(--txt2);font-size:11px;margin-top:3px">Cu: ${cx.tieneQuimica ? Number(s.cu || 0).toFixed(2) : "-"}% · Mo: ${cx.tieneQuimica ? Number(s.mo || 0).toFixed(2) : "-"}% · S: ${cx.tieneQuimica ? Number(s.s || 0).toFixed(3) : "-"}%</div><div style="display:flex;justify-content:center;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="icon-btn" data-silo-fill="${esc(s.id)}">Ajuste manual</button><button class="icon-btn" data-silo-calc="${esc(s.id)}">Ver cálculo</button><button class="icon-btn" data-silo-clear="${esc(s.id)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Vaciar</button></div></div>`;
+    }).join("")}</div></section>
+    <section class="box" style="min-width:0"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px"><div class="muted-title" style="color:var(--cyan)">Comunes de turno actualizados</div><span style="color:var(--txt3);font-size:10px">${comunes.length} registros</span></div><div class="notice" style="margin-bottom:12px;border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Listado trazable de comunes asignados a silos. El más reciente aparece primero.</div><div class="table-wrap" style="max-height:540px;overflow:auto"><table><thead><tr><th>Fecha</th><th>Código</th><th>Silo</th><th>Masa</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th></th></tr></thead><tbody>${comunes.map(c => { const cl = clasificar(c); const id = esc(claveComun(c)); return `<tr><td class="mono">${esc(c.fecha || "-")}</td><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(c.codigo || c.id)}</td><td>${esc(c.siloId)} · ${esc(c.turno || "Día")}</td><td class="mono">${fmt(c.masa, 2)} t</td><td class="mono">${fmt(c.cu, 3)}</td><td class="mono">${fmt(c.mo, 3)}</td><td class="mono">${fmt(c.s, 4)}</td><td><span class="tag" style="background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${esc(cl.clase)}</span></td><td><div class="mini-actions"><button class="icon-btn" data-silo-calc="${esc(c.siloId)}">Calc</button><button class="icon-btn" data-comun-edit="${id}">Editar</button><button class="icon-btn" data-comun-del="${id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button></div></td></tr>`; }).join("") || `<tr><td colspan="9" style="color:var(--txt3);text-align:center;padding:18px">Sin comunes trazables registrados.</td></tr>`}</tbody></table></div></section>
+  </div>${siloManualModalHTML(state.siloManualOpen)}${state.siloCalcOpen ? siloCalculoHTML(state.siloCalcOpen) : ""}`;
+};
+
+function tabHTMLDirectV12() {
+  if (isGerente() && state.tab === "gerencial") return gerenteDashboardHTML();
+  if (state.tab === "inventario") return inventarioHTML();
+  if (state.tab === "silos") return silosHTML();
+  if (state.tab === "quimica") return quimicaHTML();
+  if (state.tab === "lotesOxmo") return lotesOxmoHTML();
+  if (state.tab === "avisos") return avisosHTML();
+  if (state.tab === "comunesTurno") return comunesTurnoHTML();
+  if (state.tab === "admin") return adminHTML();
+  if (state.tab === "mezclas") return mezclasHTML();
+  if (state.tab === "registro") return registroHTML();
+  if (state.tab === "infodia") return infodiaHTML();
+  if (state.tab === "siloHistorial") return siloHistorialHTML();
+  if (state.tab === "etiquetas") return etiquetasHTML();
+  if (state.tab === "reportes") return reportesHTML();
+  if (state.tab === "perfil") return perfilUsuarioHTML();
+  return inventarioHTML();
+}
+tabHTML = tabHTMLDirectV12;
+
 // Inicialización final segura.
 syncInventarioACP();
 repararIdsLotesManuales();
@@ -7442,6 +7676,6 @@ initCloud().then(() => setTimeout(() => {
     recalcularSiloHistorialInfodiaV9();
     render();
   } catch (e) {
-    console.warn("Área/célula post-sync", e);
+    console.warn("Post-sync v12", e);
   }
 }, 1200));

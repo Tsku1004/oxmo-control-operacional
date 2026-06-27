@@ -1401,3 +1401,26 @@ body {
   .area-filter-box, .area-filter-select { width: 100%; }
   .exec-area-filter-card { justify-content: flex-start; flex-direction: column; align-items: stretch; }
 }
+
+/* HOTFIX V12 - búsqueda inventario estable */
+.inventory-tools-v12 .inventory-search-line {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+.inventory-tools-v12 .inventory-search-field { margin-bottom: 8px; }
+.inventory-tools-v12 .btn.ghost,
+.btn.ghost {
+  background: #0b1d33;
+  color: var(--txt2);
+  border: 1px solid var(--line);
+}
+.inventory-tools-v12 input#inventorySearch:focus,
+#acpSearch:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(0,212,255,.12);
+}
+@media (max-width: 760px) {
+  .inventory-tools-v12 .inventory-search-line { grid-template-columns: 1fr; }
+}
