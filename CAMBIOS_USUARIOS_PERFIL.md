@@ -1,34 +1,36 @@
-# Cambios v14 - Infodia, KPIs y dashboard Mo fino
+# Cambios v15 - Cruce ACP exacto normalizado O/0
 
-## Cambios solicitados
+Corrección enfocada en el cruce de inventario con cartilla ACP al subir Infodia o usar "Actualizar inventario con ACP".
 
-- Se eliminó la columna **Fuente** de la pestaña **Lotes OXMO/BQA**.
-- El botón de **Importar/Subir Infodia** se reemplazó visualmente por un botón con icono de nube upload.
-- Se reforzó la actualización automática de inventario al cargar Infodia:
-  - Solo cruza ACP ↔ inventario con **coincidencia exacta del código completo**.
-  - Ya no usa coincidencia parcial por correlativo final.
-- El indicador superior **Masa Retenida** pasa a llamarse **Masa sin análisis**.
-- El indicador **Masa disponible** ahora se muestra como **Masa disponible (con análisis)**.
-- Los KPIs superiores se calculan por área/filtro activo.
-- El dashboard gerencial ahora presenta el inventario en **Mo fino**:
-  - Mo fino total
-  - Mo fino disponible
-  - Mo fino retenido
-  - Mo fino fuera de especificación
-  - Producción Mo fino del mes
-  - Cu promedio ponderado por masa física
+## Problema corregido
+Algunos códigos de la cartilla ACP vienen con letra **O** en segmentos que visualmente corresponden a cero, por ejemplo:
 
-## Fórmulas usadas
+- ACP: `OO710-001-00303-26`
+- Inventario: `00710-001-00303-26`
 
-- **Mo fino:** masa × (%Mo / 100)
-- **Cu promedio:** Σ(masa × Cu%) / Σ(masa con análisis)
+La versión anterior exigía coincidencia exacta literal, por lo que esos casos no cruzaban aunque fueran el mismo código operacional.
+
+## Nueva regla
+El cruce sigue siendo por **código completo**, pero antes normaliza solo los segmentos numéricos convirtiendo `O` en `0`.
+
+Ejemplos válidos:
+
+- `OO710-001-00303-26` = `00710-001-00303-26`
+- `OO630-004-03001-26` = `00630-004-03001-26`
+- `OO300-001-06179-26` = `00300-001-06179-26`
+
+Ejemplos que NO cruzan:
+
+- `OO630-004-03001-26` ≠ `OO410-001-03001-26`
+- `OO710-001-00303-26` ≠ `OO710-001-00302-26`
+
+## Seguridad del cambio
+- No vuelve a cruzar por últimos números.
+- No toca códigos alfanuméricos reales como `OXMO10065-26`, `OXBR1305-26` u `OSAC`.
+- Mantiene la coincidencia por código completo.
+- Agrega alerta indicando cuántos lotes fueron actualizados.
 
 ## Archivos a subir
-
-Subir a GitHub, en la raíz del repositorio:
-
 - `app.js`
 - `styles.css`
 - `index.html`
-
-Luego esperar redeploy de Vercel y abrir con `Ctrl + F5`.

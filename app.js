@@ -7930,3 +7930,109 @@ gerenteDashboardHTML = function() {
 // Sincronización final de datos ACP luego de cargar esta versión.
 try { syncInventarioACPExactV14(); } catch (e) { console.warn("sync ACP exact v14", e); }
 try { render(); } catch (e) { console.warn("render v14", e); }
+
+/* =========================================================
+   HOTFIX_V15_20260627
+   Cruce ACP exacto con normalización O/0 en códigos numéricos.
+   Ejemplo válido: OO710-001-00303-26 = 00710-001-00303-26.
+   No cruza por sufijo ni por últimos números.
+   ========================================================= */
+function codigoCanonicoExactoACPv15(codigo) {
+  const raw = String(codigo ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[‐‑‒–—―]/g, "-")
+    .replace(/\s+/g, "");
+  const base = raw.match(/^(.*-\d{2})(?:[-_].*)?$/)?.[1] || raw;
+  return base.split("-").map(seg => {
+    // Solo segmentos numéricos donde Excel/teclado puede mezclar letra O con cero.
+    // No se toca OXMO/OXBR/OSAC u otros prefijos alfanuméricos reales.
+    if (/^[O0\d]+$/.test(seg) && /\d/.test(seg)) return seg.replace(/O/g, "0");
+    return seg;
+  }).join("-");
+}
+
+buscarAnalisisExactoInventarioV14 = function(lote, analisisACP) {
+  const idLote = codigoCanonicoExactoACPv15(lote?.id);
+  if (!idLote) return null;
+  const candidatos = (analisisACP || [])
+    .filter(a => a && a.tipoAnalisis !== "comun_turno" && hasAnalysis(a))
+    .filter(a => codigoCanonicoExactoACPv15(a.codigo) === idLote)
+    .sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
+  return candidatos[0] || null;
+};
+
+actualizarInventarioConACP = function(lotes, analisisACP) {
+  let actualizados = 0;
+  const updated = (lotes || []).map(l => {
+    const match = buscarAnalisisExactoInventarioV14(l, analisisACP);
+    if (!match) return l;
+    const quimica = {
+      cu: Number(Number(match.cu || 0).toFixed(3)),
+      mo: Number(Number(match.mo || 0).toFixed(3)),
+      s: Number(Number(match.s || 0).toFixed(4)),
+    };
+    const cl = clasificar(quimica);
+    const obsBase = String(l.obs || "").replace(/\s*\|?\s*ACP:[^|]+/g, "").trim();
+    const obsAcp = `ACP: ${match.codigo}${match.fecha ? ` ${match.fecha}` : ""}`;
+    const next = {
+      ...l,
+      ...quimica,
+      estado: l.estado === "Bloqueado" ? "Bloqueado" : cl.clase === "Fuera Esp" ? "Fuera Esp" : "Disponible",
+      acpMatch: match.codigo,
+      acpFecha: match.fecha,
+      obs: obsBase ? `${obsBase} | ${obsAcp}` : obsAcp,
+    };
+    if (
+      Number(l.cu || 0) !== next.cu ||
+      Number(l.mo || 0) !== next.mo ||
+      Number(l.s || 0) !== next.s ||
+      l.estado !== next.estado ||
+      l.acpMatch !== next.acpMatch ||
+      l.acpFecha !== next.acpFecha
+    ) actualizados += 1;
+    return next;
+  });
+  return { lotes: updated, actualizados };
+};
+
+syncInventarioACPExactV14 = function() {
+  const acp = state.infodia?.analisisACP?.length ? state.infodia.analisisACP : state.infodia?.analisisLotes || [];
+  if (!acp.length) return 0;
+  const result = actualizarInventarioConACP((state.lotes || []).filter(l => !isInfodiaProductionLote(l)), acp);
+  if (result.actualizados) {
+    state.lotes = result.lotes;
+    save("oxmo:lotes", state.lotes);
+  }
+  return result.actualizados;
+};
+
+aplicarACPInventarioActual = function() {
+  const acp = state.infodia?.analisisACP || state.infodia?.analisisLotes || [];
+  const result = actualizarInventarioConACP((state.lotes || []).filter(l => !isInfodiaProductionLote(l)), acp);
+  state.lotes = result.lotes;
+  save("oxmo:lotes", state.lotes);
+  addHist("Inventario actualizado con ACP", "", `${result.actualizados} lote(s) cruzados por código completo normalizado O/0`, result.actualizados ? C.green : C.yellow);
+  alert(result.actualizados
+    ? `${result.actualizados} lote(s) actualizados con ACP. Cruce exacto por código completo, normalizando O/0 en segmentos numéricos.`
+    : "No hubo coincidencias exactas. Revisa que el código completo del inventario exista en la cartilla ACP.");
+  render();
+};
+
+const aplicarInfodiaV15Base = aplicarInfodia;
+aplicarInfodia = function(info) {
+  aplicarInfodiaV15Base(info);
+  const actualizados = syncInventarioACPExactV14();
+  if (actualizados) addHist("Inventario actualizado ACP O/0", "", `${actualizados} lote(s) cruzados por código completo normalizado`, C.green);
+  render();
+};
+
+try {
+  const actualizadosV15 = syncInventarioACPExactV14();
+  if (actualizadosV15) console.info(`ACP v15: ${actualizadosV15} lote(s) actualizados por código completo normalizado O/0`);
+  render();
+} catch (e) {
+  console.warn("sync ACP exact v15", e);
+}
