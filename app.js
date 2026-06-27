@@ -2765,17 +2765,14 @@ function codigoPartesInventario(codigo) {
 }
 
 function scoreMatchACP(lote, analisis) {
-  const loteCodigo = normalizarCodigoAnalisis(lote.id);
-  const acpCodigo = normalizarCodigoAnalisis(analisis.codigo);
+  // HOTFIX v13: cruce ACP <-> inventario estrictamente exacto.
+  // Antes se aceptaba coincidencia por ultimo correlativo + año (ej. 03001-26),
+  // lo que podia actualizar un lote de otra familia/codigo. Ahora solo cruza
+  // cuando el codigo completo coincide despues de limpiar espacios, mayusculas y guiones.
+  const loteCodigo = normalizarCodigoAnalisis(lote?.id);
+  const acpCodigo = normalizarCodigoAnalisis(analisis?.codigo);
   if (!loteCodigo || !acpCodigo) return 0;
-  if (loteCodigo === acpCodigo) return 4;
-  if (loteCodigo.startsWith(`${acpCodigo}-`) || acpCodigo.startsWith(`${loteCodigo}-`)) return 3;
-  const lp = codigoPartesInventario(loteCodigo);
-  const ap = codigoPartesInventario(acpCodigo);
-  if (!lp || !ap) return 0;
-  if (lp.prefix === ap.prefix && lp.numero === ap.numero && lp.year === ap.year) return 3;
-  if (lp.numero === ap.numero && lp.year === ap.year) return 1;
-  return 0;
+  return loteCodigo === acpCodigo ? 10 : 0;
 }
 
 function buscarAnalisisParaInventario(lote, analisisACP) {
@@ -3818,18 +3815,14 @@ function codigoPartesInventario(codigo) {
 }
 
 function scoreMatchACP(lote, analisis) {
-  const l = codigoClaveAnalisis(lote.id);
-  const a = codigoClaveAnalisis(analisis.codigo);
-  if (!l.norm || !a.norm) return 0;
-  if (l.norm === a.norm) return 8;
-  if (l.compact === a.compact) return 7;
-  if (l.norm.startsWith(`${a.norm}-`) || a.norm.startsWith(`${l.norm}-`)) return 6;
-  if (l.year && a.year && l.year === a.year) {
-    const sameNumericPath = l.nums.length && a.nums.length && l.nums.join(".") === a.nums.join(".");
-    if (sameNumericPath) return 6;
-    if (l.serial && a.serial && l.serial === a.serial) return 3;
-  }
-  return 0;
+  // HOTFIX v13: cruce ACP <-> inventario estrictamente exacto.
+  // Antes se aceptaba coincidencia por ultimo correlativo + año (ej. 03001-26),
+  // lo que podia actualizar un lote de otra familia/codigo. Ahora solo cruza
+  // cuando el codigo completo coincide despues de limpiar espacios, mayusculas y guiones.
+  const loteCodigo = normalizarCodigoAnalisis(lote?.id);
+  const acpCodigo = normalizarCodigoAnalisis(analisis?.codigo);
+  if (!loteCodigo || !acpCodigo) return 0;
+  return loteCodigo === acpCodigo ? 10 : 0;
 }
 
 function analisisACPHTML({ titulo, subtitulo, items, kpis, empty }) {
