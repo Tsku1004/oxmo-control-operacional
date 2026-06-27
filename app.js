@@ -1,3 +1,10 @@
+/* =========================================================
+   OXMO CONTROL OPERACIONAL - v19-clean-safe
+   Limpieza segura generada desde v18.
+   - Se eliminaron definiciones antiguas duplicadas cuando la última versión ya las reemplazaba.
+   - Se mantuvieron intactos los bloques con dependencia de versiones base.
+   - No se reescribieron cálculos sensibles de mezcla, ACP, Infodia, silos ni nube.
+   ========================================================= */
 const C = {
   blue: "#1E6FD9", blueLight: "#3A8EF5", cyan: "#00D4FF",
   green: "#00E5A0", copper: "#C87533", yellow: "#FFB800", red: "#FF4560",
@@ -191,49 +198,10 @@ function sharedFallback(key) {
   if (key === "oxmo:avisos") return [];
   return null;
 }
-async function cloudSave(key, value) {
-  try {
-    await cloud.client.from("oxmo_state").upsert({
-      key,
-      value,
-      updated_at: new Date().toISOString()
-    });
-    cloud.status = "sincronizado";
-  } catch (e) {
-    cloud.status = "error nube";
-    console.error("Cloud save error", e);
-  }
-}
-function applyCloudValue(key, value) {
-  cloud.applying = true;
-  let nextValue = value;
-  if (key === "oxmo:infodia" && !value && state.infodia) {
-    cloud.applying = false;
-    return;
-  }
-  if (key === "oxmo:lotes") {
-    const incoming = Array.isArray(value) ? value : [];
-    nextValue = incoming.filter(l => !isInfodiaProductionLote(l));
-    if (nextValue.length !== incoming.length) cloud.needsLotesCleanup = true;
-  }
-  if (key === "oxmo:siloNiveles") {
-    nextValue = cleanSiloNiveles(value || {});
-    if (Object.keys(nextValue).length !== Object.keys(value || {}).length) cloud.needsSiloCleanup = true;
-  }
-  localStorage.setItem(key, JSON.stringify(nextValue));
-  if (key === "oxmo:lotes") state.lotes = nextValue || [];
-  if (key === "oxmo:hist") state.historial = value || [];
-  if (key === "oxmo:sectores") state.sectores = value || DEFAULT_SECTORES;
-  if (key === "oxmo:silos") state.silosBase = value || DEFAULT_SILOS;
-  if (key === "oxmo:comunes") state.comunes = value || [];
-  if (key === "oxmo:siloNiveles") state.siloNiveles = nextValue || {};
-  if (key === "oxmo:siloHistorial") state.siloHistorial = value || [];
-  if (key === "oxmo:infodia") state.infodia = value || state.infodia || null;
-  if (key === "oxmo:usuarios") state.usuarios = Array.isArray(value) ? value.map(normalizarUsuario) : DEFAULT_USUARIOS;
-  if (key === "oxmo:userStats") state.userStats = value || {};
-  if (key === "oxmo:avisos") state.avisos = Array.isArray(value) ? value : [];
-  cloud.applying = false;
-}
+/* v19-clean-safe: definición antigua removida: cloudSave */
+
+/* v19-clean-safe: definición antigua removida: applyCloudValue */
+
 async function initCloud() {
   const cfg = cloudConfig();
   if (!cfg?.url || !cfg?.anonKey || !window.supabase?.createClient) {
@@ -279,32 +247,8 @@ async function initCloud() {
     render();
   }
 }
-async function configureCloud() {
-  const current = cloudConfig() || {};
-  const url = prompt("URL de Supabase", current.url || "");
-  if (url === null) return;
-  const anonKey = prompt("Anon public key de Supabase", current.anonKey || "");
-  if (anonKey === null) return;
-  if (!url.trim() || !anonKey.trim()) {
-    if (confirm("¿Desactivar sincronización en la nube y usar solo este dispositivo?")) {
-      clearCloudConfig();
-      cloud.ready = false;
-      cloud.status = "local";
-      render();
-    }
-    return;
-  }
-  saveCloudConfig({ url: url.trim(), anonKey: anonKey.trim() });
-  cloud.status = "conectando";
-  render();
-  await initCloud();
-  if (cloud.ready) {
-    await Promise.all([...SHARED_KEYS].map(key => cloudSave(key, load(key, sharedFallback(key)))));
-    alert("Nube configurada. Los datos se sincronizarán en tiempo real.");
-  } else {
-    alert("No se pudo conectar. Revisa la URL, la anon key y la tabla oxmo_state.");
-  }
-}
+/* v19-clean-safe: definición antigua removida: configureCloud */
+
 function hoy() { return new Date().toLocaleDateString("es-CL"); }
 function ahora() { return new Date().toLocaleTimeString("es-CL", {hour:"2-digit", minute:"2-digit"}); }
 function fmt(n, d = 2) { return Number(n || 0).toFixed(d); }
@@ -758,26 +702,8 @@ function inventarioHTML() {
     </div>
   `;
 }
-function rowHTML(l) {
-  const {clase, color} = clasificar(l);
-  const labelAction = `<button class="icon-btn" data-label-lot="${esc(l.id)}" title="Imprimir etiqueta">▦</button>`;
-  const actions = canEditLot(l)
-    ? `<div class="mini-actions">${labelAction}<button class="icon-btn" data-edit="${esc(l.id)}">✏</button><button class="icon-btn" data-del="${esc(l.id)}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Eliminar</button></div>`
-    : `<div class="mini-actions">${labelAction}</div>`;
-  return `<tr>
-    <td class="mono" style="color:var(--blue-light);font-weight:800">${l.id}</td>
-    <td style="color:var(--txt2)">${l.tipo}</td>
-    <td class="mono">${kgToTon(l.masa, 3)}</td>
-    <td><span class="tag" style="color:var(--blue-light);background:#0f3a6e">${l.sector}</span></td>
-    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.cu >= 0.51 ? C.copper : C.green}">${hasAnalysis(l) ? l.cu : "—"}</td>
-    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.mo >= moMinimo(l.cu) ? C.green : C.red}">${hasAnalysis(l) ? l.mo : "—"}</td>
-    <td class="mono" style="color:${!hasAnalysis(l) ? C.txt3 : l.s < 0.1 ? C.green : C.red}">${hasAnalysis(l) ? l.s : "—"}</td>
-    <td><span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${clase}</span></td>
-    <td style="color:${eColor(l.estado)}">● ${l.estado}</td>
-    <td class="mono" style="color:var(--txt3);font-size:10px">${l.fecha}</td>
-    <td>${actions}</td>
-  </tr>`;
-}
+/* v19-clean-safe: definición antigua removida: rowHTML */
+
 function bindInventario() {
   document.querySelectorAll("[data-filter]").forEach(btn => btn.addEventListener("click", () => { state.filtro = btn.dataset.filter; render(); }));
   document.querySelector("#newLot").addEventListener("click", () => { state.editando = null; state.tab = "registro"; render(); });
@@ -1063,124 +989,8 @@ function adminStatsHTML(rows) {
     </div>
   `;
 }
-function bindAdmin() {
-  document.querySelectorAll("[data-admin-view]").forEach(btn => btn.addEventListener("click", () => {
-    state.adminView = btn.dataset.adminView;
-    render();
-  }));
-  const areaSelCrear = document.querySelector("#newUserArea");
-  const areaWrapCrear = document.querySelector("#newUserAreaAddWrap");
-  if (areaSelCrear && areaWrapCrear) {
-    const toggleArea = () => { areaWrapCrear.style.display = areaSelCrear.value === "__add__" ? "block" : "none"; };
-    areaSelCrear.addEventListener("change", toggleArea);
-    toggleArea();
-  }
-  document.querySelector("#adminUserForm")?.addEventListener("submit", e => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.currentTarget).entries());
-    const u = String(data.u || "").trim().toLowerCase();
-    const nombre = String(data.nombre || "").trim();
-    const p = String(data.p || "").trim();
-    if (!u || !nombre || !p) {
-      alert("Completa usuario, nombre y contraseña.");
-      return;
-    }
-    if (!/^[a-z0-9._-]{3,24}$/.test(u)) {
-      alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
-      return;
-    }
-    if (state.usuarios.some(x => x.u === u)) {
-      alert("Ese usuario ya existe.");
-      return;
-    }
-    const nuevo = normalizarUsuario({ u, nombre, p, rol: data.rol || "Operador", creado: hoy(), activo: true });
-    state.usuarios.push(nuevo);
-    saveUsuarios();
-    ensureUserStat(nuevo);
-    save("oxmo:userStats", state.userStats);
-    addHist("Cuenta creada", nuevo.u, `${nuevo.nombre} (${nuevo.rol})`, C.cyan);
-    render();
-  });
-  document.querySelectorAll("[data-toggle-user]").forEach(btn => btn.addEventListener("click", () => {
-    const u = btn.dataset.toggleUser;
-    state.usuarios = state.usuarios.map(x => x.u === u ? { ...x, activo: x.activo === false } : x);
-    saveUsuarios();
-    const estado = state.usuarios.find(x => x.u === u)?.activo === false ? "Inactivo" : "Activo";
-    addHist("Estado de cuenta actualizado", u, estado, C.yellow);
-    render();
-  }));
-  document.querySelectorAll("[data-edit-user]").forEach(btn => btn.addEventListener("click", () => {
-    const original = btn.dataset.editUser;
-    const actual = state.usuarios.find(x => x.u === original);
-    if (!actual) return;
-    const nextUserRaw = prompt("Usuario de acceso", actual.u);
-    if (nextUserRaw === null) return;
-    const nextUser = String(nextUserRaw || "").trim().toLowerCase();
-    if (!/^[a-z0-9._-]{3,24}$/.test(nextUser)) {
-      alert("El usuario debe tener 3 a 24 caracteres: letras, números, punto, guion o guion bajo.");
-      return;
-    }
-    if (nextUser !== original && state.usuarios.some(x => x.u === nextUser)) {
-      alert("Ese usuario ya existe.");
-      return;
-    }
-    const nextNombreRaw = prompt("Nombre visible", actual.nombre || actual.u);
-    if (nextNombreRaw === null) return;
-    const nextNombre = String(nextNombreRaw || "").trim();
-    if (!nextNombre) {
-      alert("El nombre visible no puede quedar vacío.");
-      return;
-    }
-    const rolesTxt = ROLES_USUARIO.join(", ");
-    const nextRolRaw = prompt(`Rol (${rolesTxt})`, actual.rol || "Operador");
-    if (nextRolRaw === null) return;
-    const nextRol = ROLES_USUARIO.find(r => r.toLowerCase() === String(nextRolRaw).trim().toLowerCase());
-    if (!nextRol) {
-      alert(`Rol no válido. Usa uno de estos: ${rolesTxt}.`);
-      return;
-    }
-    state.usuarios = state.usuarios.map(x => x.u === original ? { ...x, u: nextUser, nombre: nextNombre, rol: nextRol } : x);
-    if (nextUser !== original) {
-      if (state.userStats[original]) {
-        state.userStats[nextUser] = { ...(state.userStats[nextUser] || {}), ...state.userStats[original] };
-        delete state.userStats[original];
-      }
-      state.lotes = state.lotes.map(l => l.createdBy === original ? { ...l, createdBy: nextUser, createdByName: nextNombre } : l);
-      state.avisos = (state.avisos || []).map(a => a.autor === original ? { ...a, autor: nextUser, autorNombre: nextNombre } : a);
-      if (state.user?.u === original) state.user = { ...state.user, u: nextUser, nombre: nextNombre, rol: nextRol };
-    } else if (state.user?.u === original) {
-      state.user = { ...state.user, nombre: nextNombre, rol: nextRol };
-    }
-    saveUsuarios();
-    save("oxmo:userStats", state.userStats);
-    save("oxmo:lotes", state.lotes);
-    save("oxmo:avisos", state.avisos || []);
-    save("oxmo:user", state.user);
-    addHist("Cuenta editada", nextUser, `${nextNombre} (${nextRol})`, C.cyan);
-    render();
-  }));
-  document.querySelectorAll("[data-pass-user]").forEach(btn => btn.addEventListener("click", () => {
-    const u = btn.dataset.passUser;
-    const next = prompt(`Nueva contraseña para ${u}`);
-    if (next === null) return;
-    if (!next.trim()) { alert("La contraseña no puede quedar vacía."); return; }
-    state.usuarios = state.usuarios.map(x => x.u === u ? { ...x, p: next.trim() } : x);
-    saveUsuarios();
-    addHist("Contraseña actualizada", u, "Cambio realizado por administrador", C.cyan);
-    render();
-  }));
-  document.querySelectorAll("[data-delete-user]").forEach(btn => btn.addEventListener("click", () => {
-    const u = btn.dataset.deleteUser;
-    if (u === "admin" || u === userKey()) return;
-    if (!confirm(`¿Eliminar la cuenta ${u}?`)) return;
-    state.usuarios = state.usuarios.filter(x => x.u !== u);
-    delete state.userStats[u];
-    saveUsuarios();
-    save("oxmo:userStats", state.userStats);
-    addHist("Cuenta eliminada", u, "Eliminada por administrador", C.red);
-    render();
-  }));
-}
+/* v19-clean-safe: definición antigua removida: bindAdmin */
+
 
 function avisosHTML() {
   const puedeCrear = isOperator() || isAdmin() || isSupervisor();
@@ -1277,21 +1087,8 @@ function bindAvisos() {
     render();
   }));
 }
+/* v19-clean-safe: definición antigua removida: silosHTML */
 
-function silosHTML() {
-  return `<div class="grid-cards">${SILOS.map(s => {
-    const color = s.nivel > 85 ? C.red : s.nivel > 60 ? C.yellow : C.green;
-    return `<div class="card" style="border-top:3px solid ${color}">
-      <div class="muted-title" style="color:var(--cyan);font-weight:800;margin-bottom:10px">${s.id}</div>
-      <div style="height:120px;width:76px;margin:0 auto 10px;border:1px solid var(--line);background:#2d4a6a33;border-radius:5px;position:relative;overflow:hidden">
-        <div style="position:absolute;left:0;right:0;bottom:0;height:${s.nivel}%;background:linear-gradient(180deg,${color}99,${color}44)"></div>
-        <div class="mono" style="position:absolute;inset:0;display:grid;place-items:center;font-weight:900">${s.nivel}%</div>
-      </div>
-      <div class="mono" style="text-align:center;color:${color};font-weight:900">${((s.nivel/100)*s.cap*s.den).toFixed(1)} t</div>
-      <div style="text-align:center;color:var(--txt2);font-size:11px">Cu: ${s.cu}% · Mo: ${s.mo}% · Turno ${s.turno}</div>
-    </div>`;
-  }).join("")}</div>`;
-}
 
 function quimicaHTML() {
   return `<div class="grid-cards">${state.lotes.map(l => {
@@ -1317,28 +1114,8 @@ function bindQuimica() {
     render();
   }));
 }
+/* v19-clean-safe: definición antigua removida: lotesOxmoHTML */
 
-function lotesOxmoHTML() {
-  const items = (state.infodia?.analisisLotes || [])
-    .filter(a => /^(OXMO|OXBR)\d+-\d{2}$/.test(a.codigo) || String(a.codigo || "").includes("OSAC"))
-    .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.codigo.localeCompare(b.codigo));
-  const oxmo = items.filter(a => a.tipoAnalisis === "lote_oxmo");
-  const briquetas = items.filter(a => a.tipoAnalisis === "briqueta");
-  const osac = items.filter(a => a.tipoAnalisis === "lote_osac" || String(a.codigo || "").includes("OSAC"));
-  return analisisACPHTML({
-    titulo: "Resultado de lotes OXMO - BQA",
-    subtitulo: "Listado de analisis ACP para lotes OXMO, briquetas OXBR y registros OSAC. Estos datos son cartilla de laboratorio, no inventario fisico.",
-    items,
-    kpis: [
-      ["Lotes OXMO", oxmo.length, C.blueLight],
-      ["Briquetas OXBR", briquetas.length, C.copper],
-      ["OSAC", osac.length, C.cyan],
-      ["Con analisis", items.filter(hasAnalysis).length, C.green],
-      ["Fuera espec.", items.filter(x => clasificar(x).clase === "Fuera Esp").length, C.red],
-    ],
-    empty: "No hay analisis OXMO/OXBR/OSAC cargados. Sube el Infodia con la hoja ACP.",
-  });
-}
 
 function comunesTurnoHTML() {
   const items = (state.infodia?.analisis || [])
@@ -1396,57 +1173,8 @@ function comunesTurnoHTML() {
     empty: "No hay comunes OO300-001 cargados. Sube el Infodia con la hoja ACP.",
   });
 }
+/* v19-clean-safe: definición antigua removida: analisisACPHTML */
 
-function analisisACPHTML({ titulo, subtitulo, items, kpis, empty }) {
-  const q = String(state.acpSearch || "").trim().toLowerCase();
-  const filtered = q
-    ? items.filter(a => [a.codigo, a.fecha, a.producto, a.tipoAnalisis, a.clase].join(" ").toLowerCase().includes(q))
-    : items;
-  return `<div class="box">
-    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
-      <div>
-        <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Cartilla ACP</div>
-        <div style="color:var(--txt);font-size:18px;font-weight:900">${titulo}</div>
-        <div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:860px;line-height:1.45">${subtitulo}</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-        <button class="btn secondary" id="applyAcpInventory">Actualizar inventario con ACP</button>
-        <button class="btn secondary" data-tab="infodia">Importar Infodia</button>
-      </div>
-    </div>
-    <div class="grid-cards" style="margin-bottom:14px">
-      ${kpis.map(([label, value, color]) => miniReport(label, value, color)).join("")}
-    </div>
-    <div class="card" style="margin-bottom:14px">
-      <div class="field" style="margin:0">
-        <label>Buscar en cartilla</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="acpSearch" value="${state.acpSearch || ""}" dir="ltr" style="direction:ltr;text-align:left" placeholder="Ej: OXMO8635-26, OXBR1305-26, OO300-001-06149-26, 2026-05-16">
-          <button class="btn secondary" id="acpSearchBtn" type="button">Buscar</button>
-        </div>
-      </div>
-    </div>
-    ${filtered.length ? `<div class="table-wrap">
-      <table>
-        <thead><tr><th>ID lote</th><th>Tipo</th><th>Producto</th><th>Fecha analisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th><th>Fuente</th></tr></thead>
-        <tbody>${filtered.map(a => {
-          const c = clasificar(a);
-          return `<tr>
-            <td class="mono" style="color:var(--blue-light);font-weight:900">${a.codigo}</td>
-            <td>${a.tipoAnalisis === "briqueta" ? "Briqueta" : a.tipoAnalisis === "comun_turno" ? "Comun turno" : a.tipoAnalisis === "otro_lote" ? "Otro lote" : "Lote OXMO"}</td>
-            <td style="color:var(--txt2)">${a.producto || "-"}</td>
-            <td class="mono">${a.fecha || "-"}</td>
-            <td class="mono" style="color:${a.cu >= 0.51 ? C.copper : C.green}">${Number(a.cu || 0).toFixed(3)}</td>
-            <td class="mono" style="color:${a.mo >= moMinimo(a.cu) ? C.green : C.red}">${Number(a.mo || 0).toFixed(3)}</td>
-            <td class="mono" style="color:${a.s < 0.1 ? C.green : C.red}">${Number(a.s || 0).toFixed(4)}</td>
-            <td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${c.clase}</span></td>
-            <td style="color:var(--txt3);font-size:10px">${a.fuente || "-"}</td>
-          </tr>`;
-        }).join("")}</tbody>
-      </table>
-    </div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">${empty}</div>`}
-  </div>`;
-}
 
 function bindAnalisisACP() {
   const input = document.querySelector("#acpSearch");
@@ -1542,9 +1270,8 @@ function mezclasHTML() {
     </div>
   </div>`;
 }
-function range(label, key, value, min, max, step, unit, color) {
-  return `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between"><span style="color:var(--txt2);font-size:10px">${label}</span><span class="mono" style="color:${color};font-size:11px;font-weight:900">${value}${unit}</span></div><input data-range="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" style="width:100%;accent-color:${color}"></div>`;
-}
+/* v19-clean-safe: definición antigua removida: range */
+
 function chemResult(label, value, target, ok, max) {
   const color = ok ? C.green : value ? C.red : C.txt3;
   return `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between"><span style="color:var(--txt2);font-size:11px">${label}</span><span class="mono" style="color:${color};font-size:11px;font-weight:900">${value ? `${value.toFixed(2)}% ${ok ? "✓" : "✗"}` : "—"}</span></div><div class="bar" style="--accent:${color}"><span style="--w:${Math.min((value/max)*100,100)}%"></span></div><div style="text-align:center;color:var(--txt3);font-size:8px">meta: ${target}%</div></div>`;
@@ -1552,47 +1279,8 @@ function chemResult(label, value, target, ok, max) {
 function mini(label, value, color) {
   return `<div style="background:#0f3a6e66;border-radius:5px;padding:7px"><div style="color:var(--txt3);font-size:8px">${label}</div><div class="mono" style="color:${color};font-weight:900;font-size:12px">${value}</div></div>`;
 }
-function bindMezclas() {
-  document.querySelectorAll("[data-range]").forEach(el => el.addEventListener("input", () => { state.mix[el.dataset.range] = Number(el.value); render(); }));
-  document.querySelectorAll("[data-range-input]").forEach(el => {
-    const update = () => {
-      const value = Number(el.value);
-      if (Number.isNaN(value)) return;
-      state.mix[el.dataset.rangeInput] = value;
-      render();
-    };
-    el.addEventListener("change", update);
-    el.addEventListener("keydown", e => { if (e.key === "Enter") update(); });
-  });
-  document.querySelectorAll("[data-mix-sector]").forEach(btn => btn.addEventListener("click", () => { state.mix.sector = btn.dataset.mixSector; render(); }));
-  document.querySelectorAll("[data-mix-lot]").forEach(tile => tile.addEventListener("click", () => {
-    const id = tile.dataset.mixLot;
-    if (!id) return;
-    state.mix.sel = state.mix.sel.includes(id) ? state.mix.sel.filter(x => x !== id) : [...state.mix.sel, id];
-    render();
-  }));
-  document.querySelector("#clearMix").addEventListener("click", () => { state.mix.sel = []; render(); });
-  document.querySelector("#autoMix").addEventListener("click", () => {
-    const pool = state.lotes.filter(l => l.estado === "Disponible" && l.cu > 0);
-    let selected = [];
-    for (let i = 0; i < 20 && selected.reduce((a,l) => a + l.masa, 0) < state.mix.masa; i++) {
-      let best = null, bestScore = -Infinity;
-      for (const l of pool.filter(x => !selected.includes(x))) {
-        const c = [...selected, l];
-        const mass = c.reduce((a,x) => a + x.masa, 0);
-        const cu = c.reduce((a,x) => a + x.cu * (x.masa / mass), 0);
-        const mo = c.reduce((a,x) => a + x.mo * (x.masa / mass), 0);
-        const s = c.reduce((a,x) => a + x.s * (x.masa / mass), 0);
-        const sc = -Math.abs(cu - state.mix.cu) * 3 + (mo >= state.mix.mo ? 10 : -5) + (s <= state.mix.s ? 10 : -5) + (mass <= state.mix.masa ? 2 : -1);
-        if (sc > bestScore) { bestScore = sc; best = l; }
-      }
-      if (!best) break;
-      selected.push(best);
-    }
-    state.mix.sel = selected.map(l => l.id);
-    render();
-  });
-}
+/* v19-clean-safe: definición antigua removida: bindMezclas */
+
 
 function etiquetasHTML() {
   const lotes = state.etiquetaFiltro === "Todos" ? state.lotes : state.lotes.filter(l => l.sector === state.etiquetaFiltro);
@@ -1628,15 +1316,8 @@ function bindEtiquetas() {
   });
   document.querySelector("#printEtq").addEventListener("click", () => printLabels());
 }
-function printLabels() {
-  const items = state.etiquetaSel.map(id => state.lotes.find(l => l.id === id)).filter(Boolean).map(l => {
-    const c = clasificar(l);
-    return `<div style="display:inline-block;margin:6px;padding:14px;border:2px solid #333;border-radius:6px;font-family:monospace;width:170px;text-align:center;page-break-inside:avoid"><div style="font-size:8px;letter-spacing:2px;color:#666">OXMO CONTROL</div><h3>${l.id}</h3><div style="font-size:54px">▦</div><div>${l.tipo}</div><b>${l.masa} kg</b><div>${l.sector} · Fila ${l.fila}</div><div style="margin-top:6px">${c.clase.toUpperCase()}</div><small>${l.fecha}</small></div>`;
-  }).join("");
-  const w = window.open("", "_blank");
-  w.document.write(`<html><head><title>Etiquetas OXMO</title></head><body>${items}<script>window.onload=()=>window.print()<\/script></body></html>`);
-  w.document.close();
-}
+/* v19-clean-safe: definición antigua removida: printLabels */
+
 
 function reportesHTML() {
   const disp = state.lotes.filter(l => l.estado === "Disponible");
@@ -1662,150 +1343,16 @@ function average(nums) { return nums.length ? nums.reduce((a,n) => a+n, 0) / num
 function miniReport(label, value, color) {
   return `<div class="card" style="border-top:2px solid ${color}"><div style="color:var(--txt3);font-size:9px;text-transform:uppercase">${label}</div><div class="mono" style="color:${color};font-size:18px;font-weight:900">${value}</div></div>`;
 }
-function bindReportes() {
-  document.querySelector("#printReport").addEventListener("click", () => {
-    const rows = state.lotes.map(l => `<tr><td>${l.id}</td><td>${l.tipo}</td><td>${l.masa}</td><td>${l.sector}</td><td>${hasAnalysis(l) ? l.cu : "—"}</td><td>${hasAnalysis(l) ? l.mo : "—"}</td><td>${hasAnalysis(l) ? l.s : "—"}</td><td>${clasificar(l).clase}</td><td>${l.estado}</td><td>${l.fecha}</td></tr>`).join("");
-    const w = window.open("", "_blank");
-    w.document.write(`<html><head><title>Reporte OXMO</title><style>body{font-family:Arial;font-size:12px;margin:20px}table{width:100%;border-collapse:collapse}th{background:#003366;color:white}td,th{padding:5px;border-bottom:1px solid #ddd}</style></head><body><h1>REPORTE OPERACIONAL SGI</h1><p>Control Operacional OXMO · ${new Date().toLocaleString("es-CL")}</p><table><tr><th>ID</th><th>Tipo</th><th>Masa</th><th>Sector</th><th>Cu</th><th>Mo</th><th>S</th><th>Clasif.</th><th>Estado</th><th>Fecha</th></tr>${rows}</table><script>window.onload=()=>window.print()<\/script></body></html>`);
-    w.document.close();
-  });
-}
+/* v19-clean-safe: definición antigua removida: bindReportes */
 
-function alertasHTML() {
-  const disp = state.lotes.filter(l => l.estado === "Disponible");
-  const alerts = [
-    ...state.lotes.filter(l => l.estado === "Fuera Esp").map(l => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`${l.id} FUERA DE ESPECIFICACIÓN`,detalle:`Mo:${l.mo}% Cu:${l.cu}% S:${l.s}% · ${l.sector}`})),
-    ...SILOS.filter(s => s.nivel > 85).map(s => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`Silo ${s.id} al ${s.nivel}%`,detalle:`Masa est: ${((s.nivel/100)*s.cap*s.den).toFixed(1)}t · Programar despacho`})),
-    ...state.lotes.filter(l => l.estado === "Pendiente").map(l => ({nivel:"AVISO",color:C.yellow,icon:"⚠️",msg:`${l.id} sin análisis`,detalle:`${l.tipo} · ${l.masa}kg · ${l.sector} · ${l.fecha}`})),
-    {nivel:"INFO",color:C.green,icon:"ℹ️",msg:"Sistema activo",detalle:`${state.lotes.length} lotes · ${disp.length} disponibles · ${new Date().toLocaleTimeString("es-CL")}`}
-  ];
-  return `<div style="display:flex;flex-direction:column;gap:8px">${alerts.map(a => `<div class="card" style="border-left:4px solid ${a.color};display:flex;gap:12px"><span style="font-size:20px">${a.icon}</span><div><div><span class="tag" style="background:${a.color}22;color:${a.color};border-color:${a.color}44">${a.nivel}</span> <b style="font-size:12px">${a.msg}</b></div><div style="color:var(--txt2);font-size:11px;margin-top:4px">${a.detalle}</div></div></div>`).join("")}</div>`;
-}
+/* v19-clean-safe: definición antigua removida: alertasHTML */
 
-function silosHTML() {
-  const silos = silosPonderados();
-  return `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,1fr);gap:14px;align-items:start">
-    <section class="box" style="min-width:0">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Silos de almacenamiento</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;max-height:640px;overflow:auto;padding-right:4px">${silos.map(s => {
-      const color = s.muestras ? s.color : C.txt3;
-      const source = s.nivelImportado?.fuente === "infodia"
-        ? `${hasAnalysis(s.nivelImportado) ? "Infodia/ACP" : "Infodia nivel"} ${s.nivelImportado.fecha || ""}`
-        : s.muestras ? "Manual" : "Sin datos";
-      return `<div class="card" style="border-top:3px solid ${color}">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="muted-title" style="color:var(--cyan);font-weight:800">${s.id}</div>
-          <span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${s.muestras ? s.clase : "Sin comunes"}</span>
-        </div>
-        <div style="height:118px;width:76px;margin:0 auto 10px;border:1px solid var(--line);background:#2d4a6a33;border-radius:5px;position:relative;overflow:hidden">
-          <div style="position:absolute;left:0;right:0;bottom:0;height:${s.nivel}%;background:linear-gradient(180deg,${color}bb,${color}55)"></div>
-          <div class="mono" style="position:absolute;inset:0;display:grid;place-items:center;font-weight:900">${s.nivel.toFixed(0)}%</div>
-        </div>
-        <div class="mono" style="text-align:center;color:${color};font-weight:900">${s.masa.toFixed(1)} / ${s.cap} t</div>
-        <div style="text-align:center;color:var(--txt2);font-size:11px;margin-top:3px">Cu: ${s.muestras ? s.cu.toFixed(2) : "-"}% · Mo: ${s.muestras ? s.mo.toFixed(2) : "-"}% · S: ${s.muestras ? s.s.toFixed(2) : "-"}%</div>
-        <div style="text-align:center;color:var(--txt3);font-size:9px;margin-top:4px">${source}${s.nivelImportado?.horaInicio ? ` · ${s.nivelImportado.horaInicio}-${s.nivelImportado.horaTermino}` : ""}</div>
-        <div style="text-align:center;color:var(--txt3);font-size:9px;margin-top:4px">${source}</div>
-        <div style="display:flex;justify-content:center;gap:6px;margin-top:8px">
-          <button class="icon-btn" data-silo-fill="${s.id}">Ajuste manual</button>
-          <button class="icon-btn" data-silo-clear="${s.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Vaciar</button>
-        </div>
-      </div>`;
-    }).join("")}</div>
-    </section>
-    <section class="box" style="min-width:0">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Ingreso manual de respaldo</div>
-      <div class="notice" style="margin-bottom:12px;border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">La carga normal se actualiza al subir Infodia con comunes OO300-001. Usa este formulario solo para corregir o cargar un comun puntual.</div>
-      <form id="comunForm">
-        <div class="form-grid">
-          ${selectField("siloId","Silo",state.silosBase[0]?.id || "S-01",state.silosBase.map(s => s.id))}
-          ${selectField("turno","Turno","Día",["Día","Noche"])}
-          ${inputField("fecha","Fecha",hoy(),"text")}
-          ${selectField("tramo","Tramo","00-02",["00-02","02-04","04-06","06-08","08-10","10-12","12-14","14-16","16-18","18-20","20-22","22-24"])}
-          ${inputField("masa","Masa común (t)","8.33","number","8.33","0.01")}
-          <div></div>
-        </div>
-        <div style="border-top:1px solid var(--line);padding-top:12px;margin-top:8px">
-          <div class="chem-grid">
-            ${inputField("cu","Cu %","","number","0.49","0.01")}
-            ${inputField("mo","Mo %","","number","57.5","0.01")}
-            ${inputField("s","S %","","number","0.08","0.01")}
-          </div>
-        </div>
-        <button class="btn" style="width:100%;margin-top:10px">GUARDAR COMÚN</button>
-      </form>
-      <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
-        <div class="muted-title" style="margin-bottom:10px">Comunes ingresados — ${state.comunes.length}</div>
-        <div style="max-height:330px;overflow:auto">${[...state.comunes].reverse().map(c => {
-          const cl = clasificar(c);
-          return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #1a2e4a33">
-            <div><div class="mono" style="color:var(--blue-light);font-weight:800">${c.siloId} · ${c.tramo} · ${c.turno}</div><div style="color:var(--txt2);font-size:10px">${c.fecha} · ${c.masa}t · Cu ${c.cu}% · Mo ${c.mo}% · S ${c.s}%</div></div>
-            <div style="display:flex;gap:5px;align-items:center"><span class="tag" style="background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${cl.clase}</span><button class="icon-btn" data-comun-del="${c.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">x</button></div>
-          </div>`;
-        }).join("") || `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px 0">Sin comunes registrados</div>`}</div>
-      </div>
-    </section>
-  </div>`;
-}
+/* v19-clean-safe: definición antigua removida: silosHTML */
 
-function bindSilos() {
-  const form = document.querySelector("#comunForm");
-  document.querySelectorAll("[data-silo-fill]").forEach(btn => btn.addEventListener("click", () => {
-    form.elements.siloId.value = btn.dataset.siloFill;
-    form.elements.cu.focus();
-  }));
-  document.querySelectorAll("[data-silo-clear]").forEach(btn => btn.addEventListener("click", () => {
-    const siloId = btn.dataset.siloClear;
-    if (!confirm(`¿Vaciar comunes de ${siloId}?`)) return;
-    state.comunes = state.comunes.filter(c => c.siloId !== siloId);
-    save("oxmo:comunes", state.comunes);
-    addHist("Silo vaciado", siloId, "Comunes eliminados", C.red);
-    render();
-  }));
-  document.querySelectorAll("[data-comun-del]").forEach(btn => btn.addEventListener("click", () => {
-    state.comunes = state.comunes.filter(c => c.id !== btn.dataset.comunDel);
-    save("oxmo:comunes", state.comunes);
-    render();
-  }));
-  form.addEventListener("submit", e => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(form).entries());
-    const masa = Number(data.masa);
-    const cu = Number(data.cu);
-    const mo = Number(data.mo);
-    const s = Number(data.s);
-    if (!masa || masa <= 0 || Number.isNaN(cu) || Number.isNaN(mo) || Number.isNaN(s)) {
-      alert("Ingresa masa y análisis químico válidos");
-      return;
-    }
-    const comun = {
-      id: `C-${Date.now()}`,
-      siloId: data.siloId,
-      turno: data.turno,
-      fecha: data.fecha || hoy(),
-      tramo: data.tramo,
-      masa: Number(masa.toFixed(2)),
-      cu: Number(cu.toFixed(2)),
-      mo: Number(mo.toFixed(2)),
-      s: Number(s.toFixed(2)),
-    };
-    state.comunes.push(comun);
-    save("oxmo:comunes", state.comunes);
-    addHist("Común de turno ingresado", comun.siloId, `${comun.masa}t ${comun.tramo}`, clasificar(comun).color);
-    render();
-  });
-}
+/* v19-clean-safe: definición antigua removida: bindSilos */
 
-function alertasHTML() {
-  const disp = state.lotes.filter(l => l.estado === "Disponible");
-  const alerts = [
-    ...state.lotes.filter(l => l.estado === "Fuera Esp").map(l => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`${l.id} FUERA DE ESPECIFICACIÓN`,detalle:`Mo:${l.mo}% Cu:${l.cu}% S:${l.s}% · ${l.sector}`})),
-    ...silosPonderados().filter(s => s.nivel > 85).map(s => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`Silo ${s.id} al ${s.nivel.toFixed(0)}%`,detalle:`Masa est: ${s.masa.toFixed(1)}t · Programar despacho`})),
-    ...silosPonderados().filter(s => s.muestras && s.clase === "Fuera Esp").map(s => ({nivel:"CRÍTICO",color:C.red,icon:"🚨",msg:`Silo ${s.id} fuera de especificación`,detalle:`Cu:${s.cu.toFixed(2)}% Mo:${s.mo.toFixed(2)}% S:${s.s.toFixed(2)}%`})),
-    ...state.lotes.filter(l => l.estado === "Pendiente").map(l => ({nivel:"AVISO",color:C.yellow,icon:"⚠️",msg:`${l.id} sin análisis`,detalle:`${l.tipo} · ${l.masa}kg · ${l.sector} · ${l.fecha}`})),
-    {nivel:"INFO",color:C.green,icon:"ℹ️",msg:"Sistema activo",detalle:`${state.lotes.length} lotes · ${disp.length} disponibles · ${new Date().toLocaleTimeString("es-CL")}`}
-  ];
-  return `<div style="display:flex;flex-direction:column;gap:8px">${alerts.map(a => `<div class="card" style="border-left:4px solid ${a.color};display:flex;gap:12px"><span style="font-size:20px">${a.icon}</span><div><div><span class="tag" style="background:${a.color}22;color:${a.color};border-color:${a.color}44">${a.nivel}</span> <b style="font-size:12px">${a.msg}</b></div><div style="color:var(--txt2);font-size:11px;margin-top:4px">${a.detalle}</div></div></div>`).join("")}</div>`;
-}
+/* v19-clean-safe: definición antigua removida: alertasHTML */
+
 
 function mezclaDe(items) {
   const masaKg = items.reduce((a, x) => a + x.kg, 0);
@@ -1903,185 +1450,18 @@ function mezclasHTML() {
     </div>
   </div>`;
 }
+/* v19-clean-safe: definición antigua removida: mezclaOpcionHTML */
 
-function mezclaOpcionHTML(op, idx) {
-  return `<div class="card" style="border-left:4px solid ${op.mix.color};margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div><b style="color:${op.mix.color}">Opción ${idx + 1} · ${op.mix.clase}</b><div style="color:var(--txt2);font-size:10px">Consume fuera de especificación: ${(op.fueraKg/1000).toFixed(2)} t</div></div>
-      <div class="mono" style="font-weight:900;color:${op.mix.ok ? C.green : C.red}">${op.mix.ok ? "CUMPLE" : "NO CUMPLE"}</div>
-    </div>
-    ${mezclaDetalleHTML(op)}
-  </div>`;
-}
+/* v19-clean-safe: definición antigua removida: mezclaDetalleHTML */
 
-function mezclaDetalleHTML(op) {
-  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:10px">
-    ${op.items.map(x => `<div style="background:#0f3a6e55;border-radius:5px;padding:8px">
-      <div class="mono" style="color:var(--blue-light);font-weight:800">${x.lote.id}</div>
-      <div style="color:var(--txt2);font-size:10px">${(x.kg/1000).toFixed(2)} t · ${(x.kg / x.lote.masa).toFixed(2)} ${unidadNombre(x.lote)}</div>
-      <div style="color:var(--txt3);font-size:9px">Stock lote: ${(x.lote.masa/1000).toFixed(2)} t</div>
-    </div>`).join("")}
-    <div style="background:#0f3a6e55;border-radius:5px;padding:8px">
-      <div style="color:var(--txt3);font-size:9px">Resultado</div>
-      <div class="mono" style="color:${op.mix.color};font-weight:900">Cu ${op.mix.cu.toFixed(3)}% · Mo ${op.mix.mo.toFixed(3)}% · S ${op.mix.s.toFixed(3)}%</div>
-    </div>
-  </div>
-  <pre style="white-space:pre-wrap;background:#040a14;border:1px solid var(--line);border-radius:6px;padding:10px;color:var(--txt2);font-size:10px;margin:10px 0 0">${formulaMezcla(op.items, op.mix)}</pre>`;
-}
+/* v19-clean-safe: definición antigua removida: bindMezclas */
 
-function bindMezclas() {
-  document.querySelectorAll("[data-mix-sector]").forEach(btn => btn.addEventListener("click", () => { state.mix.sector = btn.dataset.mixSector; render(); }));
-  document.querySelectorAll("[data-mix-lot]").forEach(tile => tile.addEventListener("click", () => {
-    const id = tile.dataset.mixLot;
-    state.mix.sel = state.mix.sel.includes(id) ? state.mix.sel.filter(x => x !== id) : [...state.mix.sel, id];
-    render();
-  }));
-  document.querySelector("#clearMix").addEventListener("click", () => { state.mix.sel = []; render(); });
-  document.querySelector("#autoMix").addEventListener("click", () => render());
-}
+/* v19-clean-safe: definición antigua removida: silosHTML */
 
-function silosHTML() {
-  const silos = silosPonderados();
-  return `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,1fr);gap:14px;align-items:start">
-    <section class="box" style="min-width:0">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Silos de almacenamiento</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;max-height:640px;overflow:auto;padding-right:4px">${silos.map(s => {
-      const color = s.muestras ? s.color : C.txt3;
-      const source = s.nivelImportado?.fuente === "infodia"
-        ? `${hasAnalysis(s.nivelImportado) ? "Infodia/ACP" : "Infodia nivel"} ${s.nivelImportado.fecha || ""}`
-        : s.muestras ? "Manual" : "Sin datos";
-      return `<div class="card" style="border-top:3px solid ${color}">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="muted-title" style="color:var(--cyan);font-weight:800">${s.id}</div>
-          <span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${s.muestras ? s.clase : "Sin comunes"}</span>
-        </div>
-        <div style="height:118px;width:76px;margin:0 auto 10px;border:1px solid var(--line);background:#2d4a6a33;border-radius:5px;position:relative;overflow:hidden">
-          <div style="position:absolute;left:0;right:0;bottom:0;height:${s.nivel}%;background:linear-gradient(180deg,${color}bb,${color}55)"></div>
-          <div class="mono" style="position:absolute;inset:0;display:grid;place-items:center;font-weight:900">${s.nivel.toFixed(0)}%</div>
-        </div>
-        <div class="mono" style="text-align:center;color:${color};font-weight:900">${s.masa.toFixed(1)} / ${s.cap} t</div>
-        <div style="text-align:center;color:var(--txt3);font-size:9px;margin-top:4px">${source}${s.nivelImportado?.horaInicio ? ` · ${s.nivelImportado.horaInicio}-${s.nivelImportado.horaTermino}` : ""}</div>
-        <div style="text-align:center;color:var(--txt2);font-size:11px;margin-top:3px">Cu: ${s.muestras ? s.cu.toFixed(2) : "-"}% · Mo: ${s.muestras ? s.mo.toFixed(2) : "-"}% · S: ${s.muestras ? s.s.toFixed(2) : "-"}%</div>
-        <div style="display:flex;justify-content:center;gap:6px;margin-top:8px">
-          <button class="icon-btn" data-silo-fill="${s.id}">Ajuste manual</button>
-          <button class="icon-btn" data-silo-clear="${s.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Vaciar</button>
-        </div>
-      </div>`;
-    }).join("")}</div>
-    </section>
-    <section class="box" style="min-width:0">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Ingreso manual de respaldo</div>
-      <div class="notice" style="margin-bottom:12px;border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">La carga normal se actualiza al subir Infodia con comunes OO300-001. Usa este formulario solo para corregir o cargar un comun puntual.</div>
-      <form id="comunForm">
-        <div class="form-grid">
-          ${selectField("siloId","Silo",state.silosBase[0]?.id || "Silo 4",state.silosBase.map(s => s.id))}
-          ${selectField("turno","Turno","Día",["Día","Noche"])}
-          ${inputField("fecha","Fecha",hoy(),"text")}
-          ${inputField("masa","Masa común (t)","50","number","50","0.01")}
-          ${inputField("cu","Cu %","","number","0.49","0.01")}
-          ${inputField("mo","Mo %","","number","57.5","0.01")}
-          ${inputField("s","S %","","number","0.08","0.01")}
-        </div>
-        <button class="btn" style="width:100%;margin-top:10px">GUARDAR COMÚN</button>
-      </form>
-      <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
-        <div class="muted-title" style="margin-bottom:10px">Comunes ingresados — ${state.comunes.length}</div>
-        <div style="max-height:330px;overflow:auto">${[...state.comunes].reverse().map(c => {
-          const cl = clasificar(c);
-          return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #1a2e4a33">
-            <div><div class="mono" style="color:var(--blue-light);font-weight:800">${c.siloId} · ${c.turno}</div><div style="color:var(--txt2);font-size:10px">${c.fecha} · ${c.masa}t · Cu ${c.cu}% · Mo ${c.mo}% · S ${c.s}%</div></div>
-            <div style="display:flex;gap:5px;align-items:center"><span class="tag" style="background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${cl.clase}</span><button class="icon-btn" data-comun-del="${c.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">x</button></div>
-          </div>`;
-        }).join("") || `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px 0">Sin comunes registrados</div>`}</div>
-      </div>
-    </section>
-  </div>`;
-}
+/* v19-clean-safe: definición antigua removida: bindSilos */
 
-function bindSilos() {
-  const form = document.querySelector("#comunForm");
-  document.querySelectorAll("[data-silo-fill]").forEach(btn => btn.addEventListener("click", () => {
-    form.elements.siloId.value = btn.dataset.siloFill;
-    form.elements.cu.focus();
-  }));
-  document.querySelectorAll("[data-silo-clear]").forEach(btn => btn.addEventListener("click", () => {
-    const siloId = btn.dataset.siloClear;
-    if (!confirm(`¿Vaciar comunes de ${siloId}?`)) return;
-    state.comunes = state.comunes.filter(c => c.siloId !== siloId);
-    save("oxmo:comunes", state.comunes);
-    addHist("Silo vaciado", siloId, "Comunes eliminados", C.red);
-    render();
-  }));
-  document.querySelectorAll("[data-comun-del]").forEach(btn => btn.addEventListener("click", () => {
-    state.comunes = state.comunes.filter(c => c.id !== btn.dataset.comunDel);
-    save("oxmo:comunes", state.comunes);
-    render();
-  }));
-  form.addEventListener("submit", e => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(form).entries());
-    if (guardarComunManual(data, "manual-silos")) render();
-  });
-}
+/* v19-clean-safe: definición antigua removida: bindReportes */
 
-function bindReportes() {
-  document.querySelector("#printReport").addEventListener("click", () => {
-    const fecha = new Date().toLocaleDateString("es-CL").replaceAll("-", "_");
-    const filename = `reporte_${fecha}`;
-    const rows = state.lotes.map(l => {
-      const cl = clasificar(l);
-      return `<tr><td>${l.id}</td><td>${l.tipo}</td><td>${l.masa.toLocaleString("es-CL")}</td><td>${l.sector}</td><td>${hasAnalysis(l) ? l.cu : "-"}</td><td>${hasAnalysis(l) ? l.mo : "-"}</td><td>${hasAnalysis(l) ? l.s : "-"}</td><td><span class="badge" style="background:${cl.color}22;color:${cl.color};border-color:${cl.color}66">${cl.clase}</span></td><td>${l.estado}</td><td>${l.fecha}</td></tr>`;
-    }).join("");
-    const html = `<html><head><title>${filename}</title><style>
-      @page{size:A4 landscape;margin:10mm}
-      *{box-sizing:border-box}
-      html,body{width:277mm;min-height:190mm;margin:0;font-family:Arial,sans-serif;color:#182234;background:white;writing-mode:horizontal-tb}
-      body{padding:0}
-      .sheet{width:277mm;min-height:190mm;padding:0;background:white}
-      .header{display:flex;justify-content:space-between;align-items:stretch;background:linear-gradient(90deg,#071326,#0f3a6e 55%,#c87533);color:white;border-radius:10px;margin-bottom:10px;overflow:hidden}
-      .brand{padding:14px 18px}
-      h1{font-size:20px;letter-spacing:.8px;margin:0 0 4px}
-      .sub{font-size:11px;color:#b9dfff;letter-spacing:1.4px}
-      .date{padding:14px 18px;text-align:right;background:#0002;min-width:140px;font-size:11px}
-      .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
-      .k{border:1px solid #d7e2ee;border-top:4px solid #1e6fd9;border-radius:8px;padding:8px 10px;background:#f7fbff}
-      .k b{display:block;color:#0f3a6e;font-size:15px}
-      .k span{font-size:9px;color:#60728a;text-transform:uppercase;letter-spacing:.6px}
-      table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;border:1px solid #cfd8e3;border-radius:8px;overflow:hidden}
-      th{background:#0f3a6e;color:white;font-size:9px;letter-spacing:.5px;text-transform:uppercase}
-      td,th{padding:6px 7px;border-right:1px solid #d7e2ee;border-bottom:1px solid #d7e2ee;text-align:left;word-break:normal;overflow-wrap:anywhere;vertical-align:middle}
-      td{font-size:10px}
-      tr:nth-child(even) td{background:#f6f9fc}
-      td:nth-child(1){font-family:Consolas,monospace;font-weight:bold;color:#1e6fd9}
-      td:nth-child(3),td:nth-child(5),td:nth-child(6),td:nth-child(7){text-align:right;font-family:Consolas,monospace}
-      th:nth-child(1){width:8%} th:nth-child(2){width:10%} th:nth-child(3){width:10%} th:nth-child(4){width:18%} th:nth-child(5),th:nth-child(6),th:nth-child(7){width:8%} th:nth-child(8){width:14%} th:nth-child(9){width:10%} th:nth-child(10){width:8%}
-      .badge{display:inline-block;border:1px solid;border-radius:999px;padding:2px 7px;font-weight:bold;font-size:9px;white-space:nowrap}
-      .small{font-size:9px;color:#687789;margin-top:8px}
-      @media print{html,body,.sheet{width:277mm;min-height:190mm}.sheet{page-break-after:auto}}
-    </style></head><body><main class="sheet"><div class="header"><div class="brand"><h1>REPORTE INVENTARIO DE CIRCULANTES</h1><div class="sub">OXMO · CONTROL OPERACIONAL</div></div><div class="date"><b>Fecha reporte</b><br>${new Date().toLocaleString("es-CL")}</div></div><section class="summary"><div class="k"><span>Total lotes</span><b>${state.lotes.length}</b></div><div class="k" style="border-top-color:#00e5a0"><span>Masa total</span><b>${(state.lotes.reduce((a,l)=>a+l.masa,0)/1000).toFixed(2)} t</b></div><div class="k" style="border-top-color:#c87533"><span>Alto cobre</span><b>${state.lotes.filter(l=>clasificar(l).clase==="Alto Cobre").length}</b></div><div class="k" style="border-top-color:#ff4560"><span>Fuera esp.</span><b>${state.lotes.filter(l=>clasificar(l).clase==="Fuera Esp").length}</b></div></section><table><tr><th>ID</th><th>Tipo</th><th>Masa kg</th><th>Sector</th><th>Cu %</th><th>Mo %</th><th>S %</th><th>Clasificación</th><th>Estado</th><th>Fecha</th></tr>${rows}</table><div class="small">Reporte generado desde inventario de circulantes. No incluye silos.</div></main></body></html>`;
-    const frame = document.createElement("iframe");
-    frame.style.position = "fixed";
-    frame.style.left = "-1200px";
-    frame.style.top = "0";
-    frame.style.width = "1123px";
-    frame.style.height = "794px";
-    frame.style.border = "0";
-    document.body.appendChild(frame);
-    frame.contentDocument.open();
-    frame.contentDocument.write(html);
-    frame.contentDocument.close();
-    frame.onload = () => {
-      frame.contentWindow.focus();
-      frame.contentWindow.print();
-      setTimeout(() => frame.remove(), 1000);
-    };
-    setTimeout(() => {
-      frame.contentWindow.focus();
-      frame.contentWindow.print();
-      setTimeout(() => frame.remove(), 1000);
-    }, 250);
-  });
-}
 
 function alertasHTML() {
   const disp = state.lotes.filter(l => l.estado === "Disponible");
@@ -2094,76 +1474,8 @@ function alertasHTML() {
   ];
   return `<div style="display:flex;flex-direction:column;gap:8px">${alerts.map(a => `<div class="card" style="border-left:4px solid ${a.color};display:flex;gap:12px"><span style="font-size:20px">${a.icon}</span><div><div><span class="tag" style="background:${a.color}22;color:${a.color};border-color:${a.color}44">${a.nivel}</span> <b style="font-size:12px">${a.msg}</b></div><div style="color:var(--txt2);font-size:11px;margin-top:4px">${a.detalle}</div></div></div>`).join("")}</div>`;
 }
+/* v19-clean-safe: definición antigua removida: buscarMejoresMezclas2 */
 
-function buscarMejoresMezclas2() {
-  const objetivoKg = Math.min(40000, Math.max(1000, Math.round(parseNum(state.mix.masa || 20000) / 1000) * 1000));
-  const paso = 1000;
-  const basePool = state.lotes.filter(l => hasAnalysis(l) && l.masa > 0 && (state.mix.sector === "Todos" || l.sector === state.mix.sector));
-  const scoreLote = l => {
-    const c = clasificar(l);
-    return (c.clase === "Fuera Esp" ? -120 : 0)
-      + Math.abs(Number(l.cu || 0) - parseNum(state.mix.cu)) * 35
-      + Math.max(0, parseNum(state.mix.mo) - Number(l.mo || 0)) * 18
-      + Math.max(0, Number(l.s || 0) - parseNum(state.mix.s)) * 90
-      - Math.min(Number(l.masa || 0), objetivoKg) / 1000;
-  };
-  const pool = (state.mix.sel.length ? basePool.filter(l => state.mix.sel.includes(l.id)) : basePool)
-    .sort((a, b) => scoreLote(a) - scoreLote(b))
-    .slice(0, 18);
-  const opciones = [];
-  const firmas = new Set();
-  const masasObjetivo = [objetivoKg];
-  for (let delta = paso; delta <= 5000; delta += paso) {
-    if (objetivoKg - delta >= paso) masasObjetivo.push(objetivoKg - delta);
-    if (objetivoKg + delta <= 40000) masasObjetivo.push(objetivoKg + delta);
-  }
-  const evaluar = items => {
-    const clean = items
-      .map(x => ({ lote: x.lote, kg: Math.round(Number(x.kg || 0) / 1000) * 1000 }))
-      .filter(x => x.kg > 0)
-      .sort((a, b) => String(a.lote.id).localeCompare(String(b.lote.id)));
-    if (!clean.length || clean.some(x => x.kg > x.lote.masa)) return;
-    const firma = clean.map(x => `${x.lote.id}:${x.kg}`).join("|");
-    if (firmas.has(firma)) return;
-    firmas.add(firma);
-    const mix = mezclaDe(clean);
-    const diffKg = Math.abs(mix.masaKg - objetivoKg);
-    if (diffKg > 5000) return;
-    const fueraKg = clean.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + x.kg, 0);
-    const cuPenalty = Math.abs(mix.cu - parseNum(state.mix.cu)) * 160;
-    const moPenalty = Math.max(0, parseNum(state.mix.mo) - mix.mo) * 120;
-    const sPenalty = Math.max(0, mix.s - parseNum(state.mix.s)) * 900;
-    const massPenalty = (diffKg / 1000) * 65;
-    const specBonus = mix.ok ? 800 : 0;
-    const exactBonus = diffKg === 0 ? 160 : 0;
-    const fueraBonus = fueraKg / 1000 * 18;
-    opciones.push({ items: clean, mix, fueraKg, diffKg, objetivoKg, exacta: diffKg === 0, score: specBonus + exactBonus + fueraBonus - cuPenalty - moPenalty - sPenalty - massPenalty });
-  };
-  for (const targetKg of masasObjetivo) {
-    for (let i = 0; i < pool.length; i++) evaluar([{ lote: pool[i], kg: targetKg }]);
-    for (let i = 0; i < pool.length; i++) {
-      for (let j = i + 1; j < pool.length; j++) {
-        for (let kgA = paso; kgA < targetKg; kgA += paso) {
-          evaluar([{ lote: pool[i], kg: kgA }, { lote: pool[j], kg: targetKg - kgA }]);
-        }
-      }
-    }
-    for (let i = 0; i < pool.length; i++) {
-      for (let j = i + 1; j < pool.length; j++) {
-        for (let k = j + 1; k < pool.length; k++) {
-          for (let kgA = paso; kgA < targetKg - paso; kgA += paso) {
-            for (let kgB = paso; kgB < targetKg - kgA; kgB += paso) {
-              evaluar([{ lote: pool[i], kg: kgA }, { lote: pool[j], kg: kgB }, { lote: pool[k], kg: targetKg - kgA - kgB }]);
-            }
-          }
-        }
-      }
-    }
-  }
-  return opciones
-    .sort((a, b) => (Number(b.exacta) - Number(a.exacta)) || (a.diffKg - b.diffKg) || (b.score - a.score))
-    .slice(0, 6);
-}
 
 function mezclasHTML() {
   state.mix.masa = Math.min(40000, Math.max(1000, Math.round(parseNum(state.mix.masa || 20000) / 1000) * 1000));
@@ -2210,49 +1522,12 @@ function mezclasHTML() {
     </div>
   </div>`;
 }
+/* v19-clean-safe: definición antigua removida: mezclaOpcionHTML */
 
-function mezclaOpcionHTML(op, idx) {
-  const estado = op.mix.ok ? "CUMPLE" : "MEJOR APROX.";
-  return `<div class="card" style="border-left:4px solid ${op.mix.color};margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div><b style="color:${op.mix.color}">Opción ${idx + 1} · ${op.mix.clase}</b><div style="color:var(--txt2);font-size:10px">Fuera de especificación usado: ${(op.fueraKg/1000).toFixed(2)} t</div></div>
-      <div class="mono" style="font-weight:900;color:${op.mix.ok ? C.green : C.yellow}">${estado}</div>
-    </div>
-    ${mezclaDetalleHTML(op)}
-  </div>`;
-}
+/* v19-clean-safe: definición antigua removida: mezclaDetalleHTML */
 
-function mezclaDetalleHTML(op) {
-  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:10px">
-    ${op.items.map(x => `<div style="background:#0f3a6e55;border-radius:5px;padding:8px">
-      <div class="mono" style="color:var(--blue-light);font-weight:800">${x.lote.id}</div>
-      <div style="color:var(--txt2);font-size:10px">${(x.kg/1000).toFixed(0)} sacos · ${(x.kg/1000).toFixed(2)} t</div>
-    </div>`).join("")}
-    <div style="background:#0f3a6e55;border-radius:5px;padding:8px">
-      <div style="color:var(--txt3);font-size:9px">Resultado</div>
-      <div class="mono" style="color:${op.mix.color};font-weight:900">Cu ${op.mix.cu.toFixed(3)}% · Mo ${op.mix.mo.toFixed(3)}% · S ${op.mix.s.toFixed(3)}%</div>
-    </div>
-  </div>
-  <pre style="white-space:pre-wrap;background:#040a14;border:1px solid var(--line);border-radius:6px;padding:10px;color:var(--txt2);font-size:10px;margin:10px 0 0">${formulaMezcla(op.items, op.mix)}</pre>`;
-}
+/* v19-clean-safe: definición antigua removida: mezclaOpcionHTML */
 
-function mezclaOpcionHTML(op, idx) {
-  const estado = op.exacta ? (op.mix.ok ? "CUMPLE" : "REVISAR") : `APROX. ${(op.diffKg / 1000).toFixed(1)} t`;
-  const masaInfo = op.exacta
-    ? `Masa exacta: ${(op.mix.masaKg / 1000).toFixed(2)} t`
-    : `Masa aproximada: ${(op.mix.masaKg / 1000).toFixed(2)} t - diferencia ${(op.diffKg / 1000).toFixed(2)} t`;
-  return `<div class="card" style="border-left:4px solid ${op.mix.color};margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div>
-        <b style="color:${op.mix.color}">Opcion ${idx + 1} - ${op.mix.clase}</b>
-        <div style="color:var(--txt2);font-size:10px">${masaInfo}</div>
-        <div style="color:var(--txt2);font-size:10px">Fuera de especificacion usado: ${(op.fueraKg / 1000).toFixed(2)} t</div>
-      </div>
-      <div class="mono" style="font-weight:900;color:${op.mix.ok ? C.green : C.yellow}">${estado}</div>
-    </div>
-    ${mezclaDetalleHTML(op)}
-  </div>`;
-}
 
 function mezclaDetalleHTML(op) {
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:10px">
@@ -2739,41 +2014,14 @@ function parseAnalisisACP(wb) {
     return { ...comun, ...clasificar(comun) };
   }).filter(Boolean);
 }
+/* v19-clean-safe: definición antigua removida: tipoAnalisisACP */
 
-function tipoAnalisisACP(codigo) {
-  codigo = normalizarCodigoAnalisis(codigo);
-  if (/^OO300-001-\d+-\d{2}$/.test(codigo)) return "comun_turno";
-  if (/^OXMO\d+-\d{2}$/.test(codigo)) return "lote_oxmo";
-  if (/^OXBR\d+-\d{2}$/.test(codigo)) return "briqueta";
-  if (codigo.includes("OSAC") && /-\d{2}$/.test(codigo)) return "lote_osac";
-  if (/^[A-Z]{2,12}\d+-\d{2}$/.test(codigo)) return "otro_lote";
-  return "";
-}
+/* v19-clean-safe: definición antigua removida: normalizarCodigoAnalisis */
 
-function normalizarCodigoAnalisis(codigo) {
-  let s = String(codigo || "").trim().toUpperCase().replace(/\s+/g, "");
-  s = s.replace(/^([A-Z]+)-(?=\d)/, "$1");
-  const base = s.match(/^(.+?-\d{2})(?:[-_].*)$/);
-  return base ? base[1] : s;
-}
+/* v19-clean-safe: definición antigua removida: codigoPartesInventario */
 
-function codigoPartesInventario(codigo) {
-  const s = normalizarCodigoAnalisis(codigo);
-  const m = s.match(/^([A-Z]+)0*(\d+)-(\d{2})$/);
-  if (!m) return null;
-  return { prefix: m[1], numero: String(Number(m[2])), year: m[3] };
-}
+/* v19-clean-safe: definición antigua removida: scoreMatchACP */
 
-function scoreMatchACP(lote, analisis) {
-  // HOTFIX v13: cruce ACP <-> inventario estrictamente exacto.
-  // Antes se aceptaba coincidencia por ultimo correlativo + año (ej. 03001-26),
-  // lo que podia actualizar un lote de otra familia/codigo. Ahora solo cruza
-  // cuando el codigo completo coincide despues de limpiar espacios, mayusculas y guiones.
-  const loteCodigo = normalizarCodigoAnalisis(lote?.id);
-  const acpCodigo = normalizarCodigoAnalisis(analisis?.codigo);
-  if (!loteCodigo || !acpCodigo) return 0;
-  return loteCodigo === acpCodigo ? 10 : 0;
-}
 
 function buscarAnalisisParaInventario(lote, analisisACP) {
   const candidatos = (analisisACP || [])
@@ -3020,36 +2268,8 @@ function recalcularTotalesInfodia(days) {
     descargaT: a.descargaT + Number(d.descargaT || 0),
   }), { lotes: 0, produccionKg: 0, kgMo: 0, llenadoT: 0, descargaT: 0 });
 }
+/* v19-clean-safe: definición antigua removida: fusionarInfodia */
 
-function fusionarInfodia(prev, next) {
-  if (!prev?.days?.length && !prev?.analisisACP?.length) return next;
-  const days = uniqueBy([...(prev.days || []), ...(next.days || [])], d => d.fecha)
-    .sort((a, b) => a.fecha.localeCompare(b.fecha));
-  const analisisACP = uniqueBy([...(prev.analisisACP || []), ...(next.analisisACP || [])], a => `${a.codigo}|${a.fecha}|${a.fuente || ""}`)
-    .sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.codigo || "").localeCompare(String(b.codigo || "")));
-  const analisis = analisisACP.filter(a => a.tipoAnalisis === "comun_turno");
-  const analisisLotes = analisisACP.filter(a => a.tipoAnalisis !== "comun_turno");
-  const siloHistorial = uniqueBy([...(prev.siloHistorial || []), ...(next.siloHistorial || [])], h => [
-    h.fecha,
-    h.siloId,
-    h.turno,
-    h.horaInicio,
-    h.horaTermino,
-    h.movimiento,
-  ].join("|")).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")) || String(a.siloId || "").localeCompare(String(b.siloId || "")));
-  const selectedWindow = selectSiloSimulationDays(days);
-  return {
-    ...prev,
-    ...next,
-    days,
-    analisis,
-    analisisLotes,
-    analisisACP,
-    siloHistorial,
-    simWindow: selectedWindow.label,
-    totals: recalcularTotalesInfodia(days),
-  };
-}
 
 function aplicarInfodia(info) {
   info = fusionarInfodia(state.infodia, info);
@@ -3288,158 +2508,12 @@ function publicEtiquetaFromUrl() {
   if (token) return decodeEtiquetaQR(token) || { error: "QR de etiqueta incompleto o no valido." };
   return null;
 }
-
-function etiquetaPublicaHTML(data) {
-  if (data.error || !data.lote) {
-    return `<main class="login" style="padding:24px">
-      <section class="box" style="width:min(420px,100%);border-top:3px solid ${C.red}">
-        <div class="muted-title" style="color:var(--red);margin-bottom:8px">Etiqueta OXMO</div>
-        <div style="color:var(--txt);font-size:18px;font-weight:900;margin-bottom:8px">QR no valido</div>
-        <div style="color:var(--txt2);font-size:12px;line-height:1.45">Genera nuevamente la vista previa de etiqueta desde OXMO y escanea el QR nuevo.</div>
-      </section>
-    </main>`;
-  }
-  const color = data.color || C.cyan;
-  const qrData = encodeURIComponent(location.href);
-  const idLen = String(data.lote || "").length;
-  const idSize = idLen > 26 ? "14pt" : idLen > 20 ? "16pt" : "20pt";
-  return `<style>
-    * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; background: #eceff3; font-family: Arial, Helvetica, sans-serif; color: #111; }
-    .public-wrap { min-height: 100vh; display: grid; place-items: start center; padding: 12px; }
-    .label-page { width: 100mm; height: 150mm; padding: 3mm; background: #fff; box-shadow: 0 12px 34px #0003; overflow: hidden; }
-    .label { width: 94mm; height: 144mm; border: .8mm solid #111; border-radius: 2.5mm; padding: 4.5mm 5mm 2.8mm; display: flex; flex-direction: column; overflow: hidden; }
-    header { min-height: 19mm; display: flex; justify-content: space-between; align-items: flex-start; gap: 4mm; border-bottom: .45mm solid #111; padding-bottom: 2.2mm; }
-    header img { width: 32mm; max-height: 14mm; height: auto; object-fit: contain; margin-top: 1.2mm; }
-    .system { font-size: 10pt; line-height: 1.15; font-weight: 900; letter-spacing: 2.1pt; text-align: right; white-space: pre-line; }
-    .date { font-size: 7pt; color: #333; text-align: right; margin-top: 1.6mm; }
-    main { flex: 1; display: flex; flex-direction: column; align-items: stretch; min-height: 0; padding-top: 3mm; }
-    .lot-id { font-family: Consolas, "Courier New", monospace; font-size: ${idSize}; font-weight: 900; text-align: center; line-height: 1.05; letter-spacing: .2pt; margin: 0 0 3mm; overflow-wrap: anywhere; word-break: break-word; }
-    .material { min-height: 13mm; border: .55mm solid ${esc(color)}; color: ${esc(color)}; border-radius: 2mm; padding: 1.7mm 2mm; display: flex; align-items: center; justify-content: center; font-size: 16pt; font-weight: 900; letter-spacing: 1.2pt; text-align: center; margin-bottom: 3mm; }
-    .chem { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm; margin-bottom: 3mm; }
-    .chem div, .meta div { border: .35mm solid #222; border-radius: 1.5mm; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-    .chem div { min-height: 14mm; padding: 1.4mm 1mm; }
-    .meta div { min-height: 13mm; padding: 1.4mm; }
-    .chem b, .meta b { display: block; font-size: 6.5pt; line-height: 1; text-transform: uppercase; color: #111; margin-bottom: 1mm; letter-spacing: .3pt; }
-    .chem span { font-family: Consolas, "Courier New", monospace; font-size: 13.5pt; line-height: 1; font-weight: 900; }
-    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 2mm; }
-    .meta span { font-size: 12pt; line-height: 1; font-weight: 900; }
-    .qr-zone { flex: 1; min-height: 42mm; display: flex; align-items: center; justify-content: center; padding: 1mm 0 1.5mm; }
-    .qr { width: 40mm; height: 40mm; image-rendering: pixelated; object-fit: contain; display: block; }
-    footer { border-top: .35mm solid #111; padding-top: .8mm; font-size: 5.5pt; line-height: 1.2; text-align: center; color: #555; }
-    @media print { @page { size: 100mm 150mm; margin: 0; } html, body { width: 100mm; height: 150mm; background: #fff; } .public-wrap { min-height: 150mm; padding: 0; display: block; } .label-page { box-shadow: none; margin: 0; } }
-  </style>
-  <div class="public-wrap">
-    <section class="label-page">
-      <div class="label">
-        <header>
-          <img src="./molyb-logo.webp" alt="Molyb" />
-          <div>
-            <div class="system">OXMO\nCONTROL</div>
-            <div class="date">${esc(data.fecha || hoy())}</div>
-          </div>
-        </header>
-        <main>
-          <div class="lot-id">${esc(data.lote)}</div>
-          <div class="material">${esc(String(data.material || "").toUpperCase())}</div>
-          <div class="chem">
-            <div><b>Cu</b><span>${esc(data.cu != null ? `${data.cu}%` : "-")}</span></div>
-            <div><b>Mo</b><span>${esc(data.mo != null ? `${data.mo}%` : "-")}</span></div>
-            <div><b>S</b><span>${esc(data.s != null ? `${data.s}%` : "-")}</span></div>
-          </div>
-          <div class="meta"><div><b>Masa</b><span>${esc(data.masa || "-")}</span></div></div>
-          <div class="qr-zone"><img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=520x520&margin=1&data=${qrData}" alt="QR ${esc(data.lote)}" /></div>
-        </main>
-        <footer>Zebra ZT230 · Etiqueta 100 × 150 mm · 300 dpi</footer>
-      </div>
-    </section>
-  </div>`;
-}
-
+/* v19-clean-safe: definición antigua removida: etiquetaPublicaHTML */
 
 function publicDato(label, value) {
   return `<div class="card" style="padding:10px;text-align:center"><div style="color:var(--txt3);font-size:9px;text-transform:uppercase">${esc(label)}</div><div class="mono" style="font-weight:900;color:var(--txt)">${esc(value)}</div></div>`;
 }
-
-function printLabels() {
-  const items = state.etiquetaSel.map(id => state.lotes.find(l => l.id === id)).filter(Boolean).map(l => {
-    const c = clasificar(l);
-    const labelParams = new URLSearchParams({
-      label: "1",
-      id: l.id,
-      mat: c.clase,
-      color: c.color,
-      masa: kgToTon(l.masa, 2),
-      cu: l.cu ? fmt(l.cu, 2) : "",
-      mo: l.mo ? fmt(l.mo, 2) : "",
-      s: l.s ? fmt(l.s, 3) : "",
-      fecha: l.fecha || "",
-    });
-    const qrUrl = `${PUBLIC_APP_URL}etiqueta.html?${labelParams.toString()}`;
-    const qrData = encodeURIComponent(qrUrl);
-    const idLen = String(l.id || "").length;
-    const idSize = idLen > 26 ? "14pt" : idLen > 20 ? "16pt" : "20pt";
-    const chem = hasAnalysis(l)
-      ? `<div class="chem"><div><b>Cu</b><span>${fmt(l.cu, 2)}%</span></div><div><b>Mo</b><span>${fmt(l.mo, 2)}%</span></div><div><b>S</b><span>${fmt(l.s, 3)}%</span></div></div>`
-      : `<div class="pending">SIN ANALISIS</div>`;
-    return `<section class="label-page">
-      <div class="label">
-        <header>
-          <img src="./molyb-logo.webp" alt="Molyb" />
-          <div>
-            <div class="system">OXMO\nCONTROL</div>
-            <div class="date">${esc(l.fecha || hoy())}</div>
-          </div>
-        </header>
-        <main>
-          <div class="lot-id" style="font-size:${idSize}">${esc(l.id)}</div>
-          <div class="material" style="border-color:${c.color};color:${c.color}">${esc(c.clase.toUpperCase())}</div>
-          ${chem}
-          <div class="meta"><div><b>Masa</b><span>${kgToTon(l.masa, 2)}</span></div></div>
-          <div class="qr-zone"><img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=520x520&margin=1&data=${qrData}" alt="QR ${esc(l.id)}" /></div>
-        </main>
-        <footer>Zebra ZT230 · Etiqueta 100 × 150 mm · 300 dpi</footer>
-      </div>
-    </section>`;
-  }).join("");
-  const w = window.open("", "_blank");
-  if (!w) {
-    alert("Permite ventanas emergentes para abrir la vista previa de etiquetas.");
-    return;
-  }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas OXMO</title><style>
-    @page { size: 100mm 150mm; margin: 0; }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: #eceff3; font-family: Arial, Helvetica, sans-serif; color: #111; }
-    .label-page { width: 100mm; height: 150mm; page-break-after: always; break-after: page; padding: 3mm; background: #fff; overflow: hidden; }
-    .label { width: 94mm; height: 144mm; border: .8mm solid #111; border-radius: 2.5mm; padding: 4.5mm 5mm 2.8mm; display: flex; flex-direction: column; overflow: hidden; }
-    header { min-height: 19mm; display: flex; justify-content: space-between; align-items: flex-start; gap: 4mm; border-bottom: .45mm solid #111; padding-bottom: 2.2mm; }
-    header img { width: 32mm; max-height: 14mm; height: auto; object-fit: contain; margin-top: 1.2mm; }
-    .system { font-size: 10pt; line-height: 1.15; font-weight: 900; letter-spacing: 2.1pt; text-align: right; white-space: pre-line; }
-    .date { font-size: 7pt; color: #333; text-align: right; margin-top: 1.6mm; }
-    main { flex: 1; display: flex; flex-direction: column; align-items: stretch; min-height: 0; padding-top: 3mm; }
-    .lot-id { font-family: Consolas, "Courier New", monospace; font-weight: 900; text-align: center; line-height: 1.05; letter-spacing: .2pt; margin: 0 0 3mm; overflow-wrap: anywhere; word-break: break-word; }
-    .material { min-height: 13mm; border: .55mm solid; border-radius: 2mm; padding: 1.7mm 2mm; display: flex; align-items: center; justify-content: center; font-size: 16pt; font-weight: 900; letter-spacing: 1.2pt; text-align: center; margin-bottom: 3mm; }
-    .chem { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm; margin-bottom: 3mm; }
-    .chem div, .meta div { border: .35mm solid #222; border-radius: 1.5mm; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-    .chem div { min-height: 14mm; padding: 1.4mm 1mm; }
-    .meta div { min-height: 13mm; padding: 1.4mm; }
-    .chem b, .meta b { display: block; font-size: 6.5pt; line-height: 1; text-transform: uppercase; color: #111; margin-bottom: 1mm; letter-spacing: .3pt; }
-    .chem span { font-family: Consolas, "Courier New", monospace; font-size: 13.5pt; line-height: 1; font-weight: 900; }
-    .pending { min-height: 14mm; border: .35mm solid #222; border-radius: 1.5mm; padding: 3mm; font-size: 14pt; font-weight: 900; text-align: center; margin-bottom: 3mm; display: flex; align-items: center; justify-content: center; }
-    .meta { display: grid; grid-template-columns: 1fr; gap: 2mm; margin-bottom: 2mm; }
-    .meta span { font-size: 12pt; line-height: 1; font-weight: 900; }
-    .qr-zone { flex: 1; min-height: 42mm; display: flex; align-items: center; justify-content: center; padding: 1mm 0 1.5mm; }
-    .qr { width: 40mm; height: 40mm; image-rendering: pixelated; object-fit: contain; display: block; }
-    footer { border-top: .35mm solid #111; padding-top: .8mm; font-size: 5.5pt; line-height: 1.2; text-align: center; color: #555; }
-    .no-print { position: fixed; top: 10px; right: 10px; display: flex; gap: 8px; z-index: 10; }
-    .no-print button { padding: 9px 14px; font-weight: 900; cursor: pointer; }
-    @media screen { body { display: grid; place-items: start center; gap: 12px; padding: 16px; } .label-page { box-shadow: 0 8px 30px #0003; } }
-    @media print { html, body { width: 100mm; background: #fff; padding: 0; } .no-print { display: none; } .label-page { box-shadow: none; margin: 0; } }
-  </style></head><body><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div>${items}</body></html>`);
-  w.document.close();
-}
-
+/* v19-clean-safe: definición antigua removida: printLabels */
 
 // --- Ajustes finales 2026-06-14: mezcla por objetivo, silos con comunes y etiqueta desde inventario ---
 function correlativoAnalisis(codigo) {
@@ -3484,156 +2558,14 @@ function objetivoMezcla() {
     masa,
   };
 }
+/* v19-clean-safe: definición antigua removida: evaluarMezclaObjetivo */
 
-function evaluarMezclaObjetivo(items, objetivo, firmas, opciones) {
-  const clean = items
-    .map(x => ({ lote: x.lote, kg: Math.round(Number(x.kg || 0) / 1000) * 1000 }))
-    .filter(x => x.kg > 0)
-    .sort((a, b) => String(a.lote.id).localeCompare(String(b.lote.id)));
-  if (!clean.length || clean.some(x => x.kg > Math.floor(Number(x.lote.masa || 0) / 1000) * 1000)) return;
-  const firma = clean.map(x => `${x.lote.id}:${x.kg}`).join("|");
-  if (firmas.has(firma)) return;
-  firmas.add(firma);
+/* v19-clean-safe: definición antigua removida: buscarMejoresMezclas2 */
 
-  const mix = mezclaDe(clean);
-  const diffKg = Math.abs(mix.masaKg - objetivo.masa);
-  if (diffKg > 5000) return;
+/* v19-clean-safe: definición antigua removida: mezclaOpcionHTML */
 
-  const cuDiff = Math.abs(mix.cu - objetivo.cu);
-  const moShort = Math.max(0, objetivo.mo - mix.mo);
-  const moDiff = Math.abs(mix.mo - objetivo.mo);
-  const sOver = Math.max(0, mix.s - objetivo.s);
-  const sDiff = Math.abs(mix.s - objetivo.s);
-  const claseObjetivoAlta = objetivo.cu > 0.5;
-  const claseMezclaAlta = mix.cu > 0.5;
-  const clasePenalty = claseObjetivoAlta === claseMezclaAlta ? 0 : 180;
-  const chemPenalty = (cuDiff * 1200) + (moShort * 1000) + (moDiff * 80) + (sOver * 16000) + (sDiff * 900) + clasePenalty;
-  const massPenalty = (diffKg / 1000) * 70;
-  const fueraKg = clean.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + x.kg, 0);
-  const targetOk = cuDiff <= 0.04 && mix.mo >= objetivo.mo && mix.s <= objetivo.s && diffKg === 0;
-  mix.ok = targetOk;
-  opciones.push({
-    items: clean,
-    mix,
-    fueraKg,
-    diffKg,
-    objetivoKg: objetivo.masa,
-    exacta: diffKg === 0,
-    chemPenalty,
-    score: chemPenalty + massPenalty - (fueraKg / 1000 * 14),
-  });
-}
+/* v19-clean-safe: definición antigua removida: comunesAsignados */
 
-function buscarMejoresMezclas2() {
-  const objetivo = objetivoMezcla();
-  const basePool = state.lotes
-    .filter(l => hasAnalysis(l) && Number(l.masa || 0) >= 1000 && (state.mix.sector === "Todos" || l.sector === state.mix.sector))
-    .filter(l => Math.floor(Number(l.masa || 0) / 1000) > 0);
-  const selectedPool = state.mix.sel.length ? basePool.filter(l => state.mix.sel.includes(l.id)) : basePool;
-  const relevancia = l => {
-    const cl = clasificar(l).clase;
-    return Math.abs(Number(l.cu || 0) - objetivo.cu) * 100
-      + Math.max(0, objetivo.mo - Number(l.mo || 0)) * 22
-      + Math.max(0, Number(l.s || 0) - objetivo.s) * 700
-      - (cl === "Fuera Esp" ? 8 : 0)
-      - Math.min(Number(l.masa || 0), objetivo.masa) / 8000;
-  };
-  const pool = [...selectedPool].sort((a, b) => relevancia(a) - relevancia(b)).slice(0, 18);
-  const opciones = [];
-  const firmas = new Set();
-  const masasObjetivo = [objetivo.masa];
-  for (let delta = 1000; delta <= 5000; delta += 1000) {
-    if (objetivo.masa - delta >= 1000) masasObjetivo.push(objetivo.masa - delta);
-    if (objetivo.masa + delta <= 40000) masasObjetivo.push(objetivo.masa + delta);
-  }
-
-  for (const targetKg of masasObjetivo) {
-    for (let i = 0; i < pool.length; i++) {
-      evaluarMezclaObjetivo([{ lote: pool[i], kg: targetKg }], objetivo, firmas, opciones);
-    }
-    for (let i = 0; i < pool.length; i++) {
-      for (let j = i + 1; j < pool.length; j++) {
-        for (let kgA = 1000; kgA < targetKg; kgA += 1000) {
-          evaluarMezclaObjetivo([{ lote: pool[i], kg: kgA }, { lote: pool[j], kg: targetKg - kgA }], objetivo, firmas, opciones);
-        }
-      }
-    }
-    for (let i = 0; i < pool.length; i++) {
-      for (let j = i + 1; j < pool.length; j++) {
-        for (let k = j + 1; k < pool.length; k++) {
-          for (let kgA = 1000; kgA < targetKg - 1000; kgA += 1000) {
-            for (let kgB = 1000; kgB < targetKg - kgA; kgB += 1000) {
-              evaluarMezclaObjetivo([
-                { lote: pool[i], kg: kgA },
-                { lote: pool[j], kg: kgB },
-                { lote: pool[k], kg: targetKg - kgA - kgB },
-              ], objetivo, firmas, opciones);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return opciones
-    .sort((a, b) => a.score - b.score || a.chemPenalty - b.chemPenalty || a.diffKg - b.diffKg || b.fueraKg - a.fueraKg)
-    .slice(0, 8);
-}
-
-function mezclaOpcionHTML(op, idx) {
-  const estado = op.mix.ok ? "CUMPLE" : (op.exacta ? "MEJOR QUIMICA" : `APROX. ${(op.diffKg / 1000).toFixed(1)} t`);
-  const masaInfo = op.exacta
-    ? `Masa exacta: ${(op.mix.masaKg / 1000).toFixed(2)} t`
-    : `Masa aproximada: ${(op.mix.masaKg / 1000).toFixed(2)} t - diferencia ${(op.diffKg / 1000).toFixed(2)} t`;
-  return `<div class="card" style="border-left:4px solid ${op.mix.color};margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div>
-        <b style="color:${op.mix.color}">Opcion ${idx + 1} - ${op.mix.clase}</b>
-        <div style="color:var(--txt2);font-size:10px">${masaInfo}</div>
-        <div style="color:var(--txt2);font-size:10px">Fuera de especificacion usado: ${(op.fueraKg / 1000).toFixed(2)} t</div>
-      </div>
-      <div class="mono" style="font-weight:900;color:${op.mix.ok ? C.green : C.yellow}">${estado}</div>
-    </div>
-    ${mezclaDetalleHTML(op)}
-  </div>`;
-}
-
-function comunesAsignados() {
-  const acp = new Map((state.infodia?.analisis || []).map(a => [normalizarCodigoAnalisis(a.codigo), a]));
-  const rows = [];
-  const seen = new Set();
-  for (const h of state.siloHistorial || []) {
-    if (!isValidSiloId(h.siloId)) continue;
-    const codigos = Array.isArray(h.comunes) ? h.comunes : [];
-    for (const codigo of codigos) {
-      const key = `${normalizarCodigoAnalisis(codigo)}|${h.fecha}|${h.siloId}|infodia`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const a = acp.get(normalizarCodigoAnalisis(codigo)) || {};
-      rows.push({
-        id: key,
-        codigo: codigo,
-        fecha: a.fecha || h.fecha || "",
-        siloId: h.siloId,
-        turno: h.turno || "Dia",
-        masa: Number(h.masaLlenado || h.llenado || h.masa || 0),
-        cu: Number(a.cu ?? h.cu ?? 0),
-        mo: Number(a.mo ?? h.mo ?? 0),
-        s: Number(a.s ?? h.s ?? 0),
-        fuente: "Infodia/ACP",
-      });
-    }
-  }
-  for (const c of state.comunes || []) {
-    const key = `${c.id}|manual`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    rows.push({ ...c, fuente: "Manual" });
-  }
-  return rows
-    .filter(r => isValidSiloId(r.siloId))
-    .sort((a, b) => fechaOrdenMs(b.fecha) - fechaOrdenMs(a.fecha) || String(b.codigo || "").localeCompare(String(a.codigo || "")));
-}
 
 function siloCalculoHTML(siloId) {
   const silo = silosPonderados().find(s => s.id === siloId);
@@ -3665,117 +2597,12 @@ function siloCalculoHTML(siloId) {
     </div>
   </div>`;
 }
+/* v19-clean-safe: definición antigua removida: siloManualModalHTML */
 
-function siloManualModalHTML(siloId) {
-  if (!siloId) return "";
-  return `<div class="modal-backdrop" role="dialog" aria-modal="true">
-    <form class="cloud-modal" id="comunForm">
-      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px">
-        <div>
-          <div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Ajuste manual de silo</div>
-          <h2 style="margin:0;color:var(--txt);font-size:20px">${esc(siloId)}</h2>
-          <p style="margin:8px 0 0;color:var(--txt2);font-size:12px">Usa este ingreso solo para corregir o cargar un comun puntual. La carga normal viene desde Infodia/ACP.</p>
-        </div>
-        <button type="button" class="icon-btn" id="siloManualClose">X</button>
-      </div>
-      <div class="form-grid">
-        ${selectField("siloId","Silo",siloId,state.silosBase.map(s => s.id))}
-        ${selectField("turno","Turno","Dia",["Dia","Noche"])}
-        ${inputField("fecha","Fecha",new Date().toISOString().slice(0, 10),"date")}
-        ${inputField("masa","Masa comun (t)","50","number","50","0.01")}
-        ${inputField("cu","Cu %","","number","0.49","0.001")}
-        ${inputField("mo","Mo %","","number","57.5","0.001")}
-        ${inputField("s","S %","","number","0.08","0.0001")}
-      </div>
-      <button class="btn" style="width:100%;margin-top:12px">GUARDAR COMUN</button>
-    </form>
-  </div>`;
-}
+/* v19-clean-safe: definición antigua removida: silosHTML */
 
-function silosHTML() {
-  const silos = silosPonderados();
-  const comunes = comunesAsignados();
-  return `<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,1fr);gap:14px;align-items:start">
-    <section class="box" style="min-width:0">
-      <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Silos de almacenamiento</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;max-height:640px;overflow:auto;padding-right:4px">${silos.map(s => {
-      const color = s.muestras ? s.color : C.txt3;
-      const source = s.nivelImportado?.fuente === "infodia"
-        ? `${hasAnalysis(s.nivelImportado) ? "Infodia/ACP" : "Infodia nivel"} ${s.nivelImportado.fecha || ""}`
-        : s.muestras ? "Manual" : "Sin datos";
-      return `<div class="card" style="border-top:3px solid ${color}">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="muted-title" style="color:var(--cyan);font-weight:800">${s.id}</div>
-          <span class="tag" style="background:${color}22;color:${color};border-color:${color}44">${s.muestras ? s.clase : "Sin comunes"}</span>
-        </div>
-        <div style="height:118px;width:76px;margin:0 auto 10px;border:1px solid var(--line);background:#2d4a6a33;border-radius:5px;position:relative;overflow:hidden">
-          <div style="position:absolute;left:0;right:0;bottom:0;height:${s.nivel}%;background:linear-gradient(180deg,${color}bb,${color}55)"></div>
-          <div class="mono" style="position:absolute;inset:0;display:grid;place-items:center;font-weight:900">${s.nivel.toFixed(0)}%</div>
-        </div>
-        <div class="mono" style="text-align:center;color:${color};font-weight:900">${s.masa.toFixed(1)} / ${s.cap} t</div>
-        <div style="text-align:center;color:var(--txt3);font-size:9px;margin-top:4px">${source}${s.nivelImportado?.horaInicio ? ` · ${s.nivelImportado.horaInicio}-${s.nivelImportado.horaTermino}` : ""}</div>
-        <div style="text-align:center;color:var(--txt2);font-size:11px;margin-top:3px">Cu: ${s.muestras ? s.cu.toFixed(2) : "-"}% · Mo: ${s.muestras ? s.mo.toFixed(2) : "-"}% · S: ${s.muestras ? s.s.toFixed(3) : "-"}%</div>
-        <div style="display:flex;justify-content:center;gap:6px;margin-top:8px;flex-wrap:wrap">
-          <button class="icon-btn" data-silo-fill="${s.id}">Ajuste manual</button>
-          <button class="icon-btn" data-silo-calc="${s.id}">Ver calculo</button>
-          <button class="icon-btn" data-silo-clear="${s.id}" style="background:#ff456022;color:var(--red);border-color:#ff456044">Vaciar</button>
-        </div>
-      </div>`;
-    }).join("")}</div>
-    </section>
-    <section class="box" style="min-width:0">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px">
-        <div class="muted-title" style="color:var(--cyan)">Comunes de turno actualizados</div>
-        <span style="color:var(--txt3);font-size:10px">${comunes.length} registros</span>
-      </div>
-      <div class="notice" style="margin-bottom:12px;border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light)">Listado trazable de comunes asignados a silos. El mas reciente aparece primero.</div>
-      <div style="max-height:540px;overflow:auto">${comunes.map(c => {
-        const cl = clasificar(c);
-        return `<div class="card" style="padding:10px;margin-bottom:8px;border-left:3px solid ${cl.color}">
-          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
-            <div class="mono" style="color:var(--blue-light);font-weight:900">${esc(c.codigo || c.id)} · ${esc(c.siloId)}</div>
-            <button class="icon-btn" data-silo-calc="${esc(c.siloId)}">Calculo</button>
-          </div>
-          <div style="color:var(--txt2);font-size:10px;margin-top:4px">${esc(c.fecha || "-")} · ${esc(c.turno || "Dia")} · ${fmt(c.masa, 2)} t · ${esc(c.fuente || "")}</div>
-          <div class="mono" style="font-size:10px;color:var(--txt2);margin-top:4px">Cu ${fmt(c.cu, 3)}% · Mo ${fmt(c.mo, 3)}% · S ${fmt(c.s, 4)}%</div>
-          <span class="tag" style="margin-top:6px;background:${cl.color}22;color:${cl.color};border-color:${cl.color}44">${cl.clase}</span>
-        </div>`;
-      }).join("") || `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px 0">Sin comunes trazables registrados.</div>`}</div>
-    </section>
-  </div>
-  ${siloManualModalHTML(state.siloManualOpen)}
-  ${state.siloCalcOpen ? siloCalculoHTML(state.siloCalcOpen) : ""}`;
-}
+/* v19-clean-safe: definición antigua removida: bindSilos */
 
-function bindSilos() {
-  document.querySelectorAll("[data-silo-fill]").forEach(btn => btn.addEventListener("click", () => {
-    state.siloManualOpen = btn.dataset.siloFill;
-    render();
-  }));
-  document.querySelectorAll("[data-silo-calc]").forEach(btn => btn.addEventListener("click", () => {
-    state.siloCalcOpen = btn.dataset.siloCalc;
-    render();
-  }));
-  document.querySelectorAll("[data-silo-clear]").forEach(btn => btn.addEventListener("click", () => {
-    const siloId = btn.dataset.siloClear;
-    if (!confirm(`¿Vaciar comunes manuales de ${siloId}?`)) return;
-    state.comunes = state.comunes.filter(c => c.siloId !== siloId);
-    save("oxmo:comunes", state.comunes);
-    addHist("Silo vaciado", siloId, "Comunes manuales eliminados", C.red);
-    render();
-  }));
-  document.querySelector("#siloManualClose")?.addEventListener("click", () => { state.siloManualOpen = ""; render(); });
-  document.querySelector("#siloCalcClose")?.addEventListener("click", () => { state.siloCalcOpen = ""; render(); });
-  const form = document.querySelector("#comunForm");
-  form?.addEventListener("submit", e => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(form).entries());
-    if (guardarComunManual(data, "manual-silos")) {
-      state.siloManualOpen = "";
-      render();
-    }
-  });
-}
 
 function codigoClaveAnalisis(codigo) {
   const norm = normalizarCodigoAnalisis(codigo);
@@ -3972,123 +2799,12 @@ function bindInventario() {
     printLabels();
   }));
 }
+/* v19-clean-safe: definición antigua removida: evaluarMezclaObjetivo */
 
-function evaluarMezclaObjetivo(items, objetivo, firmas, opciones) {
-  if (!items.length || items.some(x => x.kg <= 0)) return;
-  const totalKg = items.reduce((a, x) => a + x.kg, 0);
-  if (totalKg <= 0 || totalKg > 40000) return;
-  if (items.some(x => x.kg > x.lote.masa + 0.001)) return;
-  const firma = items
-    .map(x => `${x.lote.id}:${Math.round(x.kg)}`)
-    .sort()
-    .join("|");
-  if (firmas.has(firma)) return;
-  firmas.add(firma);
+/* v19-clean-safe: definición antigua removida: buscarMejoresMezclas2 */
 
-  const mix = mezclaDe(items);
-  const diffKg = Math.abs(totalKg - objetivo.masa);
-  const cuDiff = Math.abs(mix.cu - objetivo.cu);
-  const moShort = Math.max(0, objetivo.mo - mix.mo);
-  const sOver = Math.max(0, mix.s - objetivo.s);
-  const moDiff = Math.abs(mix.mo - objetivo.mo);
-  const sDiff = Math.abs(mix.s - objetivo.s);
-  const fueraKg = items.filter(x => clasificar(x.lote).clase === "Fuera Esp").reduce((a, x) => a + x.kg, 0);
-  const exacta = diffKg < 0.001;
-  const cumpleObjetivo = exacta && cuDiff <= 0.035 && moShort <= 0 && sOver <= 0;
-  const chemPenalty = (cuDiff * 60000) + (moShort * 7000) + (sOver * 120000) + (moDiff * 55) + (sDiff * 1200);
-  const massPenalty = (diffKg / 1000) * 180;
-  const classPenalty = cumpleObjetivo ? 0 : 220;
-  const score = chemPenalty + massPenalty + classPenalty - (fueraKg / 1000) * 8;
-  mix.ok = cumpleObjetivo;
-  opciones.push({ items, mix, score, chemPenalty, diffKg, fueraKg, exacta, cumpleObjetivo, cuDiff, moShort, sOver });
-}
+/* v19-clean-safe: definición antigua removida: mezclaOpcionHTML */
 
-function buscarMejoresMezclas2() {
-  const objetivo = objetivoMezcla();
-  const selectedPool = state.lotes
-    .filter(l => hasAnalysis(l) && l.estado !== "Pendiente" && Number(l.masa || 0) >= 1000)
-    .filter(l => state.mix.sector === "Todos" || l.sector === state.mix.sector);
-  const relevancia = l => {
-    const c = clasificar(l);
-    return Math.abs(Number(l.cu || 0) - objetivo.cu) * 900
-      + Math.max(0, objetivo.mo - Number(l.mo || 0)) * 65
-      + Math.max(0, Number(l.s || 0) - objetivo.s) * 1600
-      - (c.clase === "Fuera Esp" ? 8 : 0);
-  };
-  const selectedIds = new Set(state.mix.sel || []);
-  const selected = selectedPool.filter(l => selectedIds.has(l.id));
-  const basePool = selected.length ? selected : selectedPool;
-  const pool = [...basePool].sort((a, b) => relevancia(a) - relevancia(b)).slice(0, 22);
-  const opciones = [];
-  const firmas = new Set();
-  const masasObjetivo = [objetivo.masa];
-  for (let delta = 1000; delta <= 5000; delta += 1000) {
-    if (objetivo.masa - delta >= 1000) masasObjetivo.push(objetivo.masa - delta);
-    if (objetivo.masa + delta <= 40000) masasObjetivo.push(objetivo.masa + delta);
-  }
-
-  for (const targetKg of masasObjetivo) {
-    for (let i = 0; i < pool.length; i++) {
-      evaluarMezclaObjetivo([{ lote: pool[i], kg: Math.min(targetKg, pool[i].masa) }], objetivo, firmas, opciones);
-    }
-    for (let i = 0; i < pool.length; i++) {
-      for (let j = i + 1; j < pool.length; j++) {
-        for (let kgA = 1000; kgA < targetKg; kgA += 1000) {
-          evaluarMezclaObjetivo([{ lote: pool[i], kg: kgA }, { lote: pool[j], kg: targetKg - kgA }], objetivo, firmas, opciones);
-        }
-      }
-    }
-    for (let i = 0; i < pool.length; i++) {
-      for (let j = i + 1; j < pool.length; j++) {
-        for (let k = j + 1; k < pool.length; k++) {
-          for (let kgA = 1000; kgA < targetKg - 1000; kgA += 1000) {
-            for (let kgB = 1000; kgB < targetKg - kgA; kgB += 1000) {
-              evaluarMezclaObjetivo([
-                { lote: pool[i], kg: kgA },
-                { lote: pool[j], kg: kgB },
-                { lote: pool[k], kg: targetKg - kgA - kgB },
-              ], objetivo, firmas, opciones);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  const exactas = opciones.filter(o => o.exacta);
-  const base = exactas.length ? exactas : opciones;
-  const minCu = base.reduce((m, o) => Math.min(m, o.cuDiff), Infinity);
-  const enfocadas = base.filter(o => o.cuDiff <= Math.max(minCu + 0.04, 0.08));
-  return enfocadas
-    .sort((a, b) =>
-      a.cuDiff - b.cuDiff ||
-      a.moShort - b.moShort ||
-      a.sOver - b.sOver ||
-      a.diffKg - b.diffKg ||
-      a.chemPenalty - b.chemPenalty ||
-      b.fueraKg - a.fueraKg
-    )
-    .slice(0, 10);
-}
-
-function mezclaOpcionHTML(op, idx) {
-  const color = C.green;
-  const estado = op.cumpleObjetivo ? "CUMPLE" : (op.exacta ? "MAS CERCANA" : `APROX. ${(op.diffKg / 1000).toFixed(1)} t`);
-  const masaInfo = op.exacta
-    ? `Masa exacta: ${(op.mix.masaKg / 1000).toFixed(2)} t`
-    : `Masa aproximada: ${(op.mix.masaKg / 1000).toFixed(2)} t - diferencia ${(op.diffKg / 1000).toFixed(2)} t`;
-  return `<div class="card" style="border-left:4px solid ${color};margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div>
-        <b style="color:${color}">Opcion ${idx + 1} - ${op.mix.clase}</b>
-        <div style="color:var(--txt2);font-size:10px">${masaInfo}</div>
-        <div style="color:var(--txt2);font-size:10px">Diferencia Cu: ${op.cuDiff.toFixed(3)} · Fuera de especificacion usado: ${(op.fueraKg / 1000).toFixed(2)} t</div>
-      </div>
-      <div class="mono" style="font-weight:900;color:${op.cumpleObjetivo ? C.green : C.yellow}">${estado}</div>
-    </div>
-    ${mezclaDetalleHTML(op)}
-  </div>`;
-}
 
 function claveComun(c) {
   return `${normalizarCodigoAnalisis(c.codigo || c.id)}|${c.fecha || ""}|${c.siloId || ""}`;
@@ -4290,94 +3006,16 @@ function bindSilos() {
     }
   });
 }
+/* v19-clean-safe: definición antigua removida: etiquetaFit */
 
-// --- Ajustes finales 2026-06-14: etiquetas autoajustables, Infodia persistente y matriz de mezclas ---
-function etiquetaFit(id) {
-  const len = String(id || "").length;
-  if (len > 28) return { idPt: 12, idMaxMm: 15, qrMm: 25 };
-  if (len > 22) return { idPt: 14, idMaxMm: 17, qrMm: 27 };
-  if (len > 16) return { idPt: 17, idMaxMm: 19, qrMm: 29 };
-  return { idPt: 23, idMaxMm: 22, qrMm: 32 };
-}
+/* v19-clean-safe: definición antigua removida: etiquetaCSS */
 
-function etiquetaCSS(publicMode = false) {
-  return `<style>
-    @page{size:100mm 150mm;margin:0}
-    *{box-sizing:border-box}
-    body{margin:0;background:${publicMode ? "#f4f6f8" : "#eee"};font-family:Arial,Helvetica,sans-serif;color:#111}
-    .no-print{position:fixed;right:12px;top:12px;z-index:5}.no-print button{font-weight:900;font-size:13px;padding:8px 12px}
-    .public-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:10px}
-    .label-page{width:100mm;height:150mm;page-break-after:always;display:flex;align-items:center;justify-content:center;padding:3.5mm;background:#fff}
-    .label{width:92mm;height:142mm;border:1.2mm solid #111;border-radius:3mm;padding:5mm;display:flex;flex-direction:column;overflow:hidden;background:#fff}
-    .top{display:grid;grid-template-columns:39mm 1fr;gap:3mm;align-items:start;border-bottom:.45mm solid #111;padding-bottom:3mm;flex:0 0 auto}
-    .logo{width:36mm;max-height:20mm;object-fit:contain;object-position:left center}
-    .brand{text-align:right}.brand b{font-size:11pt;letter-spacing:2.2pt}.brand small{display:block;font-size:7pt;margin-top:1.5mm}
-    .lot-id{font-family:Consolas,'Courier New',monospace;font-weight:900;line-height:1.05;text-align:center;letter-spacing:.5pt;overflow-wrap:anywhere;word-break:break-word;display:flex;align-items:center;justify-content:center;margin:3mm 0 2.3mm;flex:0 0 auto}
-    .class-box{border:.45mm solid var(--accent);color:var(--accent);font-weight:900;text-align:center;border-radius:2mm;font-size:16pt;letter-spacing:.7pt;padding:2.2mm 1mm;margin-bottom:2.7mm;flex:0 0 auto}
-    .chem{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2mm;margin-bottom:2.8mm;flex:0 0 auto}
-    .cell{border:.35mm solid #222;border-radius:1.4mm;text-align:center;padding:1.8mm 1mm}.cell small{font-size:6.5pt;font-weight:800;display:block}.cell b{font-family:Consolas,'Courier New',monospace;font-size:13.5pt}
-    .mass{border:.35mm solid #222;border-radius:1.4mm;text-align:center;padding:2mm 1mm;margin-bottom:1.2mm;flex:0 0 auto}.mass small{font-size:6.5pt;font-weight:800;display:block}.mass b{font-size:12pt}
-    .qr{display:block;margin:0 auto 1mm;object-fit:contain;flex:0 0 auto}
-    .foot{border-top:.35mm solid #111;text-align:center;font-size:6pt;padding-top:1mm;white-space:nowrap;flex:0 0 auto}
-    @media print{body{background:#fff}.no-print{display:none}.label-page{padding:0;margin:0;width:100mm;height:150mm}}
-  </style>`;
-}
+/* v19-clean-safe: definición antigua removida: etiquetaLabelHTML */
 
-function etiquetaLabelHTML(data, qrUrl) {
-  const fit = etiquetaFit(data.id);
-  const accent = data.color || clasificar({ cu: parseNum(data.cu), mo: parseNum(data.mo), s: parseNum(data.s) }).color || "#c87333";
-  const qr = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(qrUrl)}&qzone=1`;
-  return `<section class="label-page">
-    <div class="label" style="--accent:${accent}">
-      <div class="top">
-        <img class="logo" src="./molyb-logo.webp" alt="Molyb">
-        <div class="brand"><b>OXMO CONTROL</b><small>${esc(data.fecha || hoy())}</small></div>
-      </div>
-      <div class="lot-id" style="font-size:${fit.idPt}pt;max-height:${fit.idMaxMm}mm">${esc(data.id || "SIN ID")}</div>
-      <div class="class-box">${esc(String(data.mat || "SIN CLASIFICAR").toUpperCase())}</div>
-      <div class="chem">
-        <div class="cell"><small>CU</small><b>${esc(data.cu || "-")}%</b></div>
-        <div class="cell"><small>MO</small><b>${esc(data.mo || "-")}%</b></div>
-        <div class="cell"><small>S</small><b>${esc(data.s || "-")}%</b></div>
-      </div>
-      <div class="mass"><small>MASA</small><b>${esc(data.masa || "-")}</b></div>
-      <img class="qr" style="width:${fit.qrMm}mm;height:${fit.qrMm}mm" src="${qr}" alt="QR ${esc(data.id)}">
-      <div class="foot">Zebra ZT230 - Etiqueta 100 x 150 mm - 300 dpi</div>
-    </div>
-  </section>`;
-}
+/* v19-clean-safe: definición antigua removida: etiquetaPublicaHTML */
 
-function etiquetaPublicaHTML(data) {
-  if (!data || !data.id) return `<style>body{font-family:Arial;background:#f4f6f8;padding:30px}</style><h1>Etiqueta no encontrada</h1><p>El QR no trae datos suficientes para reconstruir la etiqueta.</p>`;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Etiqueta ${esc(data.id)}</title>${etiquetaCSS(true)}</head><body><div class="public-wrap">${etiquetaLabelHTML(data, location.href)}</div></body></html>`;
-}
+/* v19-clean-safe: definición antigua removida: printLabels */
 
-function printLabels() {
-  const ids = state.etiquetaSel || [];
-  if (!ids.length) return;
-  const items = ids.map(id => {
-    const l = state.lotes.find(x => x.id === id);
-    if (!l) return "";
-    const c = clasificar(l);
-    const data = {
-      id: l.id,
-      mat: c.clase,
-      color: c.color,
-      masa: kgToTon(l.masa, 2),
-      cu: l.cu ? fmt(l.cu, 3).replace(/\.?0+$/, "") : "-",
-      mo: l.mo ? fmt(l.mo, 3).replace(/\.?0+$/, "") : "-",
-      s: l.s ? fmt(l.s, 4).replace(/\.?0+$/, "") : "-",
-      fecha: l.fecha || hoy(),
-    };
-    const labelParams = new URLSearchParams(data);
-    const qrUrl = `${PUBLIC_APP_URL}etiqueta.html?${labelParams.toString()}`;
-    return etiquetaLabelHTML(data, qrUrl);
-  }).join("");
-  const w = window.open("", "_blank");
-  if (!w) { alert("Permite ventanas emergentes para abrir la vista previa de etiquetas."); return; }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas OXMO</title>${etiquetaCSS()}</head><body><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div>${items}</body></html>`);
-  w.document.close();
-}
 
 function mezclaScoreEstado(st, objetivo) {
   if (!st.sacks) return Infinity;
@@ -4909,36 +3547,10 @@ function bindAdmin() {
     render();
   }));
 }
+/* v19-clean-safe: definición antigua removida: etiquetaFit */
 
-function etiquetaFit(id) {
-  const len = String(id || "").length;
-  if (len > 28) return { idPt: 14, idMaxMm: 12, qrMm: 25 };
-  if (len > 22) return { idPt: 16, idMaxMm: 13, qrMm: 27 };
-  if (len > 16) return { idPt: 18, idMaxMm: 14, qrMm: 28 };
-  return { idPt: 22, idMaxMm: 15, qrMm: 31 };
-}
+/* v19-clean-safe: definición antigua removida: etiquetaCSS */
 
-function etiquetaCSS(publicMode = false) {
-  return `<style>
-    @page{size:100mm 150mm;margin:0}
-    *{box-sizing:border-box}
-    body{margin:0;background:${publicMode ? "#fff" : "#eee"};font-family:Arial,Helvetica,sans-serif;color:#000}
-    .toolbar{position:fixed;right:8mm;top:6mm;z-index:10}.toolbar button{font-weight:900;font-size:14px;padding:8px 14px;border:2px solid #111;background:#fff;cursor:pointer}
-    .sheet{width:100mm;height:150mm;padding:2mm;margin:${publicMode ? "0" : "10mm auto"};background:#fff;page-break-after:always}
-    .label{width:96mm;height:146mm;border:1.2mm solid #111;border-radius:3mm;padding:3.4mm 5mm 2.4mm;display:flex;flex-direction:column;overflow:hidden}
-    .top{display:flex;justify-content:space-between;align-items:flex-start;gap:4mm}
-    .logo{width:38mm;max-height:14mm;object-fit:contain;object-position:left center}
-    .brand{text-align:right;font-weight:900;letter-spacing:2px;font-size:14px;line-height:1.15}.date{font-size:8px;font-weight:400;letter-spacing:0;margin-top:2mm}
-    .line{border-top:0.45mm solid #111;margin:3mm 0 2.2mm}
-    .lot{text-align:center;font-family:Consolas,monospace;font-weight:900;line-height:1;margin:1mm auto 1.8mm;max-width:84mm;overflow-wrap:anywhere;word-break:break-word}
-    .class{border:0.45mm solid var(--accent);color:var(--accent);border-radius:1.8mm;text-align:center;font-weight:900;font-size:22px;letter-spacing:1px;padding:1.4mm;margin-bottom:2.4mm}
-    .chem{display:grid;grid-template-columns:repeat(3,1fr);gap:1.7mm;margin-bottom:2.3mm}.cell{border:0.35mm solid #111;border-radius:1.4mm;text-align:center;padding:1.2mm .8mm}.k{font-size:8px;font-weight:900}.v{font-family:Consolas,monospace;font-size:16px;font-weight:900;margin-top:.6mm}
-    .mass{border:0.35mm solid #111;border-radius:1.4mm;text-align:center;padding:1.3mm;margin-bottom:1.2mm}.mass .v{font-size:15px;margin-top:.5mm}
-    .qr{display:block;margin:0 auto 1mm;width:var(--qr);height:var(--qr);image-rendering:pixelated;flex-shrink:0}
-    .foot{border-top:0.35mm solid #111;text-align:center;font-size:6px;padding-top:.7mm;margin-top:0}
-    @media print{body{background:#fff}.toolbar{display:none}.sheet{margin:0;box-shadow:none}}
-  </style>`;
-}
 
 const renderBaseFinal = render;
 render = function() {
@@ -4946,8 +3558,6 @@ render = function() {
   aplicarMayusculasFinal(document);
   bindSelfPasswordFinal();
 };
-
-
 
 /* =========================================================
    MEJORA USUARIOS / PERFIL - v20260626
@@ -5090,36 +3700,20 @@ function usuarioContactoResumen(u) {
   const partes = [u.cargo, u.area, u.turno, u.telefono].filter(Boolean);
   return partes.length ? esc(partes.join(" · ")) : '<span style="color:var(--txt3)">Sin datos</span>';
 }
+/* v19-clean-safe: definición antigua removida: areaTrabajoDefault */
 
-/* Área / célula de trabajo: base para centros independientes y totalizado gerencial */
-function areaTrabajoDefault() { return "General"; }
-function areaTrabajoUsuario(user = state.user) {
-  return String(user?.area || user?.areaCelula || "").trim() || areaTrabajoDefault();
-}
-function areaTrabajoCatalogo() {
-  const areas = [areaTrabajoDefault(), ...(state.usuarios || []).map(u => normalizarUsuario(u).area).filter(Boolean)];
-  return [...new Set(areas)].sort((a, b) => a.localeCompare(b, "es"));
-}
-function areaTrabajoOptionsHTML(selected = "") {
-  const sel = String(selected || "").trim() || areaTrabajoDefault();
-  const options = areaTrabajoCatalogo();
-  if (sel && !options.includes(sel)) options.push(sel);
-  return options.map(a => `<option value="${esc(a)}" ${a === sel ? "selected" : ""}>${esc(a)}</option>`).join("") + `<option value="__add__">+ Añadir área / célula...</option>`;
-}
-function areaTrabajoEsGlobal(user = state.user) {
-  return isAdmin(user) || isGerente(user);
-}
-function areaTrabajoLote(lote = {}) {
-  const explicit = String(lote.areaCelula || lote.area || "").trim();
-  if (explicit) return explicit;
-  const creador = (state.usuarios || []).map(normalizarUsuario).find(u => u.u === String(lote.createdBy || "").trim().toLowerCase());
-  return areaTrabajoUsuario(creador);
-}
-function lotesPorAreaTrabajo(lotes = state.lotes, user = state.user) {
-  if (areaTrabajoEsGlobal(user)) return lotes || [];
-  const area = areaTrabajoUsuario(user);
-  return (lotes || []).filter(l => areaTrabajoLote(l) === area);
-}
+/* v19-clean-safe: definición antigua removida: areaTrabajoUsuario */
+
+/* v19-clean-safe: definición antigua removida: areaTrabajoCatalogo */
+
+/* v19-clean-safe: definición antigua removida: areaTrabajoOptionsHTML */
+
+/* v19-clean-safe: definición antigua removida: areaTrabajoEsGlobal */
+
+/* v19-clean-safe: definición antigua removida: areaTrabajoLote */
+
+/* v19-clean-safe: definición antigua removida: lotesPorAreaTrabajo */
+
 
 adminUserModalHTML = function() {
   const user = normalizarUsuario(state.usuarios.find(u => u.u === state.adminEditUser));
@@ -5325,8 +3919,6 @@ bindAdmin = function() {
     render();
   }));
 };
-
-
 
 /* =========================================================
    GERENTE_DASHBOARD_V3_20260626
@@ -6378,8 +4970,6 @@ gerenteDashboardData = function() {
   return gerenteDashboardDataAreaV2();
 };
 
-
-
 /* =========================================================
    AREA_CELULA_V9_FIX_20260626
    - Usuarios no globales fuera de Envase: solo Inventario + Mi perfil.
@@ -7170,9 +5760,6 @@ tipoAnalisisACP = function(codigo) {
 
 migrarAreaCelulaV9();
 if (state.infodia?.days?.length && state.infodia?.analisis?.length) recalcularSiloHistorialInfodiaV9();
-
-
-
 
 /* =========================================================
    HOTFIX_V11_20260627

@@ -1,39 +1,25 @@
-# Publicar OXMO Control en una web con tiempo real
+# Publicar OXMO Control v19-clean-safe
 
-## 1. Crear Supabase
-
-1. Entra a https://supabase.com y crea un proyecto.
-2. Abre `SQL Editor`.
-3. Copia y ejecuta el contenido de `supabase.sql`.
-4. Ve a `Project Settings > API`.
-5. Copia:
-   - `Project URL`
-   - `anon public key`
-
-## 2. Configurar la app
-
-1. Abre la app publicada o local.
-2. Inicia sesión.
-3. Arriba, presiona `NUBE: LOCAL`.
-4. Pega la URL de Supabase.
-5. Pega la `anon public key`.
-
-Desde ese momento, lotes, sectores, silos, comunes e historial se sincronizan en tiempo real entre dispositivos.
-
-## 3. Publicar como web
-
-La app es estática. Puedes publicar estos archivos:
+## Archivos mínimos para subir
 
 - `index.html`
 - `styles.css`
 - `app.js`
+- `etiqueta.html`
+- `molyb-logo.webp`
 
-Opciones simples:
+## Recomendado subir también
 
-- Netlify: arrastra la carpeta del proyecto a Netlify Drop.
-- Vercel: crea un proyecto estático desde GitHub.
-- Servidor interno: copia los archivos en una carpeta web.
+- `vercel.json`
+- `supabase.sql`
+- `server.mjs`
+- `molyb-logo.jpg`
 
-## Nota de seguridad
+## Después de publicar
 
-La configuración actual es ideal para demo o piloto interno. Para producción real conviene agregar autenticación Supabase y reglas por rol en la base de datos.
+1. Esperar redeploy en Vercel.
+2. Abrir la app con Ctrl + F5.
+3. Iniciar sesión como administrador.
+4. Probar: Inventario, Lotes OXMO/BQA, Subir Infodia, Reportes, Mezclas y Etiquetas.
+
+Esta versión mantiene la lógica sensible de v18 y limpia definiciones antiguas duplicadas sin reescribir cálculos de mezcla, ACP, Infodia, silos o nube.
