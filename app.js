@@ -6768,3 +6768,597 @@ render = function() {
 };
 
 try { render(); } catch (e) { console.warn("render v18", e); }
+
+
+/* =========================================================
+   HOTFIX_V21_CLAVES_PERFIL_20260627
+   - Elimina el boton superior MI CLAVE.
+   - Mueve cambio de clave propia a la pestaña Mi perfil.
+   - Admin ve y cambia contraseña desde editor de usuario con confirmacion.
+   ========================================================= */
+function quitarBotonClaveSuperiorV21() {
+  document.querySelectorAll('[data-self-pass-open]').forEach(btn => btn.remove());
+  document.querySelectorAll('[data-self-pass-modal]').forEach(modal => modal.remove());
+  state.selfPassOpen = false;
+}
+
+insertarBotonClavePropiaFinal = function() {
+  quitarBotonClaveSuperiorV21();
+};
+
+passwordUsuarioModalHTML = function() {
+  return "";
+};
+
+bindSelfPasswordFinal = function() {
+  quitarBotonClaveSuperiorV21();
+};
+
+perfilUsuarioHTML = function() {
+  const u = normalizarUsuario(state.usuarios.find(x => x.u === state.user?.u) || state.user || {});
+  return `
+    <div class="box">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px">
+        <div>
+          <div class="section-title">Mi perfil</div>
+          <div style="font-size:20px;font-weight:900;color:var(--txt)">${esc(u.nombre)}</div>
+          <div style="color:var(--txt2);font-size:12px;margin-top:6px">Completa tus datos de contacto y administra tu clave de acceso desde esta pestaña.</div>
+        </div>
+        <span class="tag" style="color:${C.cyan};background:#00d4ff22;border-color:#00d4ff55">${esc(u.rol)}</span>
+      </div>
+      <form id="perfilUsuarioForm" class="profile-form">
+        <div class="profile-grid">
+          <div class="field"><label>Usuario</label><input class="input" readonly value="${esc(u.u)}"></div>
+          <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" name="nombre" value="${esc(u.nombre)}"></div>
+          <div class="field"><label>Cargo</label><input class="input" data-keep-case="true" name="cargo" value="${valorPerfil(u, "cargo")}" placeholder="Ej: OPERADOR ENVASE"></div>
+          <div class="field"><label>Área</label><input class="input" data-keep-case="true" name="area" value="${valorPerfil(u, "area")}" placeholder="Ej: ENVASE Y LOGÍSTICA"></div>
+          <div class="field"><label>Turno</label><input class="input" data-keep-case="true" name="turno" value="${valorPerfil(u, "turno")}" placeholder="Ej: TURNO A / 7x7"></div>
+          <div class="field"><label>Teléfono personal</label><input class="input" data-keep-case="true" name="telefono" value="${valorPerfil(u, "telefono")}" placeholder="+56 9 ...."></div>
+          <div class="field"><label>Correo</label><input class="input" data-keep-case="true" type="email" name="correo" value="${valorPerfil(u, "correo")}" placeholder="correo@empresa.cl"></div>
+          <div class="field"><label>Dirección</label><input class="input" data-keep-case="true" name="direccion" value="${valorPerfil(u, "direccion")}" placeholder="Dirección de contacto"></div>
+        </div>
+
+        <div class="card" style="margin-top:14px;border-top:2px solid ${C.blueLight}">
+          <div class="section-title" style="margin-bottom:10px;color:${C.blueLight}">Clave de acceso</div>
+          <div class="alert info" style="margin-bottom:12px">El botón superior “Mi clave” fue eliminado. Desde ahora, el cambio de contraseña se realiza solo aquí, en Mi perfil.</div>
+          <div class="profile-grid">
+            <div class="field"><label>Contraseña actual visible</label><input class="input mono" data-keep-case="true" type="text" readonly value="${esc(u.p || "")}" autocomplete="off"></div>
+            <div class="field"><label>Nueva contraseña</label><input class="input" data-keep-case="true" data-profile-pass-new type="text" value="" placeholder="Dejar en blanco para mantener" autocomplete="off"></div>
+            <div class="field"><label>Repetir nueva contraseña</label><input class="input" data-keep-case="true" data-profile-pass-repeat type="text" value="" placeholder="Repetir solo si cambiarás la clave" autocomplete="off"></div>
+            <div class="field"><label>Estado</label><input class="input" readonly value="${u.activo !== false ? "Activo" : "Deshabilitado"}"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="section-title" style="margin-bottom:10px;color:${C.red}">Contacto de emergencia</div>
+          <div class="profile-grid">
+            <div class="field"><label>Nombre contacto</label><input class="input" data-keep-case="true" name="contactoEmergenciaNombre" value="${valorPerfil(u, "contactoEmergenciaNombre")}" placeholder="Nombre y apellido"></div>
+            <div class="field"><label>Relación</label><input class="input" data-keep-case="true" name="contactoEmergenciaRelacion" value="${valorPerfil(u, "contactoEmergenciaRelacion")}" placeholder="Ej: MADRE / PAREJA / HERMANO"></div>
+            <div class="field"><label>Teléfono emergencia</label><input class="input" data-keep-case="true" name="contactoEmergenciaTelefono" value="${valorPerfil(u, "contactoEmergenciaTelefono")}" placeholder="+56 9 ...."></div>
+            <div class="field"><label>Observaciones</label><textarea class="input" data-keep-case="true" name="observacionesContacto" rows="3" placeholder="Alergias, restricciones o notas relevantes">${valorPerfil(u, "observacionesContacto")}</textarea></div>
+          </div>
+        </div>
+        <button class="btn primary" style="width:100%;margin-top:14px">Guardar mi perfil</button>
+      </form>
+    </div>
+  `;
+};
+
+bindPerfilUsuario = function() {
+  quitarBotonClaveSuperiorV21();
+  const form = document.querySelector("#perfilUsuarioForm");
+  if (!form) return;
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form).entries());
+    const newPass = document.querySelector("[data-profile-pass-new]")?.value || "";
+    const repeat = document.querySelector("[data-profile-pass-repeat]")?.value || "";
+    const patch = { ...data };
+    if (newPass || repeat) {
+      if (!newPass || newPass !== repeat) return alert("La nueva contraseña debe coincidir en ambos campos.");
+      if (!confirm("¿Confirmas cambiar tu contraseña?")) return;
+      patch.p = newPass;
+    }
+    const next = actualizarUsuarioPorKey(state.user.u, patch);
+    if (!next) return alert("No se pudo actualizar el perfil.");
+    addHist(newPass ? "Perfil y contraseña actualizados" : "Perfil actualizado", next.u, newPass ? "Cambio realizado desde Mi perfil" : "Datos de contacto actualizados", C.cyan);
+    alert(newPass ? "Perfil y contraseña guardados correctamente." : "Perfil guardado correctamente.");
+    render();
+  });
+};
+
+adminUserModalHTML = function() {
+  const user = normalizarUsuario(state.usuarios.find(u => u.u === state.adminEditUser));
+  if (!user?.u) return "";
+  const stat = state.userStats[user.u] || {};
+  const roles = ROLES_USUARIO.map(r => `<option ${user.rol === r ? "selected" : ""}>${esc(r)}</option>`).join("");
+  return `<div class="modal-backdrop" data-admin-user-modal>
+    <div class="modal-card user-modal-card area-user-modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px">
+        <div>
+          <div class="section-title">Editar usuario</div>
+          <h2 style="margin:4px 0 0">${esc(user.nombre)}</h2>
+          <div style="color:var(--txt2);font-size:12px;margin-top:4px">Administra cuenta, rol, área/célula, datos personales y contraseña visible. Todo cambio crítico solicita confirmación antes de guardar.</div>
+        </div>
+        <button class="btn ghost" data-admin-edit-close>Cerrar</button>
+      </div>
+
+      <div class="area-modal-banner">
+        <div>
+          <div class="area-modal-title">Área asignada</div>
+          <div class="area-modal-text">Define qué inventario puede ver el usuario.</div>
+        </div>
+        ${areaBadgeHTML(user.area)}
+      </div>
+
+      <div class="profile-grid">
+        <div class="field"><label>Usuario</label><input class="input" data-keep-case="true" data-admin-edit-u value="${esc(user.u)}" ${user.u === "admin" ? "readonly" : ""}></div>
+        <div class="field"><label>Nombre visible</label><input class="input" data-keep-case="true" data-admin-edit-nombre value="${esc(user.nombre)}"></div>
+        <div class="field"><label>Contraseña visible / cambiar</label><input class="input mono" data-keep-case="true" data-admin-edit-pass type="text" value="${esc(user.p || "")}" autocomplete="off" spellcheck="false"></div>
+        <div class="field"><label>Rol</label><select class="input" data-admin-edit-rol>${roles}</select></div>
+        <div class="field"><label>Estado</label><select class="input" data-admin-edit-activo ${user.u === "admin" ? "disabled" : ""}><option value="true" ${user.activo !== false ? "selected" : ""}>Activo</option><option value="false" ${user.activo === false ? "selected" : ""}>Deshabilitado</option></select></div>
+        <div class="field"><label>Creado</label><input class="input" readonly value="${esc(user.creado || "-")}"></div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title" style="margin-bottom:10px">Datos laborales y contacto</div>
+        <div class="profile-grid">
+          <div class="field"><label>Cargo</label><input class="input" data-keep-case="true" data-admin-edit-cargo value="${valorPerfil(user, "cargo")}"></div>
+          <div class="field"><label>Área / célula</label>${renderAreaSelectHTML({ value: user.area, dataAttr: "data-admin-edit-area", includeAdd: true })}</div>
+          <div class="field" data-admin-edit-area-add-wrap style="display:none"><label>Nueva área / célula</label><input class="input" data-keep-case="true" data-admin-edit-area-add placeholder="Ej: Envase B, Logística, Centro Norte"></div>
+          <div class="field"><label>Turno</label><input class="input" data-keep-case="true" data-admin-edit-turno value="${valorPerfil(user, "turno")}"></div>
+          <div class="field"><label>Teléfono</label><input class="input" data-keep-case="true" data-admin-edit-telefono value="${valorPerfil(user, "telefono")}"></div>
+          <div class="field"><label>Correo</label><input class="input" data-keep-case="true" data-admin-edit-correo value="${valorPerfil(user, "correo")}"></div>
+          <div class="field"><label>Dirección</label><input class="input" data-keep-case="true" data-admin-edit-direccion value="${valorPerfil(user, "direccion")}"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="section-title" style="margin-bottom:10px;color:${C.red}">Emergencia</div>
+        <div class="profile-grid">
+          <div class="field"><label>Contacto emergencia</label><input class="input" data-keep-case="true" data-admin-edit-emerg-nombre value="${valorPerfil(user, "contactoEmergenciaNombre")}"></div>
+          <div class="field"><label>Relación</label><input class="input" data-keep-case="true" data-admin-edit-emerg-relacion value="${valorPerfil(user, "contactoEmergenciaRelacion")}"></div>
+          <div class="field"><label>Teléfono emergencia</label><input class="input" data-keep-case="true" data-admin-edit-emerg-telefono value="${valorPerfil(user, "contactoEmergenciaTelefono")}"></div>
+          <div class="field"><label>Observaciones</label><textarea class="input" data-keep-case="true" data-admin-edit-observaciones rows="3">${valorPerfil(user, "observacionesContacto")}</textarea></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;color:var(--txt2);font-size:12px;margin-top:8px">
+          <div>Último uso: <b>${esc(stat.lastSeen || "-")}</b></div>
+          <div>Tiempo de uso: <b>${esc(formatDuration(tiempoUsuarioMs(user.u)))}</b></div>
+        </div>
+      </div>
+      <button class="btn primary" data-admin-edit-save style="width:100%;margin-top:12px">Guardar cambios</button>
+    </div>
+  </div>`;
+};
+
+const renderV21Base = render;
+render = function() {
+  const result = renderV21Base();
+  quitarBotonClaveSuperiorV21();
+  return result;
+};
+
+try { render(); } catch (e) { console.warn("render v21 claves", e); }
+
+
+/* =========================================================
+   HOTFIX_V22_OPERACION_20260627
+   - Etiquetas: texto QR Molibdeno para el mundo Molyb.
+   - Infodia visible solo para Encargado/Admin.
+   - Lotes OXMO optimizado con límite de render.
+   - Mensaje de Infodia actualizado con fecha/hora/archivo.
+   - Mezclas filtradas por área asignada.
+   - Silos recalculados desde el último Infodia cargado, sin arrastrar pantallas previas.
+   - Nuevo lote habilitado para Supervisor/usuarios operativos.
+   ========================================================= */
+
+function normalizarTextoV22(v) {
+  return String(v || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+try {
+  if (Array.isArray(ROLES_USUARIO) && !ROLES_USUARIO.includes("Encargado")) ROLES_USUARIO.splice(Math.max(0, ROLES_USUARIO.length - 1), 0, "Encargado");
+} catch (e) { console.warn("roles v22", e); }
+
+function esEncargadoInfodiaV22(user = state.user) {
+  if (!user) return false;
+  const rol = normalizarTextoV22(user.rol);
+  const cargo = normalizarTextoV22(user.cargo);
+  return rol.includes("encargado") || cargo.includes("encargado");
+}
+
+function puedeSubirInfodiaV22(user = state.user) {
+  // El Admin queda como respaldo técnico para no bloquear la administración del sistema.
+  return !!user && (isAdmin(user) || esEncargadoInfodiaV22(user));
+}
+
+const canViewTabV22Base = canViewTab;
+canViewTab = function(id, user = state.user) {
+  if (!user) return false;
+  if (id === "infodia") return puedeSubirInfodiaV22(user);
+  if (id === "registro") return !isGerente(user);
+  return canViewTabV22Base(id, user);
+};
+
+const visibleTabsV22Base = visibleTabs;
+visibleTabs = function() {
+  const tabs = visibleTabsV22Base().filter(([id]) => id !== "infodia");
+  return tabs;
+};
+
+function quitarBotonClaveSuperiorV22() {
+  try {
+    document.querySelectorAll('[data-self-pass-open], [data-self-pass-modal]').forEach(el => el.remove());
+    document.querySelectorAll('button').forEach(btn => {
+      const txt = String(btn.textContent || "").trim().toUpperCase();
+      if (txt === "MI CLAVE") btn.remove();
+    });
+    state.selfPassOpen = false;
+  } catch {}
+}
+
+quitarBotonClaveSuperiorV21 = quitarBotonClaveSuperiorV22;
+insertarBotonClavePropiaFinal = function() { quitarBotonClaveSuperiorV22(); };
+bindSelfPasswordFinal = function() { quitarBotonClaveSuperiorV22(); };
+passwordUsuarioModalHTML = function() { return ""; };
+
+etiquetaLabelHTML = function(data, qrUrl) {
+  const fit = etiquetaFit(data.id);
+  const accent = data.color || "#C87533";
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=620x620&margin=1&data=${encodeURIComponent(qrUrl)}`;
+  return `<section class="label-page">
+    <div class="label" style="--accent:${esc(accent)};--qr-size:${fit.qrMm}mm">
+      <div class="label-top">
+        <img class="label-logo" src="./molyb-logo.webp" alt="Molyb">
+        <div class="label-brand">
+          <div class="label-brand-title"><span>OXMO</span><span>CONTROL</span></div>
+          <div class="label-date">${esc(data.fecha || hoy())}</div>
+        </div>
+      </div>
+      <div class="label-id" style="font-size:${fit.idPt}pt">${esc(data.id || "SIN ID")}</div>
+      <div class="label-class">${esc(String(data.mat || "SIN CLASIFICAR").toUpperCase())}</div>
+      <div class="label-chem">
+        <div class="label-cell"><span class="label-k">CU</span><span class="label-v">${esc(data.cu || "-")}%</span></div>
+        <div class="label-cell"><span class="label-k">MO</span><span class="label-v">${esc(data.mo || "-")}%</span></div>
+        <div class="label-cell"><span class="label-k">S</span><span class="label-v">${esc(data.s || "-")}%</span></div>
+      </div>
+      <div class="label-mass"><span class="label-k">MASA</span><span class="label-v">${esc(data.masa || "-")}</span></div>
+      <div class="label-qr-area"><img class="label-qr" src="${qrSrc}" alt="QR ${esc(data.id)}"></div>
+      <div class="label-foot">Molibdeno para el mundo Molyb</div>
+    </div>
+  </section>`;
+};
+
+function mensajeInfodiaActualizadoV22(fileName = "") {
+  const now = new Date();
+  const fecha = now.toLocaleDateString("es-CL");
+  const hora = now.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return `Infodia actualizado el ${fecha} a las ${hora}. Archivo: ${fileName || "sin nombre"}`;
+}
+
+const infodiaUploadPillV22Base = typeof infodiaUploadPillV14 === "function" ? infodiaUploadPillV14 : null;
+infodiaUploadPillV14 = function() {
+  return puedeSubirInfodiaV22()
+    ? `<div class="filters infodia-upload-strip" style="margin-bottom:12px"><button class="pill cloud-upload-pill ${state.tab === "infodia" ? "active" : ""}" data-tab="infodia">${iconoCloudUploadV14()} Subir Infodia</button></div>`
+    : "";
+};
+
+const infodiaHTMLV22Base = infodiaHTML;
+infodiaHTML = function() {
+  if (!puedeSubirInfodiaV22()) {
+    return `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">Solo usuarios con cargo o rol Encargado pueden subir Infodia.</div>`;
+  }
+  let html = infodiaHTMLV22Base();
+  const info = state.infodia || {};
+  const msg = state.infodiaMsgV22 || (info.fileName ? `Último Infodia actualizado: ${esc(info.fileName)} · ${esc(info.importedAt || "")}` : "");
+  if (msg) {
+    const card = `<div class="notice" style="border-color:#00e5a055;background:#00e5a022;color:var(--green);margin-bottom:12px">✅ ${esc(msg)}</div>`;
+    html = html.replace('<div class="box">', `<div class="box">${card}`);
+  }
+  return html;
+};
+
+function clampV22(n, min, max) {
+  const x = Number(n || 0);
+  return Math.max(min, Math.min(max, Number.isFinite(x) ? x : 0));
+}
+
+function siloNivelesDesdeInfodiaActualV22(info) {
+  const raw = info || {};
+  const lastLevelBySilo = {};
+  const lastAnalysisBySilo = {};
+  const actualizadoEn = new Date().toISOString();
+  for (const day of [...(raw.days || [])].sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))) {
+    for (const s of day.silos || []) {
+      if (!isValidSiloId(s.id)) continue;
+      const base = (state.silosBase || []).find(x => x.id === s.id) || { cap: 50 };
+      const nivel = clampV22(s.finalNivel, 0, 100);
+      const cap = Number(base.cap || 50);
+      lastLevelBySilo[s.id] = {
+        nivel,
+        masa: Math.min(cap, Math.max(0, Number(s.masa || (nivel * cap / 100)))),
+        fecha: day.fecha,
+        fuente: "infodia",
+        horaInicio: s.horaInicio,
+        horaTermino: s.horaTermino,
+        turno: s.turno,
+        actualizadoEn,
+      };
+    }
+  }
+  for (const h of [...(raw.siloHistorial || [])].sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")))) {
+    if (!isValidSiloId(h.siloId) || !hasAnalysis(h)) continue;
+    lastAnalysisBySilo[h.siloId] = {
+      fecha: h.fecha,
+      cu: Number(h.cu || 0),
+      mo: Number(h.mo || 0),
+      s: Number(h.s || 0),
+      clase: h.clase,
+      movimiento: h.movimiento,
+      comunes: h.comunes || [],
+      horaInicio: h.horaInicio,
+      horaTermino: h.horaTermino,
+      actualizadoEn,
+    };
+  }
+  const merged = {};
+  for (const id of new Set([...Object.keys(lastLevelBySilo), ...Object.keys(lastAnalysisBySilo)])) {
+    if (!isValidSiloId(id)) continue;
+    const base = (state.silosBase || []).find(x => x.id === id) || { cap: 50 };
+    const row = { ...(lastLevelBySilo[id] || {}), ...(lastAnalysisBySilo[id] || {}) };
+    row.nivel = clampV22(row.nivel, 0, 100);
+    row.masa = Math.min(Number(base.cap || 50), Math.max(0, Number(row.masa || 0)));
+    row.fuente = row.fuente || "infodia";
+    row.actualizadoEn = row.actualizadoEn || actualizadoEn;
+    merged[id] = row;
+  }
+  return cleanSiloNiveles(merged);
+}
+
+const aplicarInfodiaV22Base = aplicarInfodia;
+aplicarInfodia = function(info) {
+  const rawInfo = compactInfodiaFinal ? compactInfodiaFinal(info) : info;
+  aplicarInfodiaV22Base(info);
+  const actuales = siloNivelesDesdeInfodiaActualV22(rawInfo);
+  if (Object.keys(actuales).length) {
+    state.siloNiveles = actuales;
+    save("oxmo:siloNiveles", state.siloNiveles);
+  }
+};
+
+const guardarComunManualV22Base = guardarComunManual;
+guardarComunManual = function(data, fuente = "manual") {
+  const before = (state.comunes || []).length;
+  const ok = guardarComunManualV22Base(data, fuente);
+  if (ok && (state.comunes || []).length > before) {
+    const idx = state.comunes.length - 1;
+    state.comunes[idx] = { ...state.comunes[idx], manualAt: new Date().toISOString(), fuente };
+    save("oxmo:comunes", state.comunes);
+  }
+  return ok;
+};
+
+ponderarSilo = function(base) {
+  const nivelImportado = state.siloNiveles?.[base.id] || null;
+  const importMs = Date.parse(nivelImportado?.actualizadoEn || "") || fechaOrdenMs(nivelImportado?.fecha) || 0;
+  const tieneImport = !!nivelImportado && Number(nivelImportado.masa || 0) > 0;
+  const comunes = comunesPorSilo(base.id).filter(c => {
+    if (!tieneImport) return true;
+    const manualMs = Date.parse(c.manualAt || "") || 0;
+    return manualMs && manualMs >= importMs;
+  });
+  const masa = comunes.reduce((a, c) => a + Number(c.masa || 0), 0);
+  const weighted = key => masa ? comunes.reduce((a, c) => a + Number(c[key] || 0) * Number(c.masa || 0), 0) / masa : 0;
+  const masaImportada = Number(nivelImportado?.masa || 0);
+  const usaComunes = masa > 0;
+  const usaInfodia = !usaComunes && masaImportada > 0;
+  const masaOperacional = usaComunes ? masa : usaInfodia ? Math.min(Number(base.cap || 50), masaImportada) : 0;
+  const silo = {
+    ...base,
+    masa: masaOperacional,
+    nivel: base.cap ? clampV22((masaOperacional / base.cap) * 100, 0, 100) : 0,
+    cu: usaComunes ? weighted("cu") : usaInfodia && hasAnalysis(nivelImportado) ? Number(nivelImportado.cu || 0) : 0,
+    mo: usaComunes ? weighted("mo") : usaInfodia && hasAnalysis(nivelImportado) ? Number(nivelImportado.mo || 0) : 0,
+    s: usaComunes ? weighted("s") : usaInfodia && hasAnalysis(nivelImportado) ? Number(nivelImportado.s || 0) : 0,
+    muestras: usaComunes ? comunes.length : usaInfodia && hasAnalysis(nivelImportado) ? 1 : 0,
+    ultimo: comunes.at(-1),
+    nivelImportado,
+  };
+  return { ...silo, ...clasificar(silo) };
+};
+
+bindInfodia = function() {
+  if (!puedeSubirInfodiaV22()) return;
+  const file = document.querySelector("#infodiaFile");
+  if (!file) return;
+  file.addEventListener("change", async e => {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+    const label = document.querySelector('label[for="infodiaFile"]');
+    const oldText = label?.innerHTML;
+    if (label) label.innerHTML = `${iconoCloudUploadV14()} Procesando...`;
+    try {
+      const result = await importarInfodia(selected);
+      aplicarInfodia(result);
+      const msg = mensajeInfodiaActualizadoV22(selected.name);
+      state.infodiaMsgV22 = msg;
+      addHist("Infodia actualizado", "", msg, C.cyan);
+      alert(msg);
+      state.tab = "infodia";
+      render();
+    } catch (err) {
+      alert(`No se pudo importar el Infodia: ${err.message || err}`);
+      if (label && oldText) label.innerHTML = oldText;
+    } finally {
+      e.target.value = "";
+    }
+  });
+};
+
+function acpLotesBaseV22() {
+  return (state.infodia?.analisisLotes || [])
+    .filter(a => a && a.tipoAnalisis !== "comun_turno")
+    .filter(a => /^(OXMO|OXBR)\d+-\d{2}$/.test(normalizarCodigoAnalisis(a.codigo)) || String(a.codigo || "").toUpperCase().includes("OSAC"));
+}
+
+lotesOxmoHTML = function() {
+  const base = acpLotesBaseV22();
+  const qRaw = String(state.acpSearch || "").trim();
+  const q = normalizarTextoV22(qRaw);
+  const filtrados = q ? base.filter(a => normalizarTextoV22([a.codigo, a.tipoAnalisis, a.fecha, a.cu, a.mo, a.s, clasificar(a).clase].join(" ")).includes(q)) : base;
+  const limit = Number(state.lotesOxmoLimit || 260);
+  const items = filtrados.slice(0, limit);
+  const oxmo = base.filter(a => a.tipoAnalisis === "lote_oxmo");
+  const briquetas = base.filter(a => a.tipoAnalisis === "briqueta");
+  const osac = base.filter(a => a.tipoAnalisis === "lote_osac" || String(a.codigo || "").toUpperCase().includes("OSAC"));
+  const uploadBtn = puedeSubirInfodiaV22() ? `<button class="btn secondary cloud-upload-btn" data-tab="infodia">${iconoCloudUploadV14()} Subir Infodia</button>` : "";
+  return `<div class="box">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px">
+      <div><div class="muted-title" style="color:var(--cyan);margin-bottom:6px">Cartilla ACP</div><div style="color:var(--txt);font-size:18px;font-weight:900">Resultado de lotes OXMO - BQA</div><div style="color:var(--txt2);font-size:12px;margin-top:6px;max-width:860px;line-height:1.45">Optimizado: se muestran ${items.length} de ${filtrados.length} registros para evitar retardo de apertura. Usa búsqueda para ubicar un lote específico.</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="btn secondary" id="applyAcpInventory">Actualizar inventario con ACP</button>${uploadBtn}</div>
+    </div>
+    <div class="grid-cards" style="margin-bottom:14px">
+      ${miniReport("Lotes OXMO", oxmo.length, C.blueLight)}
+      ${miniReport("Briquetas OXBR", briquetas.length, C.copper)}
+      ${miniReport("OSAC", osac.length, C.cyan)}
+      ${miniReport("Con análisis", base.filter(hasAnalysis).length, C.green)}
+      ${miniReport("Fuera espec.", base.filter(x => clasificar(x).clase === "Fuera Esp").length, C.red)}
+    </div>
+    <div class="card" style="margin-bottom:14px"><div class="field" style="margin:0"><label>Buscar en cartilla</label><div style="display:flex;gap:8px;align-items:center"><input id="acpSearch" value="${esc(state.acpSearch || "")}" data-keep-case="true" placeholder="Ej: OXMO10065-26, OXBR1305-26, OSAC, 2026-06-14"><button class="btn secondary" id="acpSearchBtn" type="button">Buscar</button>${state.acpSearch ? `<button class="btn ghost" id="acpSearchClear" type="button">Limpiar</button>` : ""}</div></div></div>
+    ${items.length ? `<div class="table-wrap"><table><thead><tr><th>ID lote</th><th>Tipo</th><th>Fecha análisis</th><th>Cu%</th><th>Mo%</th><th>S%</th><th>Clasif.</th></tr></thead><tbody>${items.map(a => { const c = clasificar(a); return `<tr><td class="mono" style="color:var(--blue-light);font-weight:900">${esc(a.codigo || "-")}</td><td>${esc(a.tipoAnalisis === "briqueta" ? "Briqueta" : a.tipoAnalisis === "lote_osac" ? "OSAC" : "Lote OXMO")}</td><td class="mono">${esc(a.fecha || "-")}</td><td class="mono" style="color:${Number(a.cu || 0) >= 0.51 ? C.copper : C.green}">${Number(a.cu || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.mo || 0) >= moMinimo(a.cu) ? C.green : C.red}">${Number(a.mo || 0).toFixed(3)}</td><td class="mono" style="color:${Number(a.s || 0) < 0.1 ? C.green : C.red}">${Number(a.s || 0).toFixed(4)}</td><td><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${esc(c.clase)}</span></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="notice" style="border-color:#ffb80055;background:#ffb80022;color:var(--yellow)">No hay análisis OXMO/OXBR/OSAC cargados o no hay resultados para la búsqueda.</div>`}
+    ${filtrados.length > items.length ? `<div style="text-align:center;margin-top:12px"><button class="btn secondary" data-lotesoxmo-more>Mostrar 260 más</button></div>` : ""}
+  </div>`;
+};
+
+const bindAnalisisACPV22Base = bindAnalisisACP;
+bindAnalisisACP = function() {
+  bindAnalisisACPV22Base();
+  document.querySelector("#acpSearchClear")?.addEventListener("click", () => { state.acpSearch = ""; state.lotesOxmoLimit = 260; render(); });
+  document.querySelector("[data-lotesoxmo-more]")?.addEventListener("click", () => { state.lotesOxmoLimit = Number(state.lotesOxmoLimit || 260) + 260; render(); });
+};
+
+function mixScopeLotesV22() {
+  const base = typeof lotesScopeAreaV10 === "function" ? lotesScopeAreaV10(state.lotes) : lotesVisiblesAreaV9(state.lotes);
+  return (base || []).filter(l => !isInfodiaProductionLote(l));
+}
+
+function mixSectoresV22(lotes) {
+  const sectores = [...new Set((lotes || []).map(l => l.sector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  return ["Todos", ...sectores];
+}
+
+function mixMaterialesV22() {
+  const base = mixScopeLotesV22();
+  return base
+    .filter(l => hasAnalysis(l) && l.estado !== "Pendiente" && Number(l.masa || 0) >= 1000)
+    .filter(l => state.mix.sector === "Todos" || l.sector === state.mix.sector);
+}
+
+buscarMejoresMezclas2 = function() {
+  const objetivo = objetivoMezcla();
+  const selectedIds = new Set(state.mix.sel || []);
+  const inventario = mixMaterialesV22()
+    .map(l => ({ ...l, sacks: Math.min(40, Math.floor(Number(l.masa || 0) / 1000)) }))
+    .filter(l => l.sacks > 0);
+  const selected = selectedIds.size ? inventario.filter(l => selectedIds.has(l.id)) : [];
+  const targetHigh = objetivo.cu > 0.5;
+  const relevancia = l => {
+    const clase = clasificar(l).clase;
+    return Math.abs(Number(l.cu || 0) - objetivo.cu) * 180
+      + Math.max(0, objetivo.mo - Number(l.mo || 0)) * 5
+      + Math.max(0, Number(l.s || 0) - objetivo.s) * 450
+      + ((Number(l.cu || 0) > 0.5) === targetHigh ? 0 : 12)
+      - (clase === "Fuera Esp" ? 3 : 0);
+  };
+  const pool = [...(selected.length ? selected : inventario)].sort((a, b) => relevancia(a) - relevancia(b)).slice(0, selected.length ? 30 : 24);
+  const maxSacks = Math.min(40, Math.max(1, Math.round(objetivo.masa / 1000)));
+  let beams = Array.from({ length: maxSacks + 1 }, () => []);
+  beams[0] = [{ items: [], sacks: 0, cuMass: 0, moMass: 0, sMass: 0, fueraSacks: 0 }];
+  for (const lote of pool) {
+    const next = beams.map(arr => arr.slice());
+    for (let used = 0; used <= maxSacks; used++) {
+      for (const st of beams[used]) {
+        const maxAdd = Math.min(lote.sacks, maxSacks - used);
+        for (let q = 1; q <= maxAdd; q++) {
+          const ns = used + q;
+          next[ns].push({
+            items: [...st.items, { lote, sacks: q }],
+            sacks: ns,
+            cuMass: st.cuMass + Number(lote.cu || 0) * q,
+            moMass: st.moMass + Number(lote.mo || 0) * q,
+            sMass: st.sMass + Number(lote.s || 0) * q,
+            fueraSacks: st.fueraSacks + (clasificar(lote).clase === "Fuera Esp" ? q : 0),
+          });
+        }
+      }
+    }
+    beams = next.map(arr => recortarBeam(arr, objetivo, 90));
+  }
+  const ordenMasas = [maxSacks];
+  for (let d = 1; d <= 5; d++) {
+    if (maxSacks - d >= 1) ordenMasas.push(maxSacks - d);
+    if (maxSacks + d <= beams.length - 1) ordenMasas.push(maxSacks + d);
+  }
+  const opciones = ordenMasas.flatMap(s => beams[s] || []).map(st => estadoAMezcla(st, objetivo));
+  const exactas = opciones.filter(o => o.exacta);
+  const base = exactas.length ? exactas : opciones;
+  const seen = new Set();
+  return base.sort((a, b) => a.cuDiff - b.cuDiff || a.moShort - b.moShort || a.sOver - b.sOver || a.diffKg - b.diffKg || a.score - b.score || b.fueraKg - a.fueraKg)
+    .filter(o => { const firma = o.items.map(x => `${x.lote.id}:${Math.round(x.kg)}`).sort().join("|"); if (seen.has(firma)) return false; seen.add(firma); return true; })
+    .slice(0, 10);
+};
+
+mezclasHTML = function() {
+  const objetivo = objetivoMezcla();
+  const scope = mixScopeLotesV22();
+  const sectores = mixSectoresV22(scope);
+  if (!sectores.includes(state.mix.sector)) state.mix.sector = "Todos";
+  const materiales = mixMaterialesV22();
+  state.mix.sel = (state.mix.sel || []).filter(id => materiales.some(l => l.id === id));
+  const opciones = Array.isArray(state.mixOptions) ? state.mixOptions : [];
+  const areaMsg = areaTrabajoEsGlobal() ? `Vista según filtro operativo: ${esc(areaScopeGlobalV10())}` : `Solo inventario del área asignada: ${esc(areaTrabajoUsuario())}`;
+  return `<div class="mix-layout">
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="box">
+        <div class="muted-title" style="color:var(--cyan);margin-bottom:12px">Objetivo</div>
+        <div class="notice" style="border-color:#1e6fd955;background:#1e6fd922;color:var(--blue-light);margin-bottom:12px">${areaMsg}</div>
+        ${range("Cu objetivo", "cu", objetivo.cu, 0, 3, 0.01, "%", C.copper)}
+        ${range("Mo mínimo", "mo", objetivo.mo, 45, 65, 0.1, "%", C.green)}
+        ${range("S máximo", "s", objetivo.s, 0, 0.5, 0.01, "%", C.yellow)}
+        ${range("Masa lote", "masa", objetivo.masa, 1000, 40000, 1000, "kg", C.cyan)}
+        <button class="btn" id="autoMix" style="width:100%;margin-top:8px" ${state.mixProcessing ? "disabled" : ""}>${state.mixProcessing ? "CALCULANDO..." : "BUSCAR MEJOR COMBINACIÓN"}</button>
+        ${state.mixProcessing ? `<div class="mix-progress"><div style="width:${state.mixProgress || 8}%"></div></div><div style="color:var(--txt2);font-size:11px;text-align:center;margin-top:6px">Procesando combinaciones del área visible...</div>` : ""}
+        ${state.mixMsg ? `<div class="notice" style="margin:10px 0 0;text-align:center;animation:mixPulse 1.2s ease">${state.mixMsg}</div>` : ""}
+      </div>
+      <div class="box">
+        <div class="muted-title" style="margin-bottom:10px">Filtro bodega / sector del área</div>
+        <div class="filters">${sectores.map(s => `<button class="pill ${state.mix.sector === s ? "active" : ""}" data-mix-sector="${esc(s)}">${esc(s)}</button>`).join("")}</div>
+      </div>
+    </div>
+    <div class="box">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px"><div class="muted-title" style="color:var(--cyan)">Materiales</div><div style="color:var(--txt3);font-size:10px">${state.mix.sel.length ? `${state.mix.sel.length} seleccionados` : `${materiales.length} disponibles del área`}</div></div>
+      <div class="mix-material-grid">${materiales.map(l => { const c = clasificar(l); const selected = state.mix.sel.includes(l.id); return `<div class="card" data-mix-lot="${esc(l.id)}" style="cursor:pointer;border:2px solid ${selected ? c.color : "var(--line)"}"><div style="display:flex;justify-content:space-between;gap:8px"><b class="mono" style="color:var(--blue-light)">${esc(l.id)}</b><span class="tag" style="background:${c.color}22;color:${c.color};border-color:${c.color}44">${esc(c.clase)}</span></div><div style="color:var(--txt2);font-size:10px;margin-top:6px">${esc(l.tipo)} · ${esc(l.sector)} · ${(Number(l.masa || 0)/1000).toFixed(2)}t</div><div class="mono" style="font-size:11px;margin-top:4px">Cu ${fmt(l.cu,3)}% · Mo ${fmt(l.mo,3)}% · S ${fmt(l.s,4)}%</div></div>`; }).join("") || `<div style="color:var(--txt3);font-size:11px">No hay materiales con análisis para mezclar en el área visible.</div>`}</div>
+    </div>
+    <div class="box">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px"><div class="muted-title" style="color:var(--cyan)">Mejores opciones</div>${opciones.length ? `<button class="btn secondary" id="printMixOptions">Imprimir / PDF</button>` : ""}</div>
+      <div class="mix-options">${opciones.length ? opciones.map((op, idx) => mezclaOpcionHTML(op, idx)).join("") : `<div style="color:var(--txt3);font-size:11px;text-align:center;padding:18px">Ajusta los objetivos y presiona BUSCAR MEJOR COMBINACIÓN para calcular opciones.</div>`}</div>
+    </div>
+  </div>`;
+};
+
+const bindShellV22Base = bindShell;
+bindShell = function() {
+  bindShellV22Base();
+  quitarBotonClaveSuperiorV22();
+};
+
+const renderV22Base = render;
+render = function() {
+  if (state.tab === "infodia" && !puedeSubirInfodiaV22()) state.tab = "inventario";
+  if (state.tab === "registro" && !canViewTab("registro")) state.tab = "inventario";
+  const out = renderV22Base();
+  quitarBotonClaveSuperiorV22();
+  return out;
+};
+
+try { render(); } catch (e) { console.warn("render v22", e); }

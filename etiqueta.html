@@ -5,178 +5,137 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Etiqueta OXMO</title>
     <style>
-      @page { size: 100mm 150mm; margin: 0; }
       * { box-sizing: border-box; }
       html, body {
         margin: 0;
-        padding: 0;
-        width: 100%;
         min-height: 100%;
-        background: #fff;
-        color: #000;
-        font-family: Arial, Helvetica, sans-serif;
+        background: #eceff3;
+        font-family: Arial, sans-serif;
+        color: #111;
       }
-      .wrap {
-        min-height: 100vh;
-        display: flex;
-        align-items: flex-start;
-        justify-content: flex-start;
-        padding: 0;
-        background: #fff;
-      }
+      .wrap { min-height: 100vh; display: grid; place-items: center; padding: 12px; }
       .label-page {
         width: 100mm;
         height: 150mm;
+        padding: 2mm;
         background: #fff;
-        display: grid;
-        place-items: center;
-        padding: 0;
-        margin: 0;
+        box-shadow: 0 12px 34px #0003;
         overflow: hidden;
       }
       .label {
         width: 96mm;
         height: 146mm;
-        border: 1.15mm solid #111;
+        border: 1mm solid #111;
         border-radius: 3mm;
-        padding: 4.3mm 5.2mm 2.6mm;
+        padding: 4mm 5mm 2.6mm;
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        background: #fff;
       }
-      .label-top {
-        display: grid;
-        grid-template-columns: 38mm 1fr;
-        gap: 3mm;
-        align-items: center;
-        min-height: 19mm;
-        padding-bottom: 2.3mm;
-        border-bottom: .45mm solid #111;
-        flex: 0 0 auto;
-      }
-      .label-logo {
-        width: 36mm;
-        max-height: 15mm;
-        object-fit: contain;
-        object-position: left center;
-        display: block;
-      }
-      .label-brand { text-align: right; min-width: 0; }
-      .label-brand-title {
-        font-weight: 900;
-        font-size: 11pt;
-        letter-spacing: 2.3pt;
-        line-height: 1.05;
-      }
-      .label-brand-title span { display: block; }
-      .label-date {
-        margin-top: 1.4mm;
-        font-size: 7pt;
-        line-height: 1;
-        color: #111;
-        white-space: nowrap;
-      }
-      .label-id {
-        min-height: 11mm;
+      header {
         display: flex;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        margin: 2.5mm 0 2mm;
-        font-family: Consolas, "Courier New", monospace;
+        justify-content: space-between;
+        gap: 4mm;
+        align-items: flex-start;
+        border-bottom: .45mm solid #111;
+        padding-bottom: 1.6mm;
+      }
+      header img {
+        width: 38mm;
+        max-height: 14mm;
+        height: auto;
+        object-fit: contain;
+      }
+      .system {
+        font-size: 9pt;
         font-weight: 900;
+        letter-spacing: 1.2pt;
+        text-align: right;
+      }
+      .date {
+        font-size: 7pt;
+        color: #555;
+        text-align: right;
+        margin-top: 1mm;
+      }
+      main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        padding-top: 1.4mm;
+        min-height: 0;
+      }
+      .lot-id {
+        font-family: Consolas, monospace;
+        font-size: clamp(14pt, var(--id-size, 22pt), 22pt);
+        font-weight: 900;
+        text-align: center;
         line-height: 1.02;
-        letter-spacing: .3pt;
+        margin-bottom: 1.5mm;
         overflow-wrap: anywhere;
         word-break: break-word;
-        flex: 0 0 auto;
       }
-      .label-class {
-        min-height: 13.5mm;
+      .material {
         border: .55mm solid var(--accent);
         color: var(--accent);
         border-radius: 2mm;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
+        padding: 1.4mm;
+        font-size: 14pt;
         font-weight: 900;
-        font-size: 18pt;
-        line-height: 1;
-        letter-spacing: 1.2pt;
-        padding: 1.7mm 2mm;
-        margin-bottom: 2.5mm;
-        flex: 0 0 auto;
+        text-align: center;
+        margin-bottom: 2mm;
       }
-      .label-chem {
+      .chem {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 2mm;
-        margin-bottom: 2.5mm;
-        flex: 0 0 auto;
+        gap: 1.7mm;
+        margin-bottom: 2mm;
       }
-      .label-cell, .label-mass {
+      .chem div, .meta div {
         border: .35mm solid #222;
         border-radius: 1.5mm;
+        padding: 1.2mm;
         text-align: center;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
       }
-      .label-cell { min-height: 15.5mm; padding: 1.4mm 1mm; }
-      .label-k {
+      .chem b, .meta b {
         display: block;
-        font-size: 6.8pt;
-        line-height: 1;
-        font-weight: 900;
-        margin-bottom: 1mm;
-        letter-spacing: .3pt;
+        font-size: 7pt;
+        text-transform: uppercase;
+        color: #555;
+        margin-bottom: .6mm;
       }
-      .label-v {
-        display: block;
-        font-family: Consolas, "Courier New", monospace;
-        font-size: 13.8pt;
-        line-height: 1;
-        font-weight: 900;
-        white-space: nowrap;
-      }
-      .label-mass {
-        min-height: 12.8mm;
-        padding: 1.4mm 1mm;
-        margin-bottom: 1.2mm;
-        flex: 0 0 auto;
-      }
-      .label-mass .label-v {
-        font-family: Arial, Helvetica, sans-serif;
+      .chem span {
+        font-family: Consolas, monospace;
         font-size: 13pt;
-        letter-spacing: .2pt;
+        font-weight: 900;
       }
-      .label-qr-area {
-        flex: 1 1 auto;
-        min-height: 50mm;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 1.5mm 0 1.2mm;
+      .meta {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.5mm;
+        margin-bottom: 1.2mm;
       }
-      .label-qr {
-        width: var(--qr-size);
-        height: var(--qr-size);
-        display: block;
-        object-fit: contain;
+      .meta span {
+        font-size: 9.5pt;
+        font-weight: 800;
+      }
+      .qr {
+        width: var(--qr-size, 29mm);
+        height: var(--qr-size, 29mm);
+        align-self: center;
         image-rendering: pixelated;
-      }
-      .label-foot {
-        border-top: .35mm solid #111;
-        padding-top: .8mm;
-        text-align: center;
-        font-size: 5.8pt;
-        line-height: 1;
-        color: #111;
-        white-space: nowrap;
+        margin-top: 0;
+        margin-bottom: 1mm;
         flex: 0 0 auto;
+      }
+      footer {
+        border-top: .35mm solid #111;
+        margin-top: 0;
+        padding-top: .7mm;
+        font-size: 5.5pt;
+        text-align: center;
+        color: #555;
       }
       .bad {
         width: min(420px, 100%);
@@ -185,11 +144,12 @@
         background: #fff;
         padding: 22px;
         box-shadow: 0 12px 34px #0002;
-        margin: 24px;
       }
       @media print {
-        html, body { background: #fff; width: 100mm; min-height: 150mm; }
-        .label-page { margin: 0; box-shadow: none; }
+        @page { size: 100mm 150mm; margin: 0; }
+        body { background: #fff; }
+        .wrap { padding: 0; display: block; }
+        .label-page { box-shadow: none; }
       }
     </style>
   </head>
@@ -200,17 +160,10 @@
       const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
       }[ch]));
-      const fit = id => {
-        const len = String(id || "").length;
-        if (len > 30) return { idPt: 13, qrMm: 46 };
-        if (len > 24) return { idPt: 14, qrMm: 48 };
-        if (len > 18) return { idPt: 16, qrMm: 50 };
-        return { idPt: 19, qrMm: 52 };
-      };
       const data = {
         id: qs.get("id") || "",
         mat: qs.get("mat") || "",
-        color: qs.get("color") || "#C87533",
+        color: qs.get("color") || "#00D4FF",
         masa: qs.get("masa") || "",
         cu: qs.get("cu") || "-",
         mo: qs.get("mo") || "-",
@@ -221,27 +174,32 @@
         document.querySelector("#root").innerHTML = `<div class="wrap"><section class="bad"><h1>QR no valido</h1><p>Genera nuevamente la etiqueta desde OXMO.</p></section></div>`;
       } else {
         const qrData = encodeURIComponent(location.href);
-        const f = fit(data.id);
+        document.documentElement.style.setProperty("--accent", data.color);
+        const idLen = String(data.id || "").length;
+        document.documentElement.style.setProperty("--qr-size", idLen > 24 ? "25mm" : idLen > 18 ? "27mm" : "29mm");
+        document.documentElement.style.setProperty("--id-size", idLen > 24 ? "14pt" : idLen > 18 ? "16pt" : "22pt");
         document.querySelector("#root").innerHTML = `<div class="wrap">
           <section class="label-page">
-            <div class="label" style="--accent:${esc(data.color)};--qr-size:${f.qrMm}mm">
-              <div class="label-top">
-                <img class="label-logo" src="./molyb-logo.webp" alt="Molyb" />
-                <div class="label-brand">
-                  <div class="label-brand-title"><span>OXMO</span><span>CONTROL</span></div>
-                  <div class="label-date">${esc(data.fecha)}</div>
+            <div class="label">
+              <header>
+                <img src="./molyb-logo.webp" alt="Molyb" />
+                <div>
+                  <div class="system">OXMO CONTROL</div>
+                  <div class="date">${esc(data.fecha)}</div>
                 </div>
-              </div>
-              <div class="label-id" style="font-size:${f.idPt}pt">${esc(data.id)}</div>
-              <div class="label-class">${esc(data.mat.toUpperCase())}</div>
-              <div class="label-chem">
-                <div class="label-cell"><span class="label-k">CU</span><span class="label-v">${esc(data.cu)}%</span></div>
-                <div class="label-cell"><span class="label-k">MO</span><span class="label-v">${esc(data.mo)}%</span></div>
-                <div class="label-cell"><span class="label-k">S</span><span class="label-v">${esc(data.s)}%</span></div>
-              </div>
-              <div class="label-mass"><span class="label-k">MASA</span><span class="label-v">${esc(data.masa)}</span></div>
-              <div class="label-qr-area"><img class="label-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=620x620&margin=1&data=${qrData}" alt="QR ${esc(data.id)}" /></div>
-              <div class="label-foot">Zebra ZT230 · Etiqueta 100 × 150 mm · 300 dpi</div>
+              </header>
+              <main>
+                <div class="lot-id">${esc(data.id)}</div>
+                <div class="material">${esc(data.mat.toUpperCase())}</div>
+                <div class="chem">
+                  <div><b>Cu</b><span>${esc(data.cu)}%</span></div>
+                  <div><b>Mo</b><span>${esc(data.mo)}%</span></div>
+                  <div><b>S</b><span>${esc(data.s)}%</span></div>
+                </div>
+                <div class="meta"><div><b>Masa</b><span>${esc(data.masa)}</span></div></div>
+                <img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${qrData}" alt="QR ${esc(data.id)}" />
+              </main>
+              <footer>Molibdeno para el mundo Molyb</footer>
             </div>
           </section>
         </div>`;
