@@ -15,6 +15,62 @@
   --txt3: #2d4a6a;
 }
 
+body[data-theme="claro"] {
+  --bg: #f4f7fb;
+  --panel: #ffffff;
+  --panel2: #eef4fb;
+  --line: #bfd0e3;
+  --blue-dim: #d9eaff;
+  --txt: #0c1c2e;
+  --txt2: #45627f;
+  --txt3: #7890a8;
+}
+body[data-theme="claro"] .box,
+body[data-theme="claro"] .kpi,
+body[data-theme="claro"] .card,
+body[data-theme="claro"] .agenda-panel,
+body[data-theme="claro"] .modal-card,
+body[data-theme="claro"] .cloud-modal {
+  background: linear-gradient(180deg, #ffffff, #edf4fb);
+  box-shadow: 0 8px 24px #10385c12;
+}
+body[data-theme="claro"] .topbar {
+  background: linear-gradient(90deg, #ffffff, #e8f2ff);
+}
+body[data-theme="claro"] input,
+body[data-theme="claro"] select,
+body[data-theme="claro"] textarea,
+body[data-theme="claro"] .input,
+body[data-theme="claro"] .agenda-task-input,
+body[data-theme="claro"] .agenda-note-input {
+  background: #ffffff;
+  color: var(--txt);
+}
+body[data-theme="claro"] tbody tr:nth-child(odd) { background: #ffffff; }
+body[data-theme="claro"] tbody tr:nth-child(even) { background: #f1f6fb; }
+body[data-theme="negro"] {
+  --bg: #000000;
+  --panel: #050607;
+  --panel2: #0b0d10;
+  --line: #1d2430;
+  --blue-dim: #07101e;
+  --txt: #f2f7ff;
+  --txt2: #7f8fa3;
+  --txt3: #465466;
+  --cyan: #00e5ff;
+  --blue: #0d5bd8;
+  --blue-light: #2f8dff;
+}
+body[data-theme="negro"] .topbar,
+body[data-theme="negro"] .box,
+body[data-theme="negro"] .kpi,
+body[data-theme="negro"] .card,
+body[data-theme="negro"] .agenda-panel,
+body[data-theme="negro"] .modal-card,
+body[data-theme="negro"] .cloud-modal {
+  background: linear-gradient(180deg, #050607, #000000);
+}
+
 * { box-sizing: border-box; }
 body {
   margin: 0;
@@ -317,7 +373,7 @@ button:disabled {
   border-radius: 50%;
   background: var(--cyan);
 }
-.agenda-day.task-pending::after { background: var(--yellow); }
+.agenda-day.task-pending::after { background: var(--red); box-shadow: 0 0 8px #ff4560aa; }
 .agenda-day.task-done::after { background: var(--green); }
 .agenda-day.empty {
   opacity: .25;
@@ -356,6 +412,26 @@ button:disabled {
 .chip.active.success {
   border-color: var(--green);
   color: var(--green);
+}
+.chip.has-pending {
+  position: relative;
+  padding-right: 20px;
+}
+.chip-red-dot,
+.agenda-pending-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--red);
+  box-shadow: 0 0 9px #ff4560aa;
+  vertical-align: middle;
+}
+.chip-red-dot {
+  margin-left: 6px;
+}
+.agenda-pending-dot {
+  margin-left: 8px;
 }
 .agenda-note-input {
   width: 100%;

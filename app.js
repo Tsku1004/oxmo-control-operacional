@@ -144,6 +144,21 @@ function canonicalRoleName(rol) {
   return map[raw] || raw;
 }
 
+const TEMAS_USUARIO = ["azul", "claro", "negro"];
+const TEMAS_USUARIO_LABELS = {
+  azul: "Azul operacional",
+  claro: "Claro",
+  negro: "Negro"
+};
+function canonicalTheme(theme) {
+  const raw = String(theme || "azul").trim().toLowerCase();
+  return TEMAS_USUARIO.includes(raw) ? raw : "azul";
+}
+function applyUserTheme(user = state?.user) {
+  if (typeof document === "undefined" || !document.body) return;
+  document.body.dataset.theme = canonicalTheme(user?.tema || user?.theme || "azul");
+}
+
 function normalizeAgendaEntry(value) {
   if (!value) return { mode: "nota", note: "", tasks: [] };
   if (typeof value === "string") return { mode: "nota", note: value, tasks: [] };
@@ -190,6 +205,7 @@ function normalizarUsuario(u) {
     emergenciaNombre: u?.emergenciaNombre || "",
     emergenciaTelefono: u?.emergenciaTelefono || "",
     observaciones: u?.observaciones || "",
+    tema: canonicalTheme(u?.tema || u?.theme || "azul"),
     activo: u?.activo !== false,
     creado: u?.creado || hoy(),
   };
@@ -587,6 +603,7 @@ function guardarComunManual(data, fuente = "manual") {
 
 function render() {
   const app = document.querySelector("#app");
+  applyUserTheme(state.user);
   const etiquetaPublica = publicEtiquetaFromUrl();
   if (etiquetaPublica) {
     app.innerHTML = etiquetaPublicaHTML(etiquetaPublica);
@@ -643,9 +660,9 @@ function bindLogin() {
       document.querySelector("#loginError").innerHTML = `<div class="error">Usuario o contraseña incorrectos</div>`;
       return;
     }
-    state.user = found;
+    state.user = normalizarUsuario(found);
     state.sessionStartedAt = Date.now();
-    save("oxmo:user", found);
+    save("oxmo:user", state.user);
     registrarActividadUsuario("Inicio de sesión", "", "Acceso al sistema");
     render();
   };
@@ -741,6 +758,8 @@ function agendaCardHTML() {
   const todayKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`;
   const activeDay = state.agendaDay && state.agendaDay.startsWith(monthKey) ? state.agendaDay : "";
   const entry = normalizeAgendaEntry(activeDay ? state.agenda[activeDay] : null);
+  const activePendingTasks = entry.tasks.some(t => !t.done);
+  const monthPendingTasks = Object.entries(state.agenda || {}).some(([key, value]) => key.startsWith(monthKey) && normalizeAgendaEntry(value).tasks.some(t => !t.done));
   const weekdays = ["L", "M", "M", "J", "V", "S", "D"].map(d => `<span>${d}</span>`).join("");
   const cells = [];
   for (let i = 0; i < startOffset; i += 1) cells.push('<button class="agenda-day empty" type="button" disabled></button>');
@@ -768,7 +787,7 @@ function agendaCardHTML() {
   return `<aside class="agenda-panel">
     <div class="agenda-header">
       <div>
-        <div class="kpi-label">Agenda</div>
+        <div class="kpi-label">Agenda ${monthPendingTasks ? `<span class="agenda-pending-dot" title="Hay tareas pendientes"></span>` : ""}</div>
         <div class="agenda-month">${esc(agendaMonthLabel(monthKey))}</div>
       </div>
       <div class="agenda-nav">
@@ -783,7 +802,7 @@ function agendaCardHTML() {
         <div class="agenda-editor-title">${esc(new Date(activeDay + 'T00:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long' }))}</div>
         <div class="agenda-type-row">
           <button class="chip ${entry.mode === "nota" ? "active" : ""}" type="button" data-agenda-mode="nota">Nota</button>
-          <button class="chip ${entry.mode === "tarea" ? "active" : ""}" type="button" data-agenda-mode="tarea">Tarea</button>
+          <button class="chip ${entry.mode === "tarea" ? "active" : ""} ${activePendingTasks ? "has-pending" : ""}" type="button" data-agenda-mode="tarea">Tarea ${activePendingTasks ? `<span class="chip-red-dot" title="Tareas pendientes"></span>` : ""}</button>
         </div>
         ${entry.mode === "tarea" ? `
           <div class="agenda-task-input-row">
@@ -1092,7 +1111,11 @@ function inputField(name, label, value, type = "text", placeholder = "", step = 
   return `<div class="field"><label>${label}</label><input name="${name}" type="${type}" ${step ? `step="${step}"` : ""} value="${value ?? ""}" placeholder="${placeholder}"></div>`;
 }
 function selectField(name, label, value, options, cls = "") {
-  return `<div class="field ${cls}"><label>${label}</label><select name="${name}">${options.map(o => `<option ${o === value ? "selected" : ""}>${o}</option>`).join("")}</select></div>`;
+  return `<div class="field ${cls}"><label>${label}</label><select name="${name}">${options.map(o => {
+    const val = typeof o === "string" ? o : o.value;
+    const lbl = typeof o === "string" ? o : o.label;
+    return `<option value="${esc(val)}" ${String(val) === String(value) ? "selected" : ""}>${esc(lbl)}</option>`;
+  }).join("")}</select></div>`;
 }
 function bindRegistro() {
   const form = document.querySelector("#lotForm");
@@ -1277,6 +1300,7 @@ function userFieldsHTML(u, { admin = false } = {}) {
       <div class="field"><label>Usuario</label><input name="u" value="${esc(u.u || "")}" ${usuarioReadonly}></div>
       <div class="field"><label>Nombre visible</label><input name="nombre" value="${esc(u.nombre || "")}" required></div>
       ${admin ? `<div class="field"><label>Contraseña</label><input name="p" type="password" placeholder="${passPlaceholder}"></div>${selectField("rol", "Rol", u.rol || "Operador", ROLES_USUARIO)}` : `<div class="field"><label>Contraseña</label><input name="p" type="password" placeholder="${passPlaceholder}"></div><div class="field"><label>Rol</label><input value="${esc(u.rol || "")}" readonly></div>`}
+      ${selectField("tema", "Tema visual", u.tema || "azul", TEMAS_USUARIO.map(k => ({ value: k, label: TEMAS_USUARIO_LABELS[k] })))}
       <div class="field"><label>Cargo</label><input name="cargo" value="${esc(u.cargo || "")}" placeholder="Ej: Operador Envase"></div>
       <div class="field"><label>Área</label><input name="area" value="${esc(u.area || "")}" placeholder="Ej: Envase y Logística"></div>
       <div class="field"><label>Turno</label><input name="turno" value="${esc(u.turno || "")}" placeholder="Ej: Turno A / 7x7"></div>
@@ -1349,6 +1373,7 @@ function collectUserForm(form, original, { admin = false } = {}) {
     emergenciaNombre: String(data.emergenciaNombre || "").trim(),
     emergenciaTelefono: String(data.emergenciaTelefono || "").trim(),
     observaciones: String(data.observaciones || "").trim(),
+    tema: canonicalTheme(data.tema || original.tema || "azul"),
   };
   if (admin) {
     next.u = String(data.u || "").trim().toLowerCase();
@@ -1364,6 +1389,7 @@ function savePerfilUsuario(next) {
   const original = userKey();
   state.usuarios = state.usuarios.map(x => x.u === original ? next : x);
   state.user = next;
+  applyUserTheme(state.user);
   saveUsuarios();
   save("oxmo:user", state.user);
   addHist("Perfil actualizado", next.u, "Datos de contacto actualizados", C.cyan);
