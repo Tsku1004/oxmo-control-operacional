@@ -14,6 +14,12 @@ const ROLES_USUARIO = ["Operador", "Encargado", "Jefe de turno", "Jefe de planta
 
 const LOTES_DEFAULT = [];
 const DEFAULT_SECTORES = ["Bodega en transito", "Planta Envase"];
+const TEMAS_USUARIO = ["azul", "claro", "negro"];
+const TEMAS_USUARIO_LABELS = {
+  azul: "Azul operacional",
+  claro: "Claro",
+  negro: "Negro"
+};
 const CLOUD_CONFIG_KEY = "oxmo:supabase";
 const DEFAULT_CLOUD_CONFIG = {
   url: "https://obkvneyvgzraxolohmwf.supabase.co",
@@ -144,12 +150,6 @@ function canonicalRoleName(rol) {
   return map[raw] || raw;
 }
 
-const TEMAS_USUARIO = ["azul", "claro", "negro"];
-const TEMAS_USUARIO_LABELS = {
-  azul: "Azul operacional",
-  claro: "Claro",
-  negro: "Negro"
-};
 function canonicalTheme(theme) {
   const raw = String(theme || "azul").trim().toLowerCase();
   return TEMAS_USUARIO.includes(raw) ? raw : "azul";
